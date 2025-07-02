@@ -1,33 +1,68 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { router } from 'expo-router';
-import { Camera, Sparkles, Zap } from 'lucide-react-native';
+import { Camera, Sparkles, Zap, ArrowRight } from 'lucide-react-native';
+import Animated, { FadeInDown, FadeInUp, SlideInRight } from 'react-native-reanimated';
 import { PhotoLoader } from '../utils/photoLoader';
+import { SupabaseAuth } from '../utils/supabase';
+import { AuthModal } from '../components/AuthModal';
 import { lightTheme } from '../utils/theme';
 
 export default function WelcomeScreen() {
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const slides = [
     {
       icon: <Sparkles size={64} color={lightTheme.colors.primary} />,
       title: 'Welcome to SnapSort',
-      description: 'AI-powered photo organization that understands your pictures',
+      description: 'AI-powered photo organization that understands your pictures and creates smart albums automatically.',
     },
     {
       icon: <Camera size={64} color={lightTheme.colors.secondary} />,
       title: 'Smart Albums',
-      description: 'Automatically sort photos into meaningful albums using advanced AI',
+      description: 'Automatically sort photos into meaningful albums using advanced AI. Find receipts, travel photos, and more instantly.',
     },
     {
       icon: <Zap size={64} color={lightTheme.colors.warning} />,
       title: 'Picture Hack',
-      description: 'Tell us what you want to find, and we\'ll sort your photos instantly',
+      description: 'Tell us what you want to find using natural language, and we\'ll sort your photos instantly with AI magic.',
     },
   ];
 
-  const handleRequestPermissions = async () => {
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const user = await SupabaseAuth.getCurrentUser();
+      setIsAuthenticated(!!user);
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+    }
+  };
+
+  const handleGetStarted = async () => {
+    if (!isAuthenticated) {
+      setShowAuthModal(true);
+      return;
+    }
+
+    const granted = await PhotoLoader.requestPermissions();
+    setPermissionGranted(granted);
+    
+    if (granted) {
+      router.replace('/(tabs)');
+    }
+  };
+
+  const handleAuthSuccess = async () => {
+    setIsAuthenticated(true);
+    setShowAuthModal(false);
+    
     const granted = await PhotoLoader.requestPermissions();
     setPermissionGranted(granted);
     
@@ -46,16 +81,20 @@ export default function WelcomeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.slideContainer}>
+      <Animated.View entering={FadeInUp.delay(200)} style={styles.content}>
+        <Animated.View 
+          key={currentSlide}
+          entering={SlideInRight.duration(500)}
+          style={styles.slideContainer}
+        >
           <View style={styles.iconContainer}>
             {currentSlideData.icon}
           </View>
           <Text style={styles.title}>{currentSlideData.title}</Text>
           <Text style={styles.description}>{currentSlideData.description}</Text>
-        </View>
+        </Animated.View>
 
-        <View style={styles.pagination}>
+        <Animated.View entering={FadeInDown.delay(400)} style={styles.pagination}>
           {slides.map((_, index) => (
             <View
               key={index}
@@ -65,20 +104,38 @@ export default function WelcomeScreen() {
               ]}
             />
           ))}
-        </View>
+        </Animated.View>
 
-        <View style={styles.buttonContainer}>
+        <Animated.View entering={FadeInDown.delay(600)} style={styles.buttonContainer}>
           {currentSlide < slides.length - 1 ? (
             <TouchableOpacity style={styles.nextButton} onPress={nextSlide}>
               <Text style={styles.nextButtonText}>Next</Text>
+              <ArrowRight size={20} color={lightTheme.colors.primary} />
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.startButton} onPress={handleRequestPermissions}>
-              <Text style={styles.startButtonText}>Get Started</Text>
+            <TouchableOpacity style={styles.startButton} onPress={handleGetStarted}>
+              <Text style={styles.startButtonText}>
+                {isAuthenticated ? 'Get Started' : 'Sign In to Continue'}
+              </Text>
             </TouchableOpacity>
           )}
-        </View>
-      </View>
+        </Animated.View>
+
+        {!isAuthenticated && currentSlide === slides.length - 1 && (
+          <Animated.View entering={FadeInDown.delay(800)} style={styles.authHint}>
+            <Text style={styles.authHintText}>
+              Create an account to sync your albums across devices and access premium features
+            </Text>
+          </Animated.View>
+        )}
+      </Animated.View>
+
+      <AuthModal
+        visible={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={handleAuthSuccess}
+        initialMode="signup"
+      />
     </SafeAreaView>
   );
 }
@@ -102,58 +159,85 @@ const styles = StyleSheet.create({
   },
   iconContainer: {
     marginBottom: lightTheme.spacing.xl,
+    padding: lightTheme.spacing.xl,
+    backgroundColor: `${lightTheme.colors.primary}10`,
+    borderRadius: lightTheme.borderRadius.xl,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontFamily: 'Inter-Bold',
     color: lightTheme.colors.text,
     textAlign: 'center',
-    marginBottom: lightTheme.spacing.md,
+    marginBottom: lightTheme.spacing.lg,
+    letterSpacing: -0.5,
   },
   description: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: 'Inter-Regular',
     color: lightTheme.colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 26,
+    paddingHorizontal: lightTheme.spacing.md,
   },
   pagination: {
     flexDirection: 'row',
     marginBottom: lightTheme.spacing.xl,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: lightTheme.colors.border,
-    marginHorizontal: 4,
+    marginHorizontal: 6,
   },
   activeDot: {
     backgroundColor: lightTheme.colors.primary,
+    width: 24,
   },
   buttonContainer: {
     width: '100%',
   },
   nextButton: {
-    backgroundColor: lightTheme.colors.surface,
-    paddingVertical: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.md,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: lightTheme.colors.surface,
+    paddingVertical: lightTheme.spacing.lg,
+    borderRadius: lightTheme.borderRadius.lg,
+    gap: lightTheme.spacing.sm,
+    borderWidth: 2,
+    borderColor: lightTheme.colors.primary,
   },
   nextButtonText: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: 'Inter-SemiBold',
     color: lightTheme.colors.primary,
   },
   startButton: {
     backgroundColor: lightTheme.colors.primary,
-    paddingVertical: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.md,
+    paddingVertical: lightTheme.spacing.lg,
+    borderRadius: lightTheme.borderRadius.lg,
     alignItems: 'center',
+    elevation: 4,
+    shadowColor: lightTheme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   startButtonText: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
     color: 'white',
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
+  },
+  authHint: {
+    marginTop: lightTheme.spacing.lg,
+    paddingHorizontal: lightTheme.spacing.lg,
+  },
+  authHintText: {
+    fontSize: 14,
+    color: lightTheme.colors.textSecondary,
+    textAlign: 'center',
+    fontFamily: 'Inter-Regular',
+    lineHeight: 20,
   },
 });

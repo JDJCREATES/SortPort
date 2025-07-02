@@ -1,0 +1,379 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert } from 'react-native';
+import { Folder, Check, X, HardDrive, Smartphone, Camera, Download } from 'lucide-react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import * as MediaLibrary from 'expo-media-library';
+import { Platform } from 'react-native';
+import { lightTheme } from '../utils/theme';
+
+interface SourceFolder {
+  id: string;
+  name: string;
+  path: string;
+  count: number;
+  icon: React.ReactNode;
+  description: string;
+}
+
+interface SourceFolderPickerProps {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (folders: SourceFolder[]) => void;
+  selectedFolders: string[];
+}
+
+export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders }: SourceFolderPickerProps) {
+  const [folders, setFolders] = useState<SourceFolder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tempSelected, setTempSelected] = useState<string[]>(selectedFolders);
+
+  useEffect(() => {
+    if (visible) {
+      loadFolders();
+    }
+  }, [visible]);
+
+  const loadFolders = async () => {
+    setLoading(true);
+    try {
+      if (Platform.OS === 'web') {
+        // Mock folders for web demo
+        const mockFolders: SourceFolder[] = [
+          {
+            id: 'all_photos',
+            name: 'All Photos',
+            path: '/storage/emulated/0/DCIM',
+            count: 1247,
+            icon: <Smartphone size={20} color={lightTheme.colors.primary} />,
+            description: 'All photos on your device'
+          },
+          {
+            id: 'camera',
+            name: 'Camera',
+            path: '/storage/emulated/0/DCIM/Camera',
+            count: 892,
+            icon: <Camera size={20} color={lightTheme.colors.secondary} />,
+            description: 'Photos taken with camera'
+          },
+          {
+            id: 'downloads',
+            name: 'Downloads',
+            path: '/storage/emulated/0/Download',
+            count: 156,
+            icon: <Download size={20} color={lightTheme.colors.warning} />,
+            description: 'Downloaded images'
+          },
+          {
+            id: 'screenshots',
+            name: 'Screenshots',
+            path: '/storage/emulated/0/Pictures/Screenshots',
+            count: 234,
+            icon: <HardDrive size={20} color={lightTheme.colors.success} />,
+            description: 'Screen captures'
+          },
+        ];
+        setFolders(mockFolders);
+      } else {
+        // Real implementation for native platforms
+        const albums = await MediaLibrary.getAlbumsAsync({
+          includeSmartAlbums: true,
+        });
+
+        const folderPromises = albums.map(async (album) => {
+          const assets = await MediaLibrary.getAssetsAsync({
+            album: album.id,
+            mediaType: 'photo',
+            first: 1,
+          });
+
+          return {
+            id: album.id,
+            name: album.title,
+            path: album.title,
+            count: album.assetCount,
+            icon: <Folder size={20} color={lightTheme.colors.primary} />,
+            description: `${album.assetCount} photos`,
+          };
+        });
+
+        const resolvedFolders = await Promise.all(folderPromises);
+        setFolders(resolvedFolders);
+      }
+    } catch (error) {
+      console.error('Error loading folders:', error);
+      Alert.alert('Error', 'Failed to load photo folders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleFolder = (folderId: string) => {
+    setTempSelected(prev => 
+      prev.includes(folderId) 
+        ? prev.filter(id => id !== folderId)
+        : [...prev, folderId]
+    );
+  };
+
+  const handleConfirm = () => {
+    const selectedFolderObjects = folders.filter(folder => 
+      tempSelected.includes(folder.id)
+    );
+    onSelect(selectedFolderObjects);
+    onClose();
+  };
+
+  const handleSelectAll = () => {
+    if (tempSelected.length === folders.length) {
+      setTempSelected([]);
+    } else {
+      setTempSelected(folders.map(f => f.id));
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.overlay}>
+        <Animated.View entering={FadeInUp.delay(100)} style={styles.container}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Select Photo Sources</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <X size={24} color={lightTheme.colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.controls}>
+            <TouchableOpacity onPress={handleSelectAll} style={styles.selectAllButton}>
+              <Text style={styles.selectAllText}>
+                {tempSelected.length === folders.length ? 'Deselect All' : 'Select All'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.selectedCount}>
+              {tempSelected.length} of {folders.length} selected
+            </Text>
+          </View>
+
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {loading ? (
+              <Animated.View entering={FadeInDown.delay(200)} style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>Loading photo folders...</Text>
+              </Animated.View>
+            ) : (
+              folders.map((folder, index) => (
+                <Animated.View 
+                  key={folder.id} 
+                  entering={FadeInDown.delay(index * 50)}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.folderItem,
+                      tempSelected.includes(folder.id) && styles.folderItemSelected
+                    ]}
+                    onPress={() => toggleFolder(folder.id)}
+                  >
+                    <View style={styles.folderIcon}>
+                      {folder.icon}
+                    </View>
+                    <View style={styles.folderInfo}>
+                      <Text style={styles.folderName}>{folder.name}</Text>
+                      <Text style={styles.folderDescription}>{folder.description}</Text>
+                      <Text style={styles.folderPath}>{folder.path}</Text>
+                    </View>
+                    <View style={styles.folderCount}>
+                      <Text style={styles.countText}>{folder.count}</Text>
+                    </View>
+                    {tempSelected.includes(folder.id) && (
+                      <View style={styles.checkmark}>
+                        <Check size={20} color="white" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </Animated.View>
+              ))
+            )}
+          </ScrollView>
+
+          <View style={styles.footer}>
+            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.confirmButton,
+                tempSelected.length === 0 && styles.confirmButtonDisabled
+              ]}
+              onPress={handleConfirm}
+              disabled={tempSelected.length === 0}
+            >
+              <Text style={styles.confirmButtonText}>
+                Apply ({tempSelected.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    backgroundColor: lightTheme.colors.background,
+    borderTopLeftRadius: lightTheme.borderRadius.xl,
+    borderTopRightRadius: lightTheme.borderRadius.xl,
+    maxHeight: '85%',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: lightTheme.spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: lightTheme.colors.border,
+  },
+  title: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
+    color: lightTheme.colors.text,
+  },
+  closeButton: {
+    padding: lightTheme.spacing.xs,
+  },
+  controls: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: lightTheme.spacing.lg,
+    paddingVertical: lightTheme.spacing.md,
+    backgroundColor: lightTheme.colors.surface,
+  },
+  selectAllButton: {
+    paddingVertical: lightTheme.spacing.xs,
+  },
+  selectAllText: {
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.primary,
+  },
+  selectedCount: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.textSecondary,
+  },
+  content: {
+    flex: 1,
+    padding: lightTheme.spacing.lg,
+  },
+  loadingContainer: {
+    paddingVertical: lightTheme.spacing.xl,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: lightTheme.colors.textSecondary,
+    fontFamily: 'Inter-Regular',
+  },
+  folderItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightTheme.colors.surface,
+    borderRadius: lightTheme.borderRadius.lg,
+    padding: lightTheme.spacing.md,
+    marginBottom: lightTheme.spacing.sm,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  folderItemSelected: {
+    borderColor: lightTheme.colors.primary,
+    backgroundColor: `${lightTheme.colors.primary}10`,
+  },
+  folderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: lightTheme.colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: lightTheme.spacing.md,
+  },
+  folderInfo: {
+    flex: 1,
+  },
+  folderName: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.text,
+    marginBottom: 2,
+  },
+  folderDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.textSecondary,
+    marginBottom: 2,
+  },
+  folderPath: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.textSecondary,
+    opacity: 0.7,
+  },
+  folderCount: {
+    backgroundColor: lightTheme.colors.primary,
+    borderRadius: lightTheme.borderRadius.sm,
+    paddingHorizontal: lightTheme.spacing.sm,
+    paddingVertical: lightTheme.spacing.xs,
+    marginRight: lightTheme.spacing.sm,
+  },
+  countText: {
+    color: 'white',
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+  },
+  checkmark: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: lightTheme.colors.success,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  footer: {
+    flexDirection: 'row',
+    padding: lightTheme.spacing.lg,
+    gap: lightTheme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: lightTheme.colors.border,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: lightTheme.spacing.md,
+    borderRadius: lightTheme.borderRadius.md,
+    backgroundColor: lightTheme.colors.surface,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.textSecondary,
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: lightTheme.spacing.md,
+    borderRadius: lightTheme.borderRadius.md,
+    backgroundColor: lightTheme.colors.primary,
+    alignItems: 'center',
+  },
+  confirmButtonDisabled: {
+    backgroundColor: lightTheme.colors.border,
+  },
+  confirmButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: 'white',
+  },
+});

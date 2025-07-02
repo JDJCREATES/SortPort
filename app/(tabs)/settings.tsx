@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
-import { Crown, Clock as Unlock, RefreshCw, Trash2, Palette, Settings as SettingsIcon } from 'lucide-react-native';
+import { Crown, Clock as Unlock, RefreshCw, Trash2, Palette, Settings as SettingsIcon, LogOut, User, Folder } from 'lucide-react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { PremiumPrompt } from '../../components/PremiumPrompt';
 import { ColorPicker } from '../../components/ColorPicker';
+import { AuthModal } from '../../components/AuthModal';
+import { SourceFolderPicker } from '../../components/SourceFolderPicker';
 import { UserFlags, AppSettings } from '../../types';
 import { RevenueCatManager } from '../../utils/revenuecat';
 import { MediaStorage } from '../../utils/mediaStorage';
+import { SupabaseAuth, UserProfile } from '../../utils/supabase';
 import { lightTheme, updateThemeColors } from '../../utils/theme';
 
 export default function SettingsScreen() {
@@ -22,13 +25,27 @@ export default function SettingsScreen() {
     notifications: true,
     customColors: undefined,
   });
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showPremiumPrompt, setShowPremiumPrompt] = useState<'subscription' | 'unlock' | null>(null);
   const [showColorPicker, setShowColorPicker] = useState<'primary' | 'secondary' | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSourcePicker, setShowSourcePicker] = useState(false);
+  const [selectedFolders, setSelectedFolders] = useState<string[]>(['all_photos']);
 
   useEffect(() => {
     loadUserFlags();
     loadSettings();
+    loadUserProfile();
   }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      const profile = await SupabaseAuth.getProfile();
+      setUserProfile(profile);
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
 
   const loadUserFlags = async () => {
     try {
@@ -58,6 +75,30 @@ export default function SettingsScreen() {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
     await MediaStorage.saveSettings(newSettings);
+  };
+
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await SupabaseAuth.signOut();
+              setUserProfile(null);
+              Alert.alert('Signed Out', 'You have been signed out successfully.');
+            } catch (error) {
+              console.error('Sign out error:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleColorChange = async (colorType: 'primary' | 'secondary', color: string) => {
@@ -163,8 +204,61 @@ export default function SettingsScreen() {
       </Animated.View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Subscription Status */}
+        {/* User Profile */}
+        <Animated.View entering={FadeInUp.delay(150)} style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          
+          {userProfile ? (
+            <View style={styles.profileCard}>
+              <View style={styles.profileHeader}>
+                <User size={24} color={lightTheme.colors.primary} />
+                <View style={styles.profileInfo}>
+                  <Text style={styles.profileName}>
+                    {userProfile.full_name || 'User'}
+                  </Text>
+                  <Text style={styles.profileEmail}>{userProfile.email}</Text>
+                </View>
+                <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+                  <LogOut size={16} color={lightTheme.colors.error} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={styles.signInCard}
+              onPress={() => setShowAuthModal(true)}
+            >
+              <User size={24} color={lightTheme.colors.textSecondary} />
+              <View style={styles.signInInfo}>
+                <Text style={styles.signInTitle}>Sign In</Text>
+                <Text style={styles.signInDescription}>
+                  Sync your albums and access premium features
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        </Animated.View>
+
+        {/* Source Management */}
         <Animated.View entering={FadeInUp.delay(200)} style={styles.section}>
+          <Text style={styles.sectionTitle}>Photo Sources</Text>
+          
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => setShowSourcePicker(true)}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Manage Photo Sources</Text>
+              <Text style={styles.settingDescription}>
+                Choose which folders SnapSort should organize
+              </Text>
+            </View>
+            <Folder size={20} color={lightTheme.colors.primary} />
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Subscription Status */}
+        <Animated.View entering={FadeInUp.delay(250)} style={styles.section}>
           <Text style={styles.sectionTitle}>Premium Features</Text>
           
           <View style={styles.premiumCard}>
@@ -245,7 +339,7 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* App Settings */}
-        <Animated.View entering={FadeInUp.delay(400)} style={styles.section}>
+        <Animated.View entering={FadeInUp.delay(350)} style={styles.section}>
           <Text style={styles.sectionTitle}>App Settings</Text>
           
           <View style={styles.settingItem}>
@@ -292,7 +386,7 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* Data Management */}
-        <Animated.View entering={FadeInUp.delay(500)} style={styles.section}>
+        <Animated.View entering={FadeInUp.delay(400)} style={styles.section}>
           <Text style={styles.sectionTitle}>Data Management</Text>
           
           <TouchableOpacity style={styles.dangerButton} onPress={handleClearData}>
@@ -301,7 +395,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        <Animated.View entering={FadeInUp.delay(600)} style={styles.footer}>
+        <Animated.View entering={FadeInUp.delay(450)} style={styles.footer}>
           <Text style={styles.footerText}>SnapSort v1.0.0</Text>
           <Text style={styles.footerSubtext}>
             Note: RevenueCat integration requires native code and won't work in the web preview.
@@ -332,6 +426,26 @@ export default function SettingsScreen() {
           title={`Choose ${showColorPicker === 'primary' ? 'Primary' : 'Secondary'} Color`}
         />
       )}
+
+      <AuthModal
+        visible={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={() => {
+          setShowAuthModal(false);
+          loadUserProfile();
+        }}
+        initialMode="signin"
+      />
+
+      <SourceFolderPicker
+        visible={showSourcePicker}
+        onClose={() => setShowSourcePicker(false)}
+        onSelect={(folders) => {
+          setSelectedFolders(folders.map(f => f.id));
+          Alert.alert('Sources Updated', `Now managing ${folders.length} photo sources.`);
+        }}
+        selectedFolders={selectedFolders}
+      />
     </SafeAreaView>
   );
 }
@@ -368,6 +482,63 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: lightTheme.colors.text,
     marginBottom: lightTheme.spacing.md,
+  },
+  profileCard: {
+    backgroundColor: lightTheme.colors.surface,
+    borderRadius: lightTheme.borderRadius.lg,
+    padding: lightTheme.spacing.lg,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  profileInfo: {
+    flex: 1,
+    marginLeft: lightTheme.spacing.sm,
+  },
+  profileName: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.text,
+  },
+  profileEmail: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.textSecondary,
+  },
+  signOutButton: {
+    padding: lightTheme.spacing.sm,
+  },
+  signInCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightTheme.colors.surface,
+    borderRadius: lightTheme.borderRadius.lg,
+    padding: lightTheme.spacing.lg,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  signInInfo: {
+    flex: 1,
+    marginLeft: lightTheme.spacing.sm,
+  },
+  signInTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.text,
+  },
+  signInDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.textSecondary,
   },
   premiumCard: {
     backgroundColor: lightTheme.colors.surface,
