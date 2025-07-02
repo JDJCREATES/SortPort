@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
-import { Crown, Unlock, RefreshCw, Trash2, Moon, Sun } from 'lucide-react-native';
+import { Crown, Unlock, RefreshCw, Trash2, Palette, Settings as SettingsIcon } from 'lucide-react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 import { PremiumPrompt } from '../../components/PremiumPrompt';
-import { UserFlags } from '../../types';
+import { ColorPicker } from '../../components/ColorPicker';
+import { UserFlags, AppSettings } from '../../types';
 import { RevenueCatManager } from '../../utils/revenuecat';
 import { MediaStorage } from '../../utils/mediaStorage';
-import { lightTheme } from '../../utils/theme';
+import { lightTheme, updateThemeColors } from '../../utils/theme';
 
 export default function SettingsScreen() {
   const [userFlags, setUserFlags] = useState<UserFlags>({
@@ -13,13 +15,15 @@ export default function SettingsScreen() {
     hasUnlockPack: false,
     isProUser: false,
   });
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<AppSettings>({
     darkMode: false,
     autoSort: false,
     nsfwFilter: true,
     notifications: true,
+    customColors: undefined,
   });
   const [showPremiumPrompt, setShowPremiumPrompt] = useState<'subscription' | 'unlock' | null>(null);
+  const [showColorPicker, setShowColorPicker] = useState<'primary' | 'secondary' | null>(null);
 
   useEffect(() => {
     loadUserFlags();
@@ -40,15 +44,42 @@ export default function SettingsScreen() {
     try {
       const savedSettings = await MediaStorage.loadSettings();
       setSettings(savedSettings);
+      
+      // Apply custom colors if they exist
+      if (savedSettings.customColors) {
+        updateThemeColors(savedSettings.customColors, savedSettings.darkMode);
+      }
     } catch (error) {
       console.error('Error loading settings:', error);
     }
   };
 
-  const updateSetting = async (key: string, value: any) => {
+  const updateSetting = async (key: keyof AppSettings, value: any) => {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
     await MediaStorage.saveSettings(newSettings);
+  };
+
+  const handleColorChange = async (colorType: 'primary' | 'secondary', color: string) => {
+    if (!userFlags.isSubscribed && !userFlags.hasUnlockPack) {
+      Alert.alert(
+        'Premium Feature',
+        'Custom colors require SnapSort Pro or the Unlock Pack.',
+        [
+          { text: 'Cancel' },
+          { text: 'Upgrade', onPress: () => setShowPremiumPrompt('subscription') },
+        ]
+      );
+      return;
+    }
+
+    const newCustomColors = {
+      ...settings.customColors,
+      [colorType]: color,
+    };
+
+    await updateSetting('customColors', newCustomColors);
+    updateThemeColors(newCustomColors, settings.darkMode);
   };
 
   const handleSubscribe = () => {
@@ -120,15 +151,20 @@ export default function SettingsScreen() {
     );
   };
 
+  const canUseColorPicker = userFlags.isSubscribed || userFlags.hasUnlockPack;
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
-      </View>
+      <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
+        <View style={styles.headerLeft}>
+          <SettingsIcon size={24} color={lightTheme.colors.primary} />
+          <Text style={styles.title}>Settings</Text>
+        </View>
+      </Animated.View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Subscription Status */}
-        <View style={styles.section}>
+        <Animated.View entering={FadeInUp.delay(200)} style={styles.section}>
           <Text style={styles.sectionTitle}>Premium Features</Text>
           
           <View style={styles.premiumCard}>
@@ -169,10 +205,47 @@ export default function SettingsScreen() {
             <RefreshCw size={16} color={lightTheme.colors.primary} />
             <Text style={styles.restoreButtonText}>Restore Purchases</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
+
+        {/* Customization */}
+        <Animated.View entering={FadeInUp.delay(300)} style={styles.section}>
+          <Text style={styles.sectionTitle}>Customization</Text>
+          
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Primary Color</Text>
+              <Text style={styles.settingDescription}>
+                {canUseColorPicker ? 'Customize your app\'s primary color' : 'Pro feature - upgrade to customize'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.colorPreview, { backgroundColor: settings.customColors?.primary || lightTheme.colors.primary }]}
+              onPress={() => canUseColorPicker && setShowColorPicker('primary')}
+              disabled={!canUseColorPicker}
+            >
+              <Palette size={16} color="white" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.settingItem}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Secondary Color</Text>
+              <Text style={styles.settingDescription}>
+                {canUseColorPicker ? 'Customize your app\'s secondary color' : 'Pro feature - upgrade to customize'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.colorPreview, { backgroundColor: settings.customColors?.secondary || lightTheme.colors.secondary }]}
+              onPress={() => canUseColorPicker && setShowColorPicker('secondary')}
+              disabled={!canUseColorPicker}
+            >
+              <Palette size={16} color="white" />
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
 
         {/* App Settings */}
-        <View style={styles.section}>
+        <Animated.View entering={FadeInUp.delay(400)} style={styles.section}>
           <Text style={styles.sectionTitle}>App Settings</Text>
           
           <View style={styles.settingItem}>
@@ -216,24 +289,24 @@ export default function SettingsScreen() {
               trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
             />
           </View>
-        </View>
+        </Animated.View>
 
         {/* Data Management */}
-        <View style={styles.section}>
+        <Animated.View entering={FadeInUp.delay(500)} style={styles.section}>
           <Text style={styles.sectionTitle}>Data Management</Text>
           
           <TouchableOpacity style={styles.dangerButton} onPress={handleClearData}>
             <Trash2 size={20} color={lightTheme.colors.error} />
             <Text style={styles.dangerButtonText}>Clear All Data</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
-        <View style={styles.footer}>
+        <Animated.View entering={FadeInUp.delay(600)} style={styles.footer}>
           <Text style={styles.footerText}>SnapSort v1.0.0</Text>
           <Text style={styles.footerSubtext}>
             Note: RevenueCat integration requires native code and won't work in the web preview.
           </Text>
-        </View>
+        </Animated.View>
       </ScrollView>
 
       {showPremiumPrompt && (
@@ -244,6 +317,20 @@ export default function SettingsScreen() {
             onDismiss={() => setShowPremiumPrompt(null)}
           />
         </View>
+      )}
+
+      {showColorPicker && (
+        <ColorPicker
+          visible={!!showColorPicker}
+          onClose={() => setShowColorPicker(null)}
+          onColorSelect={(color) => handleColorChange(showColorPicker, color)}
+          currentColor={
+            showColorPicker === 'primary' 
+              ? settings.customColors?.primary || lightTheme.colors.primary
+              : settings.customColors?.secondary || lightTheme.colors.secondary
+          }
+          title={`Choose ${showColorPicker === 'primary' ? 'Primary' : 'Secondary'} Color`}
+        />
       )}
     </SafeAreaView>
   );
@@ -258,6 +345,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: lightTheme.spacing.lg,
     paddingTop: lightTheme.spacing.lg,
     paddingBottom: lightTheme.spacing.md,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: lightTheme.spacing.sm,
   },
   title: {
     fontSize: 28,
@@ -280,8 +372,13 @@ const styles = StyleSheet.create({
   premiumCard: {
     backgroundColor: lightTheme.colors.surface,
     borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.md,
+    padding: lightTheme.spacing.lg,
     marginBottom: lightTheme.spacing.sm,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   premiumHeader: {
     flexDirection: 'row',
@@ -303,9 +400,9 @@ const styles = StyleSheet.create({
   },
   upgradeButton: {
     backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.sm,
-    paddingVertical: lightTheme.spacing.xs,
-    borderRadius: lightTheme.borderRadius.sm,
+    paddingHorizontal: lightTheme.spacing.md,
+    paddingVertical: lightTheme.spacing.sm,
+    borderRadius: lightTheme.borderRadius.md,
   },
   upgradeButtonText: {
     color: 'white',
@@ -329,8 +426,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: lightTheme.colors.surface,
     borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.md,
+    padding: lightTheme.spacing.lg,
     marginBottom: lightTheme.spacing.sm,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   settingInfo: {
     flex: 1,
@@ -345,6 +447,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: lightTheme.colors.textSecondary,
     marginTop: 2,
+    lineHeight: 18,
+  },
+  colorPreview: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   dangerButton: {
     flexDirection: 'row',
@@ -352,8 +467,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: lightTheme.colors.surface,
     borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.md,
+    padding: lightTheme.spacing.lg,
     gap: lightTheme.spacing.sm,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   dangerButtonText: {
     color: lightTheme.colors.error,
@@ -376,6 +496,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: lightTheme.spacing.xs,
     paddingHorizontal: lightTheme.spacing.lg,
+    lineHeight: 16,
   },
   premiumPromptOverlay: {
     position: 'absolute',

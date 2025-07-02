@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { Plus, Wand2 } from 'lucide-react-native';
-import { AlbumCard } from '../../components/AlbumCard';
+import { Plus, Wand2, TrendingUp } from 'lucide-react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
 import { PictureHackBar } from '../../components/PictureHackBar';
 import { Album } from '../../types';
 import { AlbumUtils } from '../../utils/albumUtils';
@@ -19,7 +20,7 @@ export default function HomeScreen() {
   const loadAlbums = async () => {
     try {
       const smartAlbums = await AlbumUtils.getSmartAlbums();
-      setAlbums(smartAlbums);
+      setAlbums(smartAlbums.slice(0, 6)); // Show only first 6 on home
     } catch (error) {
       console.error('Error loading albums:', error);
     } finally {
@@ -51,40 +52,46 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
+        <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
           <Text style={styles.title}>SnapSort</Text>
           <Text style={styles.subtitle}>AI-powered photo organization</Text>
-        </View>
+        </Animated.View>
 
-        <PictureHackBar onSubmit={handlePictureHack} />
+        <Animated.View entering={FadeInUp.delay(200)}>
+          <PictureHackBar onSubmit={handlePictureHack} />
+        </Animated.View>
 
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Smart Albums</Text>
+          <Animated.View entering={FadeInUp.delay(300)} style={styles.sectionHeader}>
+            <View style={styles.sectionTitleContainer}>
+              <TrendingUp size={20} color={lightTheme.colors.primary} />
+              <Text style={styles.sectionTitle}>Smart Albums</Text>
+            </View>
             <TouchableOpacity style={styles.newSortButton} onPress={handleNewSort}>
               <Plus size={16} color="white" />
               <Text style={styles.newSortButtonText}>New Sort</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
 
           {loading ? (
-            <View style={styles.loadingContainer}>
+            <Animated.View entering={FadeInDown.delay(400)} style={styles.loadingContainer}>
               <Text style={styles.loadingText}>Loading albums...</Text>
-            </View>
+            </Animated.View>
           ) : (
             <View style={styles.albumGrid}>
-              {albums.map((album) => (
-                <AlbumCard
+              {albums.map((album, index) => (
+                <AnimatedAlbumCard
                   key={album.id}
                   album={album}
                   onPress={() => handleAlbumPress(album)}
+                  index={index}
                 />
               ))}
             </View>
           )}
         </View>
 
-        <View style={styles.section}>
+        <Animated.View entering={FadeInUp.delay(500)} style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
           <View style={styles.activityCard}>
             <Wand2 size={20} color={lightTheme.colors.primary} />
@@ -92,7 +99,7 @@ export default function HomeScreen() {
               Try the Picture Hack feature above to sort your photos with AI!
             </Text>
           </View>
-        </View>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -112,9 +119,10 @@ const styles = StyleSheet.create({
     paddingBottom: lightTheme.spacing.md,
   },
   title: {
-    fontSize: 32,
+    fontSize: 36,
     fontFamily: 'Inter-Bold',
     color: lightTheme.colors.text,
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 16,
@@ -124,16 +132,21 @@ const styles = StyleSheet.create({
   },
   section: {
     paddingHorizontal: lightTheme.spacing.lg,
-    marginBottom: lightTheme.spacing.lg,
+    marginBottom: lightTheme.spacing.xl,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: lightTheme.spacing.md,
+    marginBottom: lightTheme.spacing.lg,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: lightTheme.spacing.sm,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontFamily: 'Inter-SemiBold',
     color: lightTheme.colors.text,
   },
@@ -141,10 +154,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.sm,
-    paddingVertical: lightTheme.spacing.xs,
-    borderRadius: lightTheme.borderRadius.md,
+    paddingHorizontal: lightTheme.spacing.md,
+    paddingVertical: lightTheme.spacing.sm,
+    borderRadius: lightTheme.borderRadius.lg,
     gap: lightTheme.spacing.xs,
+    elevation: 2,
+    shadowColor: lightTheme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   newSortButtonText: {
     color: 'white',
@@ -169,14 +187,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: lightTheme.colors.surface,
-    padding: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.md,
-    gap: lightTheme.spacing.sm,
+    padding: lightTheme.spacing.lg,
+    borderRadius: lightTheme.borderRadius.lg,
+    gap: lightTheme.spacing.md,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   activityText: {
     flex: 1,
     fontSize: 14,
     color: lightTheme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
+    lineHeight: 20,
   },
 });

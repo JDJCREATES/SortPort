@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as MediaLibrary from 'expo-media-library';
+import { AppSettings, CustomThemeColors } from '../types';
 
 export class MediaStorage {
   private static SETTINGS_KEY = '@snapsort_settings';
   private static PROCESSED_IMAGES_KEY = '@snapsort_processed';
 
-  static async saveSettings(settings: any): Promise<void> {
+  static async saveSettings(settings: AppSettings): Promise<void> {
     try {
       await AsyncStorage.setItem(this.SETTINGS_KEY, JSON.stringify(settings));
     } catch (error) {
@@ -13,7 +14,7 @@ export class MediaStorage {
     }
   }
 
-  static async loadSettings(): Promise<any> {
+  static async loadSettings(): Promise<AppSettings> {
     try {
       const data = await AsyncStorage.getItem(this.SETTINGS_KEY);
       return data ? JSON.parse(data) : {
@@ -21,10 +22,27 @@ export class MediaStorage {
         autoSort: false,
         nsfwFilter: true,
         notifications: true,
+        customColors: undefined,
       };
     } catch (error) {
       console.error('Error loading settings:', error);
-      return {};
+      return {
+        darkMode: false,
+        autoSort: false,
+        nsfwFilter: true,
+        notifications: true,
+        customColors: undefined,
+      };
+    }
+  }
+
+  static async updateCustomColors(colors: CustomThemeColors): Promise<void> {
+    try {
+      const settings = await this.loadSettings();
+      settings.customColors = colors;
+      await this.saveSettings(settings);
+    } catch (error) {
+      console.error('Error updating custom colors:', error);
     }
   }
 

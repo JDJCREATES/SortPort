@@ -1,17 +1,17 @@
 import { AppTheme } from '../types';
 
-export const lightTheme: AppTheme = {
+export const defaultLightTheme: AppTheme = {
   colors: {
-    primary: '#007AFF',
-    secondary: '#5856D6',
+    primary: '#6366F1',
+    secondary: '#8B5CF6',
     background: '#FFFFFF',
-    surface: '#F2F2F7',
-    text: '#000000',
-    textSecondary: '#8E8E93',
-    border: '#C6C6C8',
-    success: '#34C759',
-    warning: '#FF9500',
-    error: '#FF3B30',
+    surface: '#F8FAFC',
+    text: '#0F172A',
+    textSecondary: '#64748B',
+    border: '#E2E8F0',
+    success: '#10B981',
+    warning: '#F59E0B',
+    error: '#EF4444',
   },
   spacing: {
     xs: 4,
@@ -21,25 +21,25 @@ export const lightTheme: AppTheme = {
     xl: 32,
   },
   borderRadius: {
-    sm: 4,
-    md: 8,
-    lg: 12,
-    xl: 16,
+    sm: 6,
+    md: 12,
+    lg: 16,
+    xl: 24,
   },
 };
 
-export const darkTheme: AppTheme = {
+export const defaultDarkTheme: AppTheme = {
   colors: {
-    primary: '#0A84FF',
-    secondary: '#5E5CE6',
-    background: '#000000',
-    surface: '#1C1C1E',
-    text: '#FFFFFF',
-    textSecondary: '#8E8E93',
-    border: '#38383A',
-    success: '#30D158',
-    warning: '#FF9F0A',
-    error: '#FF453A',
+    primary: '#818CF8',
+    secondary: '#A78BFA',
+    background: '#0F172A',
+    surface: '#1E293B',
+    text: '#F8FAFC',
+    textSecondary: '#94A3B8',
+    border: '#334155',
+    success: '#34D399',
+    warning: '#FBBF24',
+    error: '#F87171',
   },
   spacing: {
     xs: 4,
@@ -49,9 +49,32 @@ export const darkTheme: AppTheme = {
     xl: 32,
   },
   borderRadius: {
-    sm: 4,
-    md: 8,
-    lg: 12,
-    xl: 16,
+    sm: 6,
+    md: 12,
+    lg: 16,
+    xl: 24,
   },
+};
+
+// Export the current theme (will be dynamic based on user settings)
+export let lightTheme = defaultLightTheme;
+export let darkTheme = defaultDarkTheme;
+
+export const updateThemeColors = (customColors: Partial<AppTheme['colors']>, isDark: boolean = false) => {
+  const baseTheme = isDark ? defaultDarkTheme : defaultLightTheme;
+  const updatedTheme = {
+    ...baseTheme,
+    colors: {
+      ...baseTheme.colors,
+      ...customColors,
+    },
+  };
+  
+  if (isDark) {
+    darkTheme = updatedTheme;
+  } else {
+    lightTheme = updatedTheme;
+  }
+  
+  return updatedTheme;
 };

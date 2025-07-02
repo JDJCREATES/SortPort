@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { Search, Filter } from 'lucide-react-native';
-import { AlbumCard } from '../../components/AlbumCard';
+import { Search, Filter, Grid } from 'lucide-react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
+import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
 import { Album } from '../../types';
 import { AlbumUtils } from '../../utils/albumUtils';
 import { lightTheme } from '../../utils/theme';
@@ -58,22 +59,25 @@ export default function AlbumsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>All Albums</Text>
+      <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Grid size={24} color={lightTheme.colors.primary} />
+          <Text style={styles.title}>All Albums</Text>
+        </View>
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.filterButton} onPress={toggleShowLocked}>
-            <Filter size={20} color={lightTheme.colors.textSecondary} />
+            <Filter size={20} color={showLocked ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
           </TouchableOpacity>
         </View>
-      </View>
+      </Animated.View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {loading ? (
-          <View style={styles.loadingContainer}>
+          <Animated.View entering={FadeInUp.delay(200)} style={styles.loadingContainer}>
             <Text style={styles.loadingText}>Loading albums...</Text>
-          </View>
+          </Animated.View>
         ) : filteredAlbums.length === 0 ? (
-          <View style={styles.emptyContainer}>
+          <Animated.View entering={FadeInUp.delay(200)} style={styles.emptyContainer}>
             <Text style={styles.emptyTitle}>No Albums Yet</Text>
             <Text style={styles.emptyText}>
               Use the Picture Hack feature to create your first smart album!
@@ -84,28 +88,29 @@ export default function AlbumsScreen() {
             >
               <Text style={styles.createButtonText}>Create Album</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         ) : (
-          <View style={styles.albumGrid}>
-            {filteredAlbums.map((album) => (
-              <AlbumCard
+          <Animated.View entering={FadeInUp.delay(200)} style={styles.albumGrid}>
+            {filteredAlbums.map((album, index) => (
+              <AnimatedAlbumCard
                 key={album.id}
                 album={album}
                 onPress={() => handleAlbumPress(album)}
                 showLocked={showLocked}
+                index={index}
               />
             ))}
-          </View>
+          </Animated.View>
         )}
 
-        <View style={styles.filterInfo}>
+        <Animated.View entering={FadeInUp.delay(300)} style={styles.filterInfo}>
           <Text style={styles.filterInfoText}>
             {showLocked 
               ? `Showing ${filteredAlbums.length} albums (including locked)`
               : `Showing ${filteredAlbums.length} unlocked albums`
             }
           </Text>
-        </View>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -124,6 +129,11 @@ const styles = StyleSheet.create({
     paddingTop: lightTheme.spacing.lg,
     paddingBottom: lightTheme.spacing.md,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: lightTheme.spacing.sm,
+  },
   title: {
     fontSize: 28,
     fontFamily: 'Inter-Bold',
@@ -137,6 +147,11 @@ const styles = StyleSheet.create({
     padding: lightTheme.spacing.sm,
     backgroundColor: lightTheme.colors.surface,
     borderRadius: lightTheme.borderRadius.md,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   scrollView: {
     flex: 1,
@@ -168,12 +183,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: lightTheme.spacing.lg,
     paddingHorizontal: lightTheme.spacing.lg,
+    lineHeight: 22,
   },
   createButton: {
     backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.lg,
+    paddingHorizontal: lightTheme.spacing.xl,
     paddingVertical: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.md,
+    borderRadius: lightTheme.borderRadius.lg,
+    elevation: 2,
+    shadowColor: lightTheme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   createButtonText: {
     color: 'white',

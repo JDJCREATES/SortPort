@@ -71,45 +71,62 @@ export class AlbumUtils {
   static async getSmartAlbums(): Promise<Album[]> {
     const albums = await this.loadAlbums();
     
-    // Create default smart albums if none exist
+    // Create improved default smart albums if none exist
     if (albums.length === 0) {
       const defaultAlbums: Album[] = [
         {
-          id: 'smart_receipts',
-          name: 'Receipts & Bills',
+          id: 'smart_documents',
+          name: 'Documents & Receipts',
           imageIds: [],
-          tags: ['receipt', 'bill', 'invoice'],
+          tags: ['receipt', 'bill', 'invoice', 'document', 'text'],
           createdAt: Date.now(),
           count: 0,
           thumbnail: '',
         },
         {
           id: 'smart_travel',
-          name: 'Travel Memories',
+          name: 'Travel & Adventures',
           imageIds: [],
-          tags: ['travel', 'vacation', 'trip'],
+          tags: ['travel', 'vacation', 'trip', 'adventure', 'landscape'],
           createdAt: Date.now(),
           count: 0,
           thumbnail: '',
         },
         {
           id: 'smart_screenshots',
-          name: 'Screenshots',
+          name: 'Screenshots & Apps',
           imageIds: [],
-          tags: ['screenshot', 'screen'],
+          tags: ['screenshot', 'screen', 'app', 'interface'],
           createdAt: Date.now(),
           count: 0,
           thumbnail: '',
         },
         {
-          id: 'smart_private',
-          name: 'Private / NSFW',
+          id: 'smart_food',
+          name: 'Food & Dining',
           imageIds: [],
-          tags: ['private', 'nsfw'],
+          tags: ['food', 'meal', 'restaurant', 'cooking', 'dining'],
           createdAt: Date.now(),
           count: 0,
           thumbnail: '',
-          isLocked: true,
+        },
+        {
+          id: 'smart_people',
+          name: 'People & Portraits',
+          imageIds: [],
+          tags: ['people', 'portrait', 'selfie', 'family', 'friends'],
+          createdAt: Date.now(),
+          count: 0,
+          thumbnail: '',
+        },
+        {
+          id: 'smart_nature',
+          name: 'Nature & Outdoors',
+          imageIds: [],
+          tags: ['nature', 'outdoor', 'landscape', 'trees', 'sky', 'animals'],
+          createdAt: Date.now(),
+          count: 0,
+          thumbnail: '',
         },
       ];
       

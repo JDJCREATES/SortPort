@@ -75,6 +75,20 @@ export interface AppTheme {
   };
 }
 
+export interface CustomThemeColors {
+  primary?: string;
+  secondary?: string;
+  accent?: string;
+}
+
+export interface AppSettings {
+  darkMode: boolean;
+  autoSort: boolean;
+  nsfwFilter: boolean;
+  notifications: boolean;
+  customColors?: CustomThemeColors;
+}
+
 export interface RevenueCatProduct {
   identifier: string;
   description: string;
