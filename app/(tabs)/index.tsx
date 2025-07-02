@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { Plus, Wand2, TrendingUp } from 'lucide-react-native';
+import { Plus, Wand as Wand2, TrendingUp } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
 import { PictureHackBar } from '../../components/PictureHackBar';

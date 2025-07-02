@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { Search, Filter, Grid } from 'lucide-react-native';
+import { Search, Filter, Grid2x2 as Grid } from 'lucide-react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
 import { Album } from '../../types';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
-import { Crown, Unlock, RefreshCw, Trash2, Palette, Settings as SettingsIcon } from 'lucide-react-native';
+import { Crown, Clock as Unlock, RefreshCw, Trash2, Palette, Settings as SettingsIcon } from 'lucide-react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { PremiumPrompt } from '../../components/PremiumPrompt';
 import { ColorPicker } from '../../components/ColorPicker';
