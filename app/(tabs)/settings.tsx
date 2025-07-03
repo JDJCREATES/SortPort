@@ -96,12 +96,22 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await SupabaseAuth.signOut();
+              // Always clear the local user profile state first
               setUserProfile(null);
+              
+              // Attempt to sign out from Supabase
+              await SupabaseAuth.signOut();
+              
               Alert.alert('Signed Out', 'You have been signed out successfully.');
             } catch (error: any) {
               console.error('Sign out error:', error);
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
+              
+              // Even if sign out fails, we've already cleared the local state
+              // This ensures the UI reflects the signed-out state
+              Alert.alert(
+                'Session Cleared', 
+                'Your local session has been cleared. If you continue to experience issues, please restart the app.'
+              );
             }
           },
         },
