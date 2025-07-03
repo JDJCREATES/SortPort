@@ -24,7 +24,7 @@ export function SourceManagementSection({
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Manage Photo Sources</Text>
           <Text style={styles.settingDescription}>
-            Choose which folders SnapSort should organize ({selectedFolders.length} selected)
+            Choose which folders to include in AI sorting ({selectedFolders.length} selected)
           </Text>
         </View>
         <Folder size={20} color={lightTheme.colors.primary} />

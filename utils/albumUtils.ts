@@ -15,17 +15,11 @@ export class AlbumUtils {
   /**
    * Ensure the "All Photos" album exists and is up to date
    */
-  static async ensureAllPhotosAlbumExists(selectedFolders: string[]): Promise<void> {
+  static async ensureAllPhotosAlbumExists(): Promise<void> {
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         console.log('User not authenticated, skipping All Photos album creation');
-        return;
-      }
-
-      // Check if "All Photos" is in selected folders
-      if (!selectedFolders.includes('all_photos')) {
-        console.log('All Photos not in selected folders, skipping');
         return;
       }
 
@@ -42,8 +36,8 @@ export class AlbumUtils {
         return;
       }
 
-      // Load all photo IDs
-      const allPhotoIds = await PhotoLoader.loadAllPhotoIds(selectedFolders);
+      // Load all photo IDs from the entire device
+      const allPhotoIds = await PhotoLoader.loadAllPhotoIds(['all_photos']);
       
       if (allPhotoIds.length === 0) {
         console.log('No photos found, skipping All Photos album');

@@ -47,7 +47,7 @@ export default function HomeScreen() {
   const loadAlbums = async () => {
     try {
       // Ensure All Photos album exists first
-      await AlbumUtils.ensureAllPhotosAlbumExists(settings.selectedFolders);
+      await AlbumUtils.ensureAllPhotosAlbumExists();
       
       const smartAlbums = await AlbumUtils.getSmartAlbums();
       setAlbums(smartAlbums.slice(0, 6)); // Show only first 6 on home

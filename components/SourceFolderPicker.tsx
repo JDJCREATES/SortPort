@@ -70,9 +70,6 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
         } else if (folder.name.toLowerCase().includes('screenshot')) {
           icon = <HardDrive size={20} color={lightTheme.colors.success} />;
           description = 'Screen captures';
-        } else if (folder.id === 'all_photos') {
-          icon = <Smartphone size={20} color={lightTheme.colors.primary} />;
-          description = 'All photos on your device';
         }
 
         return {

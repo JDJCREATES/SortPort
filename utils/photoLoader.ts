@@ -37,7 +37,7 @@ export class PhotoLoader {
 
       let allAssets: MediaLibrary.Asset[] = [];
 
-      if (selectedFolders.includes('all_photos')) {
+      if (selectedFolders.length === 0 || selectedFolders.includes('all_photos')) {
         // Load from all photos
         const assets = await MediaLibrary.getAssetsAsync({
           mediaType: 'photo',
@@ -99,7 +99,7 @@ export class PhotoLoader {
 
       let allPhotoIds: Array<{id: string, uri: string}> = [];
 
-      if (selectedFolders.includes('all_photos')) {
+      if (selectedFolders.length === 0 || selectedFolders.includes('all_photos')) {
         // Load all photos with pagination
         let after: string | undefined;
         const batchSize = 1000;
@@ -236,16 +236,8 @@ export class PhotoLoader {
         }))
       );
 
-      // Add "All Photos" option
-      const allPhotosAssets = await MediaLibrary.getAssetsAsync({
-        mediaType: 'photo',
-        first: 1,
-      });
-
-      return [
-        { id: 'all_photos', name: 'All Photos', count: allPhotosAssets.totalCount },
-        ...folders,
-      ];
+      // Return only actual device folders (no "All Photos" option)
+      return folders;
     } catch (error) {
       console.error('Error getting available folders:', error);
       return [];
