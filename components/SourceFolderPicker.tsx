@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
     backgroundColor: lightTheme.colors.background,
     borderTopLeftRadius: lightTheme.borderRadius.xl,
     borderTopRightRadius: lightTheme.borderRadius.xl,
-    maxHeight: '85%',
+    minHeight: '85%',
   },
   header: {
     flexDirection: 'row',
