@@ -87,18 +87,34 @@ export class SupabaseAuth {
     try {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (error) {
-        // Check if the error indicates a missing session rather than a real problem
-        if (error.name === 'AuthApiError' && error.message === 'Auth session missing!') {
-          console.log('Auth session missing, treating as no user logged in.');
-          return null; // Return null if session is missing
+        // Handle different types of auth errors appropriately
+        if (error.name === 'AuthApiError' && error.message?.includes('Auth session missing')) {
+          // This is expected when no user is logged in
+          return null;
         }
-        console.error('Get current user error:', error);
-        throw error; // Re-throw other errors
+        
+        // For other auth errors, provide more context
+        if (error.message?.includes('Invalid API key')) {
+          throw new Error('Authentication service configuration error. Please check your Supabase configuration.');
+        }
+        
+        if (error.message?.includes('network') || error.message?.includes('fetch')) {
+          throw new Error('Network error while checking authentication. Please check your internet connection.');
+        }
+        
+        // For any other errors, throw with original message but add context
+        throw new Error(`Authentication check failed: ${error.message}`);
       }
-      return user; // user can be null if no session, but no error was thrown
+      return user;
     } catch (error) {
-      console.error('Failed to get current user:', error);
-      throw error; // Catch and re-throw any unexpected errors
+      // If it's already our custom error, re-throw it
+      if (error instanceof Error && error.message.includes('Authentication')) {
+        throw error;
+      }
+      
+      // For unexpected errors, wrap them
+      console.error('Unexpected error in getCurrentUser:', error);
+      throw new Error('Unexpected authentication error. Please try again.');
     }
   }
 
