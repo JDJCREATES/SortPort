@@ -25,6 +25,7 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
   const [folders, setFolders] = useState<SourceFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [tempSelected, setTempSelected] = useState<string[]>(selectedFolders);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -38,77 +39,56 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
 
   const loadFolders = async () => {
     setLoading(true);
+    setError(null);
     try {
       if (Platform.OS === 'web') {
-        // Mock folders for web demo
-        const mockFolders: SourceFolder[] = [
-          {
-            id: 'all_photos',
-            name: 'All Photos',
-            count: 1247,
-            icon: <Smartphone size={20} color={lightTheme.colors.primary} />,
-            description: 'All photos on your device'
-          },
-          {
-            id: 'camera',
-            name: 'Camera',
-            count: 892,
-            icon: <Camera size={20} color={lightTheme.colors.secondary} />,
-            description: 'Photos taken with camera'
-          },
-          {
-            id: 'downloads',
-            name: 'Downloads',
-            count: 156,
-            icon: <Download size={20} color={lightTheme.colors.warning} />,
-            description: 'Downloaded images'
-          },
-          {
-            id: 'screenshots',
-            name: 'Screenshots',
-            count: 234,
-            icon: <HardDrive size={20} color={lightTheme.colors.success} />,
-            description: 'Screen captures'
-          },
-        ];
-        setFolders(mockFolders);
-      } else {
-        // Real implementation for native platforms
-        const availableFolders = await PhotoLoader.getAvailableFolders();
-        
-        const folderData: SourceFolder[] = availableFolders.map((folder) => {
-          let icon = <Folder size={20} color={lightTheme.colors.primary} />;
-          let description = `${folder.count} photos`;
-
-          // Assign specific icons based on folder name
-          if (folder.name.toLowerCase().includes('camera')) {
-            icon = <Camera size={20} color={lightTheme.colors.secondary} />;
-            description = 'Photos taken with camera';
-          } else if (folder.name.toLowerCase().includes('download')) {
-            icon = <Download size={20} color={lightTheme.colors.warning} />;
-            description = 'Downloaded images';
-          } else if (folder.name.toLowerCase().includes('screenshot')) {
-            icon = <HardDrive size={20} color={lightTheme.colors.success} />;
-            description = 'Screen captures';
-          } else if (folder.id === 'all_photos') {
-            icon = <Smartphone size={20} color={lightTheme.colors.primary} />;
-            description = 'All photos on your device';
-          }
-
-          return {
-            id: folder.id,
-            name: folder.name,
-            count: folder.count,
-            icon,
-            description,
-          };
-        });
-
-        setFolders(folderData);
+        // Web cannot access device folders
+        setError('Photo folder access is not available on web. This feature requires a native mobile app.');
+        setFolders([]);
+        return;
       }
-    } catch (error) {
+
+      const availableFolders = await PhotoLoader.getAvailableFolders();
+      
+      if (availableFolders.length === 0) {
+        setError('No photo folders found. Please ensure you have photos on your device and have granted photo library permissions.');
+        setFolders([]);
+        return;
+      }
+      
+      const folderData: SourceFolder[] = availableFolders.map((folder) => {
+        let icon = <Folder size={20} color={lightTheme.colors.primary} />;
+        let description = `${folder.count} photos`;
+
+        // Assign specific icons based on folder name
+        if (folder.name.toLowerCase().includes('camera')) {
+          icon = <Camera size={20} color={lightTheme.colors.secondary} />;
+          description = 'Photos taken with camera';
+        } else if (folder.name.toLowerCase().includes('download')) {
+          icon = <Download size={20} color={lightTheme.colors.warning} />;
+          description = 'Downloaded images';
+        } else if (folder.name.toLowerCase().includes('screenshot')) {
+          icon = <HardDrive size={20} color={lightTheme.colors.success} />;
+          description = 'Screen captures';
+        } else if (folder.id === 'all_photos') {
+          icon = <Smartphone size={20} color={lightTheme.colors.primary} />;
+          description = 'All photos on your device';
+        }
+
+        return {
+          id: folder.id,
+          name: folder.name,
+          count: folder.count,
+          icon,
+          description,
+        };
+      });
+
+      setFolders(folderData);
+    } catch (error: any) {
       console.error('Error loading folders:', error);
-      Alert.alert('Error', 'Failed to load photo folders');
+      setError(error.message || 'Failed to load photo folders. Please check your permissions and try again.');
+      setFolders([]);
     } finally {
       setLoading(false);
     }
@@ -138,6 +118,10 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
     }
   };
 
+  const handleRetry = () => {
+    loadFolders();
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.overlay}>
@@ -149,21 +133,39 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
             </TouchableOpacity>
           </View>
 
-          <View style={styles.controls}>
-            <TouchableOpacity onPress={handleSelectAll} style={styles.selectAllButton}>
-              <Text style={styles.selectAllText}>
-                {tempSelected.length === folders.length ? 'Deselect All' : 'Select All'}
+          {!error && folders.length > 0 && (
+            <View style={styles.controls}>
+              <TouchableOpacity onPress={handleSelectAll} style={styles.selectAllButton}>
+                <Text style={styles.selectAllText}>
+                  {tempSelected.length === folders.length ? 'Deselect All' : 'Select All'}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.selectedCount}>
+                {tempSelected.length} of {folders.length} selected
               </Text>
-            </TouchableOpacity>
-            <Text style={styles.selectedCount}>
-              {tempSelected.length} of {folders.length} selected
-            </Text>
-          </View>
+            </View>
+          )}
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             {loading ? (
               <Animated.View entering={FadeInDown.delay(200)} style={styles.loadingContainer}>
                 <Text style={styles.loadingText}>Loading photo folders...</Text>
+              </Animated.View>
+            ) : error ? (
+              <Animated.View entering={FadeInDown.delay(200)} style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+                {Platform.OS !== 'web' && (
+                  <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+                    <Text style={styles.retryButtonText}>Retry</Text>
+                  </TouchableOpacity>
+                )}
+              </Animated.View>
+            ) : folders.length === 0 ? (
+              <Animated.View entering={FadeInDown.delay(200)} style={styles.emptyContainer}>
+                <Text style={styles.emptyTitle}>No Photo Folders Found</Text>
+                <Text style={styles.emptyText}>
+                  Make sure you have photos on your device and have granted photo library permissions.
+                </Text>
               </Animated.View>
             ) : (
               folders.map((folder, index) => (
@@ -207,10 +209,10 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
             <TouchableOpacity 
               style={[
                 styles.confirmButton,
-                tempSelected.length === 0 && styles.confirmButtonDisabled
+                (tempSelected.length === 0 || error) && styles.confirmButtonDisabled
               ]}
               onPress={handleConfirm}
-              disabled={tempSelected.length === 0}
+              disabled={tempSelected.length === 0 || !!error}
             >
               <Text style={styles.confirmButtonText}>
                 Apply ({tempSelected.length})
@@ -284,6 +286,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: lightTheme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
+  },
+  errorContainer: {
+    paddingVertical: lightTheme.spacing.xl,
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    color: lightTheme.colors.error,
+    fontFamily: 'Inter-Regular',
+    textAlign: 'center',
+    marginBottom: lightTheme.spacing.md,
+    lineHeight: 22,
+  },
+  retryButton: {
+    backgroundColor: lightTheme.colors.primary,
+    paddingHorizontal: lightTheme.spacing.lg,
+    paddingVertical: lightTheme.spacing.sm,
+    borderRadius: lightTheme.borderRadius.md,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+  },
+  emptyContainer: {
+    paddingVertical: lightTheme.spacing.xl,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.text,
+    marginBottom: lightTheme.spacing.sm,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: lightTheme.colors.textSecondary,
+    fontFamily: 'Inter-Regular',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   folderItem: {
     flexDirection: 'row',

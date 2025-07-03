@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Wand as Wand2, Save } from 'lucide-react-native';
+import { ArrowLeft, Wand as Wand2, Save, AlertCircle } from 'lucide-react-native';
 import { PictureHackBar } from '../components/PictureHackBar';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { AlbumCard } from '../components/AlbumCard';
@@ -22,6 +22,7 @@ export default function NewSortScreen() {
   const [results, setResults] = useState<AlbumOutput | null>(null);
   const [photos, setPhotos] = useState<ImageMeta[]>([]);
   const [currentPrompt, setCurrentPrompt] = useState(initialPrompt);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadPhotos();
@@ -32,17 +33,23 @@ export default function NewSortScreen() {
 
   const loadPhotos = async () => {
     try {
+      setError(null);
       const recentPhotos = await PhotoLoader.loadRecentPhotos(50);
       setPhotos(recentPhotos);
-    } catch (error) {
+      
+      if (recentPhotos.length === 0) {
+        setError('No photos found. Please ensure you have photos in your gallery and have granted photo library permissions.');
+      }
+    } catch (error: any) {
       console.error('Error loading photos:', error);
-      Alert.alert('Error', 'Failed to load photos. Please check permissions.');
+      setError(error.message || 'Failed to load photos. Please check permissions.');
+      setPhotos([]);
     }
   };
 
   const handleSort = async (prompt: string) => {
     if (photos.length === 0) {
-      Alert.alert('No Photos', 'No photos found to sort. Make sure you have photos in your gallery.');
+      Alert.alert('No Photos', 'No photos found to sort. Please ensure you have photos in your gallery and have granted photo library permissions.');
       return;
     }
 
@@ -51,6 +58,7 @@ export default function NewSortScreen() {
     setProgress(0);
     setCurrentMessage('Initializing AI sorting...');
     setResults(null);
+    setError(null);
 
     try {
       // Get user flags
@@ -98,12 +106,13 @@ export default function NewSortScreen() {
         setIsProcessing(false);
       }, 1000);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sorting photos:', error);
       setIsProcessing(false);
+      setError(error.message || 'Failed to sort photos. Please check your API configuration.');
       Alert.alert(
         'Sorting Failed',
-        'There was an error sorting your photos. Please try again or check your API key configuration.'
+        error.message || 'There was an error sorting your photos. Please check your OpenAI API key configuration and try again.'
       );
     }
   };
@@ -159,6 +168,10 @@ export default function NewSortScreen() {
     );
   };
 
+  const handleRetryLoadPhotos = () => {
+    loadPhotos();
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -182,7 +195,7 @@ export default function NewSortScreen() {
           <PictureHackBar 
             onSubmit={handleSort}
             placeholder="Sort my vacation photos, receipts, screenshots..."
-            disabled={isProcessing}
+            disabled={isProcessing || photos.length === 0}
           />
 
           {currentPrompt && !isProcessing && (
@@ -192,6 +205,20 @@ export default function NewSortScreen() {
             </View>
           )}
         </View>
+
+        {error && (
+          <View style={styles.errorSection}>
+            <View style={styles.errorContainer}>
+              <AlertCircle size={20} color={lightTheme.colors.error} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+            {photos.length === 0 && (
+              <TouchableOpacity style={styles.retryButton} onPress={handleRetryLoadPhotos}>
+                <Text style={styles.retryButtonText}>Retry Loading Photos</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {results && !isProcessing && (
           <View style={styles.resultsSection}>
@@ -235,7 +262,7 @@ export default function NewSortScreen() {
           </View>
         )}
 
-        {!results && !isProcessing && (
+        {!results && !isProcessing && !error && photos.length > 0 && (
           <View style={styles.welcomeSection}>
             <Text style={styles.welcomeTitle}>Welcome to AI Sorting!</Text>
             <Text style={styles.welcomeText}>
@@ -247,6 +274,7 @@ export default function NewSortScreen() {
             <Text style={styles.welcomeText}>
               • Preview results before saving to your collection
             </Text>
+            
             <View style={styles.examplePrompts}>
               <Text style={styles.exampleTitle}>Example prompts:</Text>
               <TouchableOpacity 
@@ -349,6 +377,37 @@ const styles = StyleSheet.create({
     color: lightTheme.colors.text,
     fontFamily: 'Inter-Regular',
     fontStyle: 'italic',
+  },
+  errorSection: {
+    padding: lightTheme.spacing.lg,
+    paddingTop: 0,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${lightTheme.colors.error}15`,
+    borderRadius: lightTheme.borderRadius.md,
+    padding: lightTheme.spacing.md,
+    gap: lightTheme.spacing.sm,
+    marginBottom: lightTheme.spacing.md,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    color: lightTheme.colors.error,
+    fontFamily: 'Inter-Regular',
+    lineHeight: 20,
+  },
+  retryButton: {
+    backgroundColor: lightTheme.colors.primary,
+    borderRadius: lightTheme.borderRadius.md,
+    paddingVertical: lightTheme.spacing.md,
+    alignItems: 'center',
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
   },
   resultsSection: {
     padding: lightTheme.spacing.lg,

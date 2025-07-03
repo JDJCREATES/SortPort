@@ -7,8 +7,8 @@ export class PhotoLoader {
   static async requestPermissions(): Promise<boolean> {
     try {
       if (Platform.OS === 'web') {
-        // Web doesn't need media library permissions
-        return true;
+        // Web doesn't need media library permissions but can't access photos
+        return false;
       }
       
       const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -22,8 +22,8 @@ export class PhotoLoader {
   static async loadRecentPhotos(limit: number = 100): Promise<ImageMeta[]> {
     try {
       if (Platform.OS === 'web') {
-        // For web demo, return mock photos with Pexels URLs
-        return this.getMockPhotos(limit);
+        // Web cannot access device photos - return empty array
+        return [];
       }
 
       const hasPermission = await this.requestPermissions();
@@ -81,38 +81,8 @@ export class PhotoLoader {
       }));
     } catch (error) {
       console.error('Error loading photos:', error);
-      return this.getMockPhotos(Math.min(limit, 20)); // Fallback to mock photos
+      return []; // Return empty array instead of mock data
     }
-  }
-
-  private static getMockPhotos(count: number): ImageMeta[] {
-    const pexelsPhotos = [
-      'https://images.pexels.com/photos/2387793/pexels-photo-2387793.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1591373/pexels-photo-1591373.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/2850287/pexels-photo-2850287.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1624496/pexels-photo-1624496.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1766604/pexels-photo-1766604.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1308624/pexels-photo-1308624.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1092644/pexels-photo-1092644.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1640772/pexels-photo-1640772.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1366919/pexels-photo-1366919.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1366957/pexels-photo-1366957.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1366942/pexels-photo-1366942.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1366944/pexels-photo-1366944.jpeg?auto=compress&cs=tinysrgb&w=800',
-      'https://images.pexels.com/photos/1366945/pexels-photo-1366945.jpeg?auto=compress&cs=tinysrgb&w=800',
-    ];
-
-    return Array.from({ length: count }, (_, index) => ({
-      id: `mock_${index}`,
-      uri: pexelsPhotos[index % pexelsPhotos.length],
-      filename: `photo_${index}.jpg`,
-      width: 800,
-      height: 600,
-      creationTime: Date.now() - (index * 24 * 60 * 60 * 1000),
-      modificationTime: Date.now() - (index * 24 * 60 * 60 * 1000),
-    }));
   }
 
   static async getPhotoBase64(uri: string): Promise<string> {
@@ -152,13 +122,8 @@ export class PhotoLoader {
   static async getAvailableFolders(): Promise<Array<{id: string, name: string, count: number}>> {
     try {
       if (Platform.OS === 'web') {
-        // Return mock folders for web
-        return [
-          { id: 'all_photos', name: 'All Photos', count: 1247 },
-          { id: 'camera', name: 'Camera', count: 892 },
-          { id: 'downloads', name: 'Downloads', count: 156 },
-          { id: 'screenshots', name: 'Screenshots', count: 234 },
-        ];
+        // Web cannot access device folders - return empty array
+        return [];
       }
 
       const hasPermission = await this.requestPermissions();

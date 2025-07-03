@@ -24,9 +24,9 @@ export class LangChainAgent {
   }
 
   async analyzeImage(base64: string, imageId: string): Promise<LangChainResult> {
-    // If no API key or running on web, return mock analysis
-    if (!this.model || Platform.OS === 'web' || !this.apiKey || this.apiKey === 'your_openai_api_key_here') {
-      return this.getMockAnalysis(imageId);
+    // If no API key or model not initialized, throw error
+    if (!this.model || !this.apiKey || this.apiKey === 'your_openai_api_key_here') {
+      throw new Error('OpenAI API key not configured. Please add your API key to use AI analysis.');
     }
 
     try {
@@ -77,33 +77,8 @@ export class LangChainAgent {
       };
     } catch (error) {
       console.error('Error analyzing image:', error);
-      return this.getMockAnalysis(imageId);
+      throw error;
     }
-  }
-
-  private getMockAnalysis(imageId: string): LangChainResult {
-    const mockCategories = ['travel', 'food', 'screenshots', 'receipts', 'people', 'nature', 'documents'];
-    const mockTags = [
-      ['vacation', 'outdoor', 'scenic'],
-      ['delicious', 'restaurant', 'meal'],
-      ['app', 'interface', 'mobile'],
-      ['shopping', 'expense', 'bill'],
-      ['portrait', 'friend', 'family'],
-      ['landscape', 'trees', 'sky'],
-      ['text', 'paper', 'important']
-    ];
-
-    const categoryIndex = Math.floor(Math.random() * mockCategories.length);
-    const category = mockCategories[categoryIndex];
-    
-    return {
-      id: imageId,
-      description: `Mock analysis for ${category} image`,
-      category,
-      nsfwScore: Math.random() * 0.3, // Keep NSFW scores low for demo
-      tags: mockTags[categoryIndex] || ['demo', 'mock'],
-      confidence: 0.7 + Math.random() * 0.3,
-    };
   }
 
   async batchAnalyzeImages(
@@ -119,18 +94,14 @@ export class LangChainAgent {
         results.push(result);
         onProgress?.(i + 1, images.length);
         
-        // Add delay to avoid rate limiting (only for real API calls)
-        if (this.model && i < images.length - 1) {
+        // Add delay to avoid rate limiting
+        if (i < images.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 500));
-        } else {
-          // Faster processing for mock data
-          await new Promise(resolve => setTimeout(resolve, 100));
         }
       } catch (error) {
         console.error(`Error analyzing image ${image.id}:`, error);
-        const mockResult = this.getMockAnalysis(image.id);
-        results.push(mockResult);
         onProgress?.(i + 1, images.length);
+        // Continue processing other images instead of failing completely
       }
     }
 
@@ -211,8 +182,12 @@ export class LangChainAgent {
     flags: UserFlags,
     onProgress?: (completed: number, total: number) => void
   ): Promise<AlbumOutput> {
+    if (images.length === 0) {
+      throw new Error('No photos available to sort. Please ensure you have photos in your gallery and have granted photo library permissions.');
+    }
+
     try {
-      // Limit to prevent overwhelming the demo
+      // Limit to prevent overwhelming the API
       const limitedImages = images.slice(0, 20);
       
       // Convert images to base64
@@ -239,8 +214,16 @@ export class LangChainAgent {
 
       const validImages = base64Images.filter(img => img !== null) as Array<{id: string, base64: string}>;
 
+      if (validImages.length === 0) {
+        throw new Error('Failed to process any images. Please check your internet connection and try again.');
+      }
+
       // Analyze images
       const results = await this.batchAnalyzeImages(validImages, onProgress);
+
+      if (results.length === 0) {
+        throw new Error('AI analysis failed. Please check your OpenAI API key configuration.');
+      }
 
       // Filter NSFW if needed
       const filteredResults = this.filterNSFW(results, flags.hasUnlockPack);
