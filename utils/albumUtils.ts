@@ -43,7 +43,7 @@ export class AlbumUtils {
       }
 
       // Load all photo IDs
-      const allPhotoIds = await PhotoLoader.loadAllPhotoIds();
+      const allPhotoIds = await PhotoLoader.loadAllPhotoIds(selectedFolders);
       
       if (allPhotoIds.length === 0) {
         console.log('No photos found, skipping All Photos album');

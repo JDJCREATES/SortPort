@@ -1,11 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
-import { Crown, Clock as Unlock, RefreshCw, Trash2, Palette, Settings as SettingsIcon, LogOut, User, Folder, LogIn } from 'lucide-react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert } from 'react-native';
+import { Settings as SettingsIcon } from 'lucide-react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { router } from 'expo-router';
 import { SubscriptionModal } from '../../components/SubscriptionModal';
 import { ColorPicker } from '../../components/ColorPicker';
 import { AuthModal } from '../../components/AuthModal';
 import { SourceFolderPicker } from '../../components/SourceFolderPicker';
+import { AccountSection } from '../../components/settings/AccountSection';
+import { SourceManagementSection } from '../../components/settings/SourceManagementSection';
+import { PremiumFeaturesSection } from '../../components/settings/PremiumFeaturesSection';
+import { CustomizationSection } from '../../components/settings/CustomizationSection';
+import { AppSettingsSection } from '../../components/settings/AppSettingsSection';
+import { DataManagementSection } from '../../components/settings/DataManagementSection';
 import { UserFlags, AppSettings } from '../../types';
 import { RevenueCatManager } from '../../utils/revenuecat';
 import { MediaStorage } from '../../utils/mediaStorage';
@@ -85,40 +92,6 @@ export default function SettingsScreen() {
     await MediaStorage.saveSettings(newSettings);
   };
 
-  const handleSignOut = async () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Always clear the local user profile state first
-              setUserProfile(null);
-              
-              // Attempt to sign out from Supabase
-              await SupabaseAuth.signOut();
-              
-              Alert.alert('Signed Out', 'You have been signed out successfully.');
-            } catch (error: any) {
-              console.error('Sign out error:', error);
-              
-              // Even if sign out fails, we've already cleared the local state
-              // This ensures the UI reflects the signed-out state
-              Alert.alert(
-                'Session Cleared', 
-                'Your local session has been cleared. If you continue to experience issues, please restart the app.'
-              );
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const handleColorChange = async (colorType: 'primary' | 'secondary', color: string) => {
     if (!userFlags.isSubscribed && !userFlags.hasUnlockPack) {
       setShowSubscriptionModal(true);
@@ -189,8 +162,6 @@ export default function SettingsScreen() {
     );
   };
 
-  const canUseColorPicker = userFlags.isSubscribed || userFlags.hasUnlockPack;
-
   return (
     <SafeAreaView style={styles.container}>
       <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
@@ -201,220 +172,41 @@ export default function SettingsScreen() {
       </Animated.View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* User Profile */}
-        <Animated.View entering={FadeInUp.delay(150)} style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          
-          {isLoadingProfile ? (
-            <View style={styles.loadingCard}>
-              <Text style={styles.loadingText}>Loading account...</Text>
-            </View>
-          ) : userProfile ? (
-            <View style={styles.profileCard}>
-              <View style={styles.profileHeader}>
-                <User size={24} color={lightTheme.colors.primary} />
-                <View style={styles.profileInfo}>
-                  <Text style={styles.profileName}>
-                    {userProfile.full_name || 'User'}
-                  </Text>
-                  <Text style={styles.profileEmail}>{userProfile.email}</Text>
-                </View>
-                <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-                  <LogOut size={16} color={lightTheme.colors.error} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity 
-              style={styles.signInCard}
-              onPress={() => setShowAuthModal(true)}
-            >
-              <LogIn size={24} color={lightTheme.colors.primary} />
-              <View style={styles.signInInfo}>
-                <Text style={styles.signInTitle}>Sign In to SnapSort</Text>
-                <Text style={styles.signInDescription}>
-                  Sync your albums across devices and access premium features
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
-        </Animated.View>
+        <AccountSection
+          userProfile={userProfile}
+          isLoadingProfile={isLoadingProfile}
+          setUserProfile={setUserProfile}
+          setShowAuthModal={setShowAuthModal}
+        />
 
-        {/* Source Management */}
-        <Animated.View entering={FadeInUp.delay(200)} style={styles.section}>
-          <Text style={styles.sectionTitle}>Photo Sources</Text>
-          
-          <TouchableOpacity 
-            style={styles.settingItem}
-            onPress={() => setShowSourcePicker(true)}
-          >
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Manage Photo Sources</Text>
-              <Text style={styles.settingDescription}>
-                Choose which folders SnapSort should organize ({selectedFolders.length} selected)
-              </Text>
-            </View>
-            <Folder size={20} color={lightTheme.colors.primary} />
-          </TouchableOpacity>
-        </Animated.View>
+        <SourceManagementSection
+          selectedFolders={selectedFolders}
+          setShowSourcePicker={setShowSourcePicker}
+        />
 
-        {/* Subscription Status */}
-        <Animated.View entering={FadeInUp.delay(250)} style={styles.section}>
-          <Text style={styles.sectionTitle}>Premium Features</Text>
-          
-          <TouchableOpacity 
-            style={styles.premiumCard}
-            onPress={() => setShowSubscriptionModal(true)}
-          >
-            <View style={styles.premiumHeader}>
-              <Crown size={24} color={lightTheme.colors.warning} />
-              <View style={styles.premiumInfo}>
-                <Text style={styles.premiumTitle}>SnapSort Pro</Text>
-                <Text style={styles.premiumStatus}>
-                  {userFlags.isSubscribed ? 'Active' : 'Not Active'}
-                </Text>
-              </View>
-              {!userFlags.isSubscribed && (
-                <View style={styles.upgradeButton}>
-                  <Text style={styles.upgradeButtonText}>$2.99/mo</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
+        <PremiumFeaturesSection
+          userFlags={userFlags}
+          setShowSubscriptionModal={setShowSubscriptionModal}
+          handleRestorePurchases={handleRestorePurchases}
+        />
 
-          <TouchableOpacity 
-            style={styles.premiumCard}
-            onPress={() => setShowSubscriptionModal(true)}
-          >
-            <View style={styles.premiumHeader}>
-              <Unlock size={24} color={lightTheme.colors.primary} />
-              <View style={styles.premiumInfo}>
-                <Text style={styles.premiumTitle}>Unlock Pack</Text>
-                <Text style={styles.premiumStatus}>
-                  {userFlags.hasUnlockPack ? 'Owned' : 'Not Owned'}
-                </Text>
-              </View>
-              {!userFlags.hasUnlockPack && (
-                <View style={styles.upgradeButton}>
-                  <Text style={styles.upgradeButtonText}>$9.99</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
+        <CustomizationSection
+          userFlags={userFlags}
+          settings={settings}
+          setShowColorPicker={setShowColorPicker}
+          setShowSubscriptionModal={setShowSubscriptionModal}
+        />
 
-          <TouchableOpacity style={styles.restoreButton} onPress={handleRestorePurchases}>
-            <RefreshCw size={16} color={lightTheme.colors.primary} />
-            <Text style={styles.restoreButtonText}>Restore Purchases</Text>
-          </TouchableOpacity>
-        </Animated.View>
+        <AppSettingsSection
+          userFlags={userFlags}
+          settings={settings}
+          updateSetting={updateSetting}
+          setShowSubscriptionModal={setShowSubscriptionModal}
+        />
 
-        {/* Customization */}
-        <Animated.View entering={FadeInUp.delay(300)} style={styles.section}>
-          <Text style={styles.sectionTitle}>Customization</Text>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Primary Color</Text>
-              <Text style={styles.settingDescription}>
-                {canUseColorPicker ? 'Customize your app\'s primary color' : 'Premium feature - upgrade to customize'}
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={[styles.colorPreview, { backgroundColor: settings.customColors?.primary || lightTheme.colors.primary }]}
-              onPress={() => canUseColorPicker ? setShowColorPicker('primary') : setShowSubscriptionModal(true)}
-            >
-              <Palette size={16} color="white" />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Secondary Color</Text>
-              <Text style={styles.settingDescription}>
-                {canUseColorPicker ? 'Customize your app\'s secondary color' : 'Premium feature - upgrade to customize'}
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={[styles.colorPreview, { backgroundColor: settings.customColors?.secondary || lightTheme.colors.secondary }]}
-              onPress={() => canUseColorPicker ? setShowColorPicker('secondary') : setShowSubscriptionModal(true)}
-            >
-              <Palette size={16} color="white" />
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-
-        {/* App Settings */}
-        <Animated.View entering={FadeInUp.delay(350)} style={styles.section}>
-          <Text style={styles.sectionTitle}>App Settings</Text>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Dark Mode</Text>
-              <Text style={styles.settingDescription}>Toggle dark theme</Text>
-            </View>
-            <Switch
-              value={settings.darkMode}
-              onValueChange={(value) => updateSetting('darkMode', value)}
-              trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
-            />
-          </View>
-
-          <TouchableOpacity 
-            style={styles.settingItem}
-            onPress={() => !userFlags.isSubscribed && setShowSubscriptionModal(true)}
-          >
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Auto Sort</Text>
-              <Text style={styles.settingDescription}>
-                {userFlags.isSubscribed ? 'Automatically sort new photos' : 'Premium feature - upgrade to enable'}
-              </Text>
-            </View>
-            <Switch
-              value={settings.autoSort && userFlags.isSubscribed}
-              onValueChange={(value) => {
-                if (userFlags.isSubscribed) {
-                  updateSetting('autoSort', value);
-                }
-                // Don't return anything (void)
-              }}
-              disabled={!userFlags.isSubscribed}
-              trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.settingItem}
-            onPress={() => !userFlags.hasUnlockPack && setShowSubscriptionModal(true)}
-          >
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>NSFW Filter</Text>
-              <Text style={styles.settingDescription}>
-                {userFlags.hasUnlockPack ? 'Show/hide NSFW content' : 'Unlock Pack required'}
-              </Text>
-            </View>
-            <Switch
-              value={!settings.nsfwFilter && userFlags.hasUnlockPack}
-              onValueChange={(value) => {
-                if (userFlags.hasUnlockPack) {
-                  updateSetting('nsfwFilter', !value);
-                }
-                // Don't return anything (void)
-              }}
-              disabled={!userFlags.hasUnlockPack}
-              trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
-            />
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Data Management */}
-        <Animated.View entering={FadeInUp.delay(400)} style={styles.section}>
-          <Text style={styles.sectionTitle}>Data Management</Text>
-          
-          <TouchableOpacity style={styles.dangerButton} onPress={handleClearData}>
-            <Trash2 size={20} color={lightTheme.colors.error} />
-            <Text style={styles.dangerButtonText}>Clear All Data</Text>
-          </TouchableOpacity>
-        </Animated.View>
+        <DataManagementSection
+          handleClearData={handleClearData}
+        />
 
         <Animated.View entering={FadeInUp.delay(450)} style={styles.footer}>
           <Text style={styles.footerText}>SnapSort v1.0.0</Text>
@@ -484,203 +276,6 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
     paddingHorizontal: lightTheme.spacing.lg,
-  },
-  section: {
-    marginBottom: lightTheme.spacing.xl,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.md,
-  },
-  loadingCard: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    alignItems: 'center',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: lightTheme.colors.textSecondary,
-    fontFamily: 'Inter-Regular',
-  },
-  profileCard: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  profileInfo: {
-    flex: 1,
-    marginLeft: lightTheme.spacing.sm,
-  },
-  profileName: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-  },
-  profileEmail: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
-  },
-  signOutButton: {
-    padding: lightTheme.spacing.sm,
-  },
-  signInCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    elevation: 2,
-    shadowColor: lightTheme.colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    borderWidth: 1,
-    borderColor: `${lightTheme.colors.primary}20`,
-  },
-  signInInfo: {
-    flex: 1,
-    marginLeft: lightTheme.spacing.md,
-  },
-  signInTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.xs,
-  },
-  signInDescription: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
-    lineHeight: 20,
-  },
-  premiumCard: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    marginBottom: lightTheme.spacing.sm,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  premiumHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  premiumInfo: {
-    flex: 1,
-    marginLeft: lightTheme.spacing.sm,
-  },
-  premiumTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-  },
-  premiumStatus: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
-  },
-  upgradeButton: {
-    backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.md,
-    paddingVertical: lightTheme.spacing.sm,
-    borderRadius: lightTheme.borderRadius.md,
-  },
-  upgradeButtonText: {
-    color: 'white',
-    fontSize: 12,
-    fontFamily: 'Inter-SemiBold',
-  },
-  restoreButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: lightTheme.spacing.sm,
-    gap: lightTheme.spacing.xs,
-  },
-  restoreButtonText: {
-    color: lightTheme.colors.primary,
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-  },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    marginBottom: lightTheme.spacing.sm,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  settingInfo: {
-    flex: 1,
-  },
-  settingLabel: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-  },
-  settingDescription: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
-    marginTop: 2,
-    lineHeight: 18,
-  },
-  colorPreview: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  dangerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    gap: lightTheme.spacing.sm,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  dangerButtonText: {
-    color: lightTheme.colors.error,
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
   },
   footer: {
     alignItems: 'center',

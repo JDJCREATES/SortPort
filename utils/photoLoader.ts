@@ -85,7 +85,7 @@ export class PhotoLoader {
     }
   }
 
-  static async loadAllPhotoIds(): Promise<Array<{id: string, uri: string}>> {
+  static async loadAllPhotoIds(selectedFolders: string[] = ['all_photos']): Promise<Array<{id: string, uri: string}>> {
     try {
       if (Platform.OS === 'web') {
         // Web cannot access device photos
@@ -97,32 +97,79 @@ export class PhotoLoader {
         throw new Error('Photo library permission not granted');
       }
 
-      // Load all photos with pagination
       let allPhotoIds: Array<{id: string, uri: string}> = [];
-      let after: string | undefined;
-      const batchSize = 1000;
 
-      do {
-        const assets = await MediaLibrary.getAssetsAsync({
-          mediaType: 'photo',
-          first: batchSize,
-          after,
-          sortBy: ['creationTime'],
+      if (selectedFolders.includes('all_photos')) {
+        // Load all photos with pagination
+        let after: string | undefined;
+        const batchSize = 1000;
+
+        do {
+          const assets = await MediaLibrary.getAssetsAsync({
+            mediaType: 'photo',
+            first: batchSize,
+            after,
+            sortBy: ['creationTime'],
+          });
+
+          const photoIds = assets.assets.map(asset => ({
+            id: asset.id,
+            uri: asset.uri,
+          }));
+
+          allPhotoIds.push(...photoIds);
+          after = assets.endCursor;
+
+          // Break if we've loaded all photos
+          if (!assets.hasNextPage) {
+            break;
+          }
+        } while (after);
+      } else {
+        // Load from specific albums/folders
+        const albums = await MediaLibrary.getAlbumsAsync({
+          includeSmartAlbums: true,
         });
 
-        const photoIds = assets.assets.map(asset => ({
-          id: asset.id,
-          uri: asset.uri,
-        }));
+        const selectedAlbums = albums.filter(album => 
+          selectedFolders.includes(album.id) || selectedFolders.includes(album.title)
+        );
 
-        allPhotoIds.push(...photoIds);
-        after = assets.endCursor;
+        for (const album of selectedAlbums) {
+          let after: string | undefined;
+          const batchSize = 1000;
 
-        // Break if we've loaded all photos
-        if (!assets.hasNextPage) {
-          break;
+          do {
+            const assets = await MediaLibrary.getAssetsAsync({
+              album: album.id,
+              mediaType: 'photo',
+              first: batchSize,
+              after,
+              sortBy: ['creationTime'],
+            });
+
+            const photoIds = assets.assets.map(asset => ({
+              id: asset.id,
+              uri: asset.uri,
+            }));
+
+            allPhotoIds.push(...photoIds);
+            after = assets.endCursor;
+
+            // Break if we've loaded all photos from this album
+            if (!assets.hasNextPage) {
+              break;
+            }
+          } while (after);
         }
-      } while (after);
+
+        // Remove duplicates (in case photos exist in multiple selected albums)
+        const uniquePhotoIds = new Map();
+        allPhotoIds.forEach(photo => {
+          uniquePhotoIds.set(photo.id, photo);
+        });
+        allPhotoIds = Array.from(uniquePhotoIds.values());
+      }
 
       return allPhotoIds;
     } catch (error) {
