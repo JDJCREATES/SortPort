@@ -13,7 +13,7 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SupabaseAuth } from '../utils/supabase';
-import { AlertCircle, RefreshCw } from 'lucide-react-native';
+import { CircleAlert as AlertCircle, RefreshCw } from 'lucide-react-native';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
