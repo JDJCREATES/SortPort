@@ -88,6 +88,7 @@ export interface AppSettings {
   notifications: boolean;
   customColors?: CustomThemeColors;
   selectedFolders?: string[];
+  lastAutoSortTimestamp?: number;
 }
 
 export interface RevenueCatProduct {

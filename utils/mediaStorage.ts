@@ -24,6 +24,7 @@ export class MediaStorage {
         notifications: true,
         customColors: undefined,
         selectedFolders: ['all_photos'],
+        lastAutoSortTimestamp: 0,
       };
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -34,6 +35,7 @@ export class MediaStorage {
         notifications: true,
         customColors: undefined,
         selectedFolders: ['all_photos'],
+        lastAutoSortTimestamp: 0,
       };
     }
   }
@@ -55,6 +57,16 @@ export class MediaStorage {
       await this.saveSettings(settings);
     } catch (error) {
       console.error('Error updating selected folders:', error);
+    }
+  }
+
+  static async updateLastAutoSortTimestamp(timestamp: number): Promise<void> {
+    try {
+      const settings = await this.loadSettings();
+      settings.lastAutoSortTimestamp = timestamp;
+      await this.saveSettings(settings);
+    } catch (error) {
+      console.error('Error updating last auto-sort timestamp:', error);
     }
   }
 
