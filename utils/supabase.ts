@@ -1,8 +1,13 @@
+import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -25,71 +30,136 @@ export interface UserProfile {
 
 export class SupabaseAuth {
   static async signUp(email: string, password: string, fullName?: string) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
         },
-      },
-    });
+      });
 
-    if (error) throw error;
-    return data;
+      if (error) {
+        console.error('Supabase signup error:', error);
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      console.error('Signup failed:', error);
+      throw error;
+    }
   }
 
   static async signIn(email: string, password: string) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) throw error;
-    return data;
+      if (error) {
+        console.error('Supabase signin error:', error);
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      console.error('Signin failed:', error);
+      throw error;
+    }
   }
 
   static async signOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Supabase signout error:', error);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Signout failed:', error);
+      throw error;
+    }
   }
 
   static async getCurrentUser() {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    return user;
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) {
+        console.error('Get current user error:', error);
+        throw error;
+      }
+      return user;
+    } catch (error) {
+      console.error('Failed to get current user:', error);
+      throw error;
+    }
   }
 
   static async updateProfile(updates: Partial<UserProfile>) {
-    const user = await this.getCurrentUser();
-    if (!user) throw new Error('No authenticated user');
+    try {
+      const user = await this.getCurrentUser();
+      if (!user) throw new Error('No authenticated user');
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', user.id)
-      .select()
-      .single();
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id)
+        .select()
+        .single();
 
-    if (error) throw error;
-    return data;
+      if (error) {
+        console.error('Update profile error:', error);
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+      throw error;
+    }
   }
 
   static async getProfile(): Promise<UserProfile | null> {
-    const user = await this.getCurrentUser();
-    if (!user) return null;
+    try {
+      const user = await this.getCurrentUser();
+      if (!user) {
+        console.log('No authenticated user found');
+        return null;
+      }
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
 
-    if (error && error.code !== 'PGRST116') throw error;
-    return data;
+      if (error && error.code !== 'PGRST116') {
+        console.error('Get profile error:', error);
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      console.error('Failed to get profile:', error);
+      throw error;
+    }
   }
 
   static onAuthStateChange(callback: (event: string, session: any) => void) {
     return supabase.auth.onAuthStateChange(callback);
+  }
+
+  static async getSession() {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error('Get session error:', error);
+        throw error;
+      }
+      return session;
+    } catch (error) {
+      console.error('Failed to get session:', error);
+      throw error;
+    }
   }
 }
