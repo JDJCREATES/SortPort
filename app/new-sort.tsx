@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Wand as Wand2, Save, AlertCircle } from 'lucide-react-native';
+import { ArrowLeft, Wand as Wand2, Save, CircleAlert as AlertCircle } from 'lucide-react-native';
 import { PictureHackBar } from '../components/PictureHackBar';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { AlbumCard } from '../components/AlbumCard';
