@@ -37,6 +37,7 @@ export interface Album {
   isLocked?: boolean;
   thumbnail?: string;
   count: number;
+  isAllPhotosAlbum?: boolean;
 }
 
 export interface SortSession {

@@ -85,6 +85,52 @@ export class PhotoLoader {
     }
   }
 
+  static async loadAllPhotoIds(): Promise<Array<{id: string, uri: string}>> {
+    try {
+      if (Platform.OS === 'web') {
+        // Web cannot access device photos
+        return [];
+      }
+
+      const hasPermission = await this.requestPermissions();
+      if (!hasPermission) {
+        throw new Error('Photo library permission not granted');
+      }
+
+      // Load all photos with pagination
+      let allPhotoIds: Array<{id: string, uri: string}> = [];
+      let after: string | undefined;
+      const batchSize = 1000;
+
+      do {
+        const assets = await MediaLibrary.getAssetsAsync({
+          mediaType: 'photo',
+          first: batchSize,
+          after,
+          sortBy: ['creationTime'],
+        });
+
+        const photoIds = assets.assets.map(asset => ({
+          id: asset.id,
+          uri: asset.uri,
+        }));
+
+        allPhotoIds.push(...photoIds);
+        after = assets.endCursor;
+
+        // Break if we've loaded all photos
+        if (!assets.hasNextPage) {
+          break;
+        }
+      } while (after);
+
+      return allPhotoIds;
+    } catch (error) {
+      console.error('Error loading all photo IDs:', error);
+      return [];
+    }
+  }
+
   static async getPhotoBase64(uri: string): Promise<string> {
     try {
       const response = await fetch(uri);

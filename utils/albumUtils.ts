@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { Album, SortSession } from '../types';
+import { PhotoLoader } from './photoLoader';
 
 // Helper function to generate a UUID
 function generateUUID(): string {
@@ -12,6 +13,104 @@ function generateUUID(): string {
 
 export class AlbumUtils {
   /**
+   * Ensure the "All Photos" album exists and is up to date
+   */
+  static async ensureAllPhotosAlbumExists(selectedFolders: string[]): Promise<void> {
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.log('User not authenticated, skipping All Photos album creation');
+        return;
+      }
+
+      // Check if "All Photos" is in selected folders
+      if (!selectedFolders.includes('all_photos')) {
+        console.log('All Photos not in selected folders, skipping');
+        return;
+      }
+
+      // Load existing albums
+      const { data: existingAlbums, error: loadError } = await supabase
+        .from('albums')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_all_photos_album', true)
+        .limit(1);
+
+      if (loadError) {
+        console.error('Error loading existing All Photos album:', loadError);
+        return;
+      }
+
+      // Load all photo IDs
+      const allPhotoIds = await PhotoLoader.loadAllPhotoIds();
+      
+      if (allPhotoIds.length === 0) {
+        console.log('No photos found, skipping All Photos album');
+        return;
+      }
+
+      const imageIds = allPhotoIds.map(photo => photo.id);
+      const thumbnail = allPhotoIds[0]?.uri || '';
+
+      if (existingAlbums && existingAlbums.length > 0) {
+        // Update existing "All Photos" album
+        const existingAlbum = existingAlbums[0];
+        
+        // Check if update is needed
+        const needsUpdate = 
+          existingAlbum.count !== imageIds.length ||
+          JSON.stringify(existingAlbum.image_ids?.sort()) !== JSON.stringify(imageIds.sort());
+
+        if (needsUpdate) {
+          const { error: updateError } = await supabase
+            .from('albums')
+            .update({
+              image_ids: imageIds,
+              count: imageIds.length,
+              thumbnail: thumbnail,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingAlbum.id);
+
+          if (updateError) {
+            console.error('Error updating All Photos album:', updateError);
+          } else {
+            console.log(`Updated All Photos album with ${imageIds.length} photos`);
+          }
+        }
+      } else {
+        // Create new "All Photos" album
+        const newAlbum = {
+          id: generateUUID(),
+          user_id: user.id,
+          name: 'All Photos',
+          image_ids: imageIds,
+          tags: ['all', 'photos', 'device'],
+          thumbnail: thumbnail,
+          count: imageIds.length,
+          is_locked: false,
+          is_all_photos_album: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: insertError } = await supabase
+          .from('albums')
+          .insert([newAlbum]);
+
+        if (insertError) {
+          console.error('Error creating All Photos album:', insertError);
+        } else {
+          console.log(`Created All Photos album with ${imageIds.length} photos`);
+        }
+      }
+    } catch (error) {
+      console.error('Error ensuring All Photos album exists:', error);
+    }
+  }
+
+  /**
    * Save albums to Supabase database
    */
   static async saveAlbums(albums: Album[]): Promise<void> {
@@ -21,19 +120,21 @@ export class AlbumUtils {
         throw new Error('User not authenticated');
       }
 
-      // Delete existing albums for this user
+      // Delete existing albums for this user (except All Photos album)
       const { error: deleteError } = await supabase
         .from('albums')
         .delete()
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .eq('is_all_photos_album', false);
 
       if (deleteError) {
         throw deleteError;
       }
 
-      // Insert new albums
-      if (albums.length > 0) {
-        const albumsToInsert = albums.map(album => ({
+      // Insert new albums (excluding All Photos album)
+      const albumsToInsert = albums
+        .filter(album => !album.isAllPhotosAlbum)
+        .map(album => ({
           id: album.id,
           user_id: user.id,
           name: album.name,
@@ -42,10 +143,12 @@ export class AlbumUtils {
           thumbnail: album.thumbnail || null,
           count: album.count,
           is_locked: album.isLocked || false,
+          is_all_photos_album: false,
           created_at: new Date(album.createdAt).toISOString(),
           updated_at: new Date().toISOString(),
         }));
 
+      if (albumsToInsert.length > 0) {
         const { error: insertError } = await supabase
           .from('albums')
           .insert(albumsToInsert);
@@ -90,6 +193,7 @@ export class AlbumUtils {
         isLocked: album.is_locked || false,
         thumbnail: album.thumbnail || '',
         count: album.count || 0,
+        isAllPhotosAlbum: album.is_all_photos_album || false,
       }));
     } catch (error) {
       console.error('Error loading albums from Supabase:', error);
@@ -116,6 +220,7 @@ export class AlbumUtils {
         thumbnail: album.thumbnail || null,
         count: album.count,
         is_locked: album.isLocked || false,
+        is_all_photos_album: album.isAllPhotosAlbum || false,
         created_at: new Date(album.createdAt).toISOString(),
         updated_at: new Date().toISOString(),
       };

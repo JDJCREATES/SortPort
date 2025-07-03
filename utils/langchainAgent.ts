@@ -23,6 +23,54 @@ export class LangChainAgent {
     }
   }
 
+  async transcribeAudio(audioUri: string): Promise<string> {
+    if (!this.apiKey || this.apiKey === 'your_openai_api_key_here') {
+      throw new Error('OpenAI API key not configured. Please add your API key to use voice transcription.');
+    }
+
+    try {
+      // Fetch the audio file
+      const response = await fetch(audioUri);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio file: ${response.statusText}`);
+      }
+      
+      const audioBlob = await response.blob();
+
+      // Create FormData for the API request
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'audio.m4a');
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'en'); // Optional: specify language
+      formData.append('response_format', 'json');
+
+      // Make request to OpenAI Whisper API
+      const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        body: formData,
+      });
+
+      if (!transcriptionResponse.ok) {
+        const errorData = await transcriptionResponse.text();
+        throw new Error(`Transcription failed: ${transcriptionResponse.statusText} - ${errorData}`);
+      }
+
+      const transcriptionData = await transcriptionResponse.json();
+      
+      if (!transcriptionData.text) {
+        throw new Error('No transcription text received from API');
+      }
+
+      return transcriptionData.text.trim();
+    } catch (error) {
+      console.error('Error transcribing audio:', error);
+      throw new Error(`Voice transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   async analyzeImage(base64: string, imageId: string): Promise<LangChainResult> {
     // If no API key or model not initialized, throw error
     if (!this.model || !this.apiKey || this.apiKey === 'your_openai_api_key_here') {
