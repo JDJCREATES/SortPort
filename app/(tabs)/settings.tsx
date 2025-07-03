@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
 import { Crown, Clock as Unlock, RefreshCw, Trash2, Palette, Settings as SettingsIcon, LogOut, User, Folder } from 'lucide-react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import { PremiumPrompt } from '../../components/PremiumPrompt';
+import { SubscriptionModal } from '../../components/SubscriptionModal';
 import { ColorPicker } from '../../components/ColorPicker';
 import { AuthModal } from '../../components/AuthModal';
 import { SourceFolderPicker } from '../../components/SourceFolderPicker';
@@ -24,10 +24,11 @@ export default function SettingsScreen() {
     nsfwFilter: true,
     notifications: true,
     customColors: undefined,
+    selectedFolders: ['all_photos'],
   });
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [showPremiumPrompt, setShowPremiumPrompt] = useState<'subscription' | 'unlock' | null>(null);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState<'primary' | 'secondary' | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSourcePicker, setShowSourcePicker] = useState(false);
@@ -65,6 +66,7 @@ export default function SettingsScreen() {
     try {
       const savedSettings = await MediaStorage.loadSettings();
       setSettings(savedSettings);
+      setSelectedFolders(savedSettings.selectedFolders || ['all_photos']);
       
       // Apply custom colors if they exist
       if (savedSettings.customColors) {
@@ -108,14 +110,7 @@ export default function SettingsScreen() {
 
   const handleColorChange = async (colorType: 'primary' | 'secondary', color: string) => {
     if (!userFlags.isSubscribed && !userFlags.hasUnlockPack) {
-      Alert.alert(
-        'Premium Feature',
-        'Custom colors require SnapSort Pro or the Unlock Pack.',
-        [
-          { text: 'Cancel' },
-          { text: 'Upgrade', onPress: () => setShowPremiumPrompt('subscription') },
-        ]
-      );
+      setShowSubscriptionModal(true);
       return;
     }
 
@@ -128,43 +123,25 @@ export default function SettingsScreen() {
     updateThemeColors(newCustomColors, settings.darkMode);
   };
 
-  const handleSubscribe = () => {
-    if (userFlags.isSubscribed) {
-      Alert.alert('Already Subscribed', 'You already have SnapSort Pro!');
-      return;
-    }
-    setShowPremiumPrompt('subscription');
+  const handleSubscriptionSuccess = async () => {
+    await loadUserFlags();
+    setShowSubscriptionModal(false);
   };
 
-  const handleUnlock = () => {
-    if (userFlags.hasUnlockPack) {
-      Alert.alert('Already Unlocked', 'You already have the Unlock Pack!');
-      return;
-    }
-    setShowPremiumPrompt('unlock');
+  const handleAuthSuccess = async () => {
+    setShowAuthModal(false);
+    await loadUserProfile();
   };
 
-  const handlePurchase = async (type: 'subscription' | 'unlock') => {
-    try {
-      const revenueCat = RevenueCatManager.getInstance();
-      const productId = type === 'subscription' ? 'snapsort_pro_monthly' : 'unlock_pack';
-      
-      // Mock purchase for demo
-      revenueCat.mockPurchase(type);
-      
-      await loadUserFlags();
-      setShowPremiumPrompt(null);
-      
-      Alert.alert(
-        'Purchase Successful!',
-        type === 'subscription' 
-          ? 'Welcome to SnapSort Pro!' 
-          : 'Unlock Pack activated!'
-      );
-    } catch (error) {
-      console.error('Purchase error:', error);
-      Alert.alert('Purchase Failed', 'Please try again later.');
-    }
+  const handleSourceFolderSelect = async (folders: any[]) => {
+    const folderIds = folders.map(f => f.id);
+    setSelectedFolders(folderIds);
+    
+    // Save folder preferences to settings
+    const newSettings = { ...settings, selectedFolders: folderIds };
+    await MediaStorage.saveSettings(newSettings);
+    
+    Alert.alert('Sources Updated', `Now managing ${folders.length} photo sources.`);
   };
 
   const handleRestorePurchases = async () => {
@@ -189,28 +166,16 @@ export default function SettingsScreen() {
           text: 'Clear',
           style: 'destructive',
           onPress: async () => {
-            await MediaStorage.clearAllData();
-            Alert.alert('Data Cleared', 'All data has been removed.');
+            try {
+              await MediaStorage.clearAllData();
+              Alert.alert('Data Cleared', 'All local data has been removed.');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to clear data. Please try again.');
+            }
           },
         },
       ]
     );
-  };
-
-  const handleAuthSuccess = async () => {
-    setShowAuthModal(false);
-    await loadUserProfile();
-  };
-
-  const handleSourceFolderSelect = async (folders: any[]) => {
-    const folderIds = folders.map(f => f.id);
-    setSelectedFolders(folderIds);
-    
-    // Save folder preferences to settings
-    const newSettings = { ...settings, selectedFolders: folderIds };
-    await MediaStorage.saveSettings(newSettings);
-    
-    Alert.alert('Sources Updated', `Now managing ${folders.length} photo sources.`);
   };
 
   const canUseColorPicker = userFlags.isSubscribed || userFlags.hasUnlockPack;
@@ -283,7 +248,7 @@ export default function SettingsScreen() {
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Manage Photo Sources</Text>
               <Text style={styles.settingDescription}>
-                Choose which folders SnapSort should organize
+                Choose which folders SnapSort should organize ({selectedFolders.length} selected)
               </Text>
             </View>
             <Folder size={20} color={lightTheme.colors.primary} />
@@ -294,7 +259,10 @@ export default function SettingsScreen() {
         <Animated.View entering={FadeInUp.delay(250)} style={styles.section}>
           <Text style={styles.sectionTitle}>Premium Features</Text>
           
-          <View style={styles.premiumCard}>
+          <TouchableOpacity 
+            style={styles.premiumCard}
+            onPress={() => setShowSubscriptionModal(true)}
+          >
             <View style={styles.premiumHeader}>
               <Crown size={24} color={lightTheme.colors.warning} />
               <View style={styles.premiumInfo}>
@@ -304,14 +272,17 @@ export default function SettingsScreen() {
                 </Text>
               </View>
               {!userFlags.isSubscribed && (
-                <TouchableOpacity style={styles.upgradeButton} onPress={handleSubscribe}>
+                <View style={styles.upgradeButton}>
                   <Text style={styles.upgradeButtonText}>$2.99/mo</Text>
-                </TouchableOpacity>
+                </View>
               )}
             </View>
-          </View>
+          </TouchableOpacity>
 
-          <View style={styles.premiumCard}>
+          <TouchableOpacity 
+            style={styles.premiumCard}
+            onPress={() => setShowSubscriptionModal(true)}
+          >
             <View style={styles.premiumHeader}>
               <Unlock size={24} color={lightTheme.colors.primary} />
               <View style={styles.premiumInfo}>
@@ -321,12 +292,12 @@ export default function SettingsScreen() {
                 </Text>
               </View>
               {!userFlags.hasUnlockPack && (
-                <TouchableOpacity style={styles.upgradeButton} onPress={handleUnlock}>
+                <View style={styles.upgradeButton}>
                   <Text style={styles.upgradeButtonText}>$9.99</Text>
-                </TouchableOpacity>
+                </View>
               )}
             </View>
-          </View>
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.restoreButton} onPress={handleRestorePurchases}>
             <RefreshCw size={16} color={lightTheme.colors.primary} />
@@ -342,13 +313,12 @@ export default function SettingsScreen() {
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Primary Color</Text>
               <Text style={styles.settingDescription}>
-                {canUseColorPicker ? 'Customize your app\'s primary color' : 'Pro feature - upgrade to customize'}
+                {canUseColorPicker ? 'Customize your app\'s primary color' : 'Premium feature - upgrade to customize'}
               </Text>
             </View>
             <TouchableOpacity
               style={[styles.colorPreview, { backgroundColor: settings.customColors?.primary || lightTheme.colors.primary }]}
-              onPress={() => canUseColorPicker && setShowColorPicker('primary')}
-              disabled={!canUseColorPicker}
+              onPress={() => canUseColorPicker ? setShowColorPicker('primary') : setShowSubscriptionModal(true)}
             >
               <Palette size={16} color="white" />
             </TouchableOpacity>
@@ -358,13 +328,12 @@ export default function SettingsScreen() {
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Secondary Color</Text>
               <Text style={styles.settingDescription}>
-                {canUseColorPicker ? 'Customize your app\'s secondary color' : 'Pro feature - upgrade to customize'}
+                {canUseColorPicker ? 'Customize your app\'s secondary color' : 'Premium feature - upgrade to customize'}
               </Text>
             </View>
             <TouchableOpacity
               style={[styles.colorPreview, { backgroundColor: settings.customColors?.secondary || lightTheme.colors.secondary }]}
-              onPress={() => canUseColorPicker && setShowColorPicker('secondary')}
-              disabled={!canUseColorPicker}
+              onPress={() => canUseColorPicker ? setShowColorPicker('secondary') : setShowSubscriptionModal(true)}
             >
               <Palette size={16} color="white" />
             </TouchableOpacity>
@@ -387,11 +356,14 @@ export default function SettingsScreen() {
             />
           </View>
 
-          <View style={styles.settingItem}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => !userFlags.isSubscribed && setShowSubscriptionModal(true)}
+          >
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Auto Sort</Text>
               <Text style={styles.settingDescription}>
-                {userFlags.isSubscribed ? 'Automatically sort new photos' : 'Pro feature - upgrade to enable'}
+                {userFlags.isSubscribed ? 'Automatically sort new photos' : 'Premium feature - upgrade to enable'}
               </Text>
             </View>
             <Switch
@@ -400,9 +372,12 @@ export default function SettingsScreen() {
               disabled={!userFlags.isSubscribed}
               trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
             />
-          </View>
+          </TouchableOpacity>
 
-          <View style={styles.settingItem}>
+          <TouchableOpacity 
+            style={styles.settingItem}
+            onPress={() => !userFlags.hasUnlockPack && setShowSubscriptionModal(true)}
+          >
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>NSFW Filter</Text>
               <Text style={styles.settingDescription}>
@@ -415,7 +390,7 @@ export default function SettingsScreen() {
               disabled={!userFlags.hasUnlockPack}
               trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
             />
-          </View>
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Data Management */}
@@ -436,15 +411,11 @@ export default function SettingsScreen() {
         </Animated.View>
       </ScrollView>
 
-      {showPremiumPrompt && (
-        <View style={styles.premiumPromptOverlay}>
-          <PremiumPrompt
-            type={showPremiumPrompt}
-            onUpgrade={() => handlePurchase(showPremiumPrompt!)}
-            onDismiss={() => setShowPremiumPrompt(null)}
-          />
-        </View>
-      )}
+      <SubscriptionModal
+        visible={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+        onSuccess={handleSubscriptionSuccess}
+      />
 
       {showColorPicker && (
         <ColorPicker
@@ -721,15 +692,5 @@ const styles = StyleSheet.create({
     marginTop: lightTheme.spacing.xs,
     paddingHorizontal: lightTheme.spacing.lg,
     lineHeight: 16,
-  },
-  premiumPromptOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

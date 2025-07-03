@@ -6,6 +6,7 @@ import { Album, ImageMeta } from '../../types';
 import { AlbumUtils } from '../../utils/albumUtils';
 import { PhotoLoader } from '../../utils/photoLoader';
 import { RevenueCatManager } from '../../utils/revenuecat';
+import { SubscriptionModal } from '../../components/SubscriptionModal';
 import { lightTheme } from '../../utils/theme';
 
 export default function AlbumDetailScreen() {
@@ -21,6 +22,7 @@ export default function AlbumDetailScreen() {
     hasUnlockPack: false,
     isProUser: false,
   });
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
 
   useEffect(() => {
     loadAlbum();
@@ -73,14 +75,7 @@ export default function AlbumDetailScreen() {
 
   const handleShare = () => {
     if (!userFlags.hasUnlockPack) {
-      Alert.alert(
-        'Premium Feature',
-        'Album sharing requires the Unlock Pack. Upgrade to access this feature.',
-        [
-          { text: 'Cancel' },
-          { text: 'Upgrade', onPress: () => router.push('/(tabs)/settings') },
-        ]
-      );
+      setShowSubscriptionModal(true);
       return;
     }
 
@@ -89,14 +84,7 @@ export default function AlbumDetailScreen() {
 
   const handleExport = () => {
     if (!userFlags.isSubscribed) {
-      Alert.alert(
-        'Premium Feature',
-        'Album export requires SnapSort Pro. Upgrade to access cloud export features.',
-        [
-          { text: 'Cancel' },
-          { text: 'Upgrade', onPress: () => router.push('/(tabs)/settings') },
-        ]
-      );
+      setShowSubscriptionModal(true);
       return;
     }
 
@@ -193,6 +181,11 @@ export default function AlbumDetailScreen() {
     );
   };
 
+  const handleSubscriptionSuccess = async () => {
+    await loadUserFlags();
+    setShowSubscriptionModal(false);
+  };
+
   const toggleViewMode = () => {
     setViewMode(viewMode === 'grid' ? 'list' : 'grid');
   };
@@ -249,13 +242,13 @@ export default function AlbumDetailScreen() {
 
         <View style={styles.actionsContainer}>
           <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-            <Share size={16} color={lightTheme.colors.primary} />
-            <Text style={styles.actionButtonText}>Share</Text>
+            <Share size={16} color={userFlags.hasUnlockPack ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
+            <Text style={[styles.actionButtonText, !userFlags.hasUnlockPack && styles.actionButtonTextDisabled]}>Share</Text>
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.actionButton} onPress={handleExport}>
-            <Download size={16} color={lightTheme.colors.primary} />
-            <Text style={styles.actionButtonText}>Export</Text>
+            <Download size={16} color={userFlags.isSubscribed ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
+            <Text style={[styles.actionButtonText, !userFlags.isSubscribed && styles.actionButtonTextDisabled]}>Export</Text>
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.actionButton} onPress={handleEdit}>
@@ -300,6 +293,12 @@ export default function AlbumDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      <SubscriptionModal
+        visible={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+        onSuccess={handleSubscriptionSuccess}
+      />
     </SafeAreaView>
   );
 }
@@ -397,6 +396,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: lightTheme.colors.primary,
     fontFamily: 'Inter-Medium',
+  },
+  actionButtonTextDisabled: {
+    color: lightTheme.colors.textSecondary,
   },
   photoGrid: {
     flexDirection: 'row',
