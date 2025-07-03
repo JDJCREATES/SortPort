@@ -23,6 +23,7 @@ export class MediaStorage {
         nsfwFilter: true,
         notifications: true,
         customColors: undefined,
+        selectedFolders: ['all_photos'],
       };
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -32,6 +33,7 @@ export class MediaStorage {
         nsfwFilter: true,
         notifications: true,
         customColors: undefined,
+        selectedFolders: ['all_photos'],
       };
     }
   }
@@ -43,6 +45,16 @@ export class MediaStorage {
       await this.saveSettings(settings);
     } catch (error) {
       console.error('Error updating custom colors:', error);
+    }
+  }
+
+  static async updateSelectedFolders(folderIds: string[]): Promise<void> {
+    try {
+      const settings = await this.loadSettings();
+      settings.selectedFolders = folderIds;
+      await this.saveSettings(settings);
+    } catch (error) {
+      console.error('Error updating selected folders:', error);
     }
   }
 
@@ -91,8 +103,6 @@ export class MediaStorage {
       await AsyncStorage.multiRemove([
         this.SETTINGS_KEY,
         this.PROCESSED_IMAGES_KEY,
-        '@snapsort_albums',
-        '@snapsort_sessions',
       ]);
     } catch (error) {
       console.error('Error clearing data:', error);

@@ -1,6 +1,7 @@
 import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
 import { ImageMeta } from '../types';
+import { MediaStorage } from './mediaStorage';
 
 export class PhotoLoader {
   static async requestPermissions(): Promise<boolean> {
@@ -30,13 +31,46 @@ export class PhotoLoader {
         throw new Error('Photo library permission not granted');
       }
 
-      const assets = await MediaLibrary.getAssetsAsync({
-        mediaType: 'photo',
-        first: limit,
-        sortBy: ['creationTime'],
-      });
+      // Get user's selected folders from settings
+      const settings = await MediaStorage.loadSettings();
+      const selectedFolders = settings.selectedFolders || ['all_photos'];
 
-      return assets.assets.map(asset => ({
+      let allAssets: MediaLibrary.Asset[] = [];
+
+      if (selectedFolders.includes('all_photos')) {
+        // Load from all photos
+        const assets = await MediaLibrary.getAssetsAsync({
+          mediaType: 'photo',
+          first: limit,
+          sortBy: ['creationTime'],
+        });
+        allAssets = assets.assets;
+      } else {
+        // Load from specific albums/folders
+        const albums = await MediaLibrary.getAlbumsAsync({
+          includeSmartAlbums: true,
+        });
+
+        const selectedAlbums = albums.filter(album => 
+          selectedFolders.includes(album.id) || selectedFolders.includes(album.title)
+        );
+
+        for (const album of selectedAlbums) {
+          const assets = await MediaLibrary.getAssetsAsync({
+            album: album.id,
+            mediaType: 'photo',
+            first: Math.ceil(limit / selectedAlbums.length),
+            sortBy: ['creationTime'],
+          });
+          allAssets.push(...assets.assets);
+        }
+
+        // Sort by creation time and limit
+        allAssets.sort((a, b) => b.creationTime - a.creationTime);
+        allAssets = allAssets.slice(0, limit);
+      }
+
+      return allAssets.map(asset => ({
         id: asset.id,
         uri: asset.uri,
         filename: asset.filename,
@@ -63,6 +97,11 @@ export class PhotoLoader {
       'https://images.pexels.com/photos/1092644/pexels-photo-1092644.jpeg?auto=compress&cs=tinysrgb&w=800',
       'https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=800',
       'https://images.pexels.com/photos/1640772/pexels-photo-1640772.jpeg?auto=compress&cs=tinysrgb&w=800',
+      'https://images.pexels.com/photos/1366919/pexels-photo-1366919.jpeg?auto=compress&cs=tinysrgb&w=800',
+      'https://images.pexels.com/photos/1366957/pexels-photo-1366957.jpeg?auto=compress&cs=tinysrgb&w=800',
+      'https://images.pexels.com/photos/1366942/pexels-photo-1366942.jpeg?auto=compress&cs=tinysrgb&w=800',
+      'https://images.pexels.com/photos/1366944/pexels-photo-1366944.jpeg?auto=compress&cs=tinysrgb&w=800',
+      'https://images.pexels.com/photos/1366945/pexels-photo-1366945.jpeg?auto=compress&cs=tinysrgb&w=800',
     ];
 
     return Array.from({ length: count }, (_, index) => ({
@@ -108,5 +147,50 @@ export class PhotoLoader {
 
     const results = await Promise.all(conversions);
     return results.filter(result => result !== null) as Array<{id: string, base64: string}>;
+  }
+
+  static async getAvailableFolders(): Promise<Array<{id: string, name: string, count: number}>> {
+    try {
+      if (Platform.OS === 'web') {
+        // Return mock folders for web
+        return [
+          { id: 'all_photos', name: 'All Photos', count: 1247 },
+          { id: 'camera', name: 'Camera', count: 892 },
+          { id: 'downloads', name: 'Downloads', count: 156 },
+          { id: 'screenshots', name: 'Screenshots', count: 234 },
+        ];
+      }
+
+      const hasPermission = await this.requestPermissions();
+      if (!hasPermission) {
+        return [];
+      }
+
+      const albums = await MediaLibrary.getAlbumsAsync({
+        includeSmartAlbums: true,
+      });
+
+      const folders = await Promise.all(
+        albums.map(async (album) => ({
+          id: album.id,
+          name: album.title,
+          count: album.assetCount,
+        }))
+      );
+
+      // Add "All Photos" option
+      const allPhotosAssets = await MediaLibrary.getAssetsAsync({
+        mediaType: 'photo',
+        first: 1,
+      });
+
+      return [
+        { id: 'all_photos', name: 'All Photos', count: allPhotosAssets.totalCount },
+        ...folders,
+      ];
+    } catch (error) {
+      console.error('Error getting available folders:', error);
+      return [];
+    }
   }
 }

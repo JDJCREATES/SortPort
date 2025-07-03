@@ -87,6 +87,7 @@ export interface AppSettings {
   nsfwFilter: boolean;
   notifications: boolean;
   customColors?: CustomThemeColors;
+  selectedFolders?: string[];
 }
 
 export interface RevenueCatProduct {

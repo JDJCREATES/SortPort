@@ -26,6 +26,7 @@ export default function SettingsScreen() {
     customColors: undefined,
   });
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [showPremiumPrompt, setShowPremiumPrompt] = useState<'subscription' | 'unlock' | null>(null);
   const [showColorPicker, setShowColorPicker] = useState<'primary' | 'secondary' | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -40,10 +41,13 @@ export default function SettingsScreen() {
 
   const loadUserProfile = async () => {
     try {
+      setAuthError(null);
       const profile = await SupabaseAuth.getProfile();
       setUserProfile(profile);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading user profile:', error);
+      setAuthError(error.message || 'Failed to load user profile');
+      setUserProfile(null);
     }
   };
 
@@ -90,8 +94,9 @@ export default function SettingsScreen() {
             try {
               await SupabaseAuth.signOut();
               setUserProfile(null);
+              setAuthError(null);
               Alert.alert('Signed Out', 'You have been signed out successfully.');
-            } catch (error) {
+            } catch (error: any) {
               console.error('Sign out error:', error);
               Alert.alert('Error', 'Failed to sign out. Please try again.');
             }
@@ -192,6 +197,22 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleAuthSuccess = async () => {
+    setShowAuthModal(false);
+    await loadUserProfile();
+  };
+
+  const handleSourceFolderSelect = async (folders: any[]) => {
+    const folderIds = folders.map(f => f.id);
+    setSelectedFolders(folderIds);
+    
+    // Save folder preferences to settings
+    const newSettings = { ...settings, selectedFolders: folderIds };
+    await MediaStorage.saveSettings(newSettings);
+    
+    Alert.alert('Sources Updated', `Now managing ${folders.length} photo sources.`);
+  };
+
   const canUseColorPicker = userFlags.isSubscribed || userFlags.hasUnlockPack;
 
   return (
@@ -208,6 +229,18 @@ export default function SettingsScreen() {
         <Animated.View entering={FadeInUp.delay(150)} style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
           
+          {authError && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{authError}</Text>
+              <TouchableOpacity 
+                style={styles.retryButton}
+                onPress={loadUserProfile}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          
           {userProfile ? (
             <View style={styles.profileCard}>
               <View style={styles.profileHeader}>
@@ -223,7 +256,7 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : (
+          ) : !authError && (
             <TouchableOpacity 
               style={styles.signInCard}
               onPress={() => setShowAuthModal(true)}
@@ -398,7 +431,7 @@ export default function SettingsScreen() {
         <Animated.View entering={FadeInUp.delay(450)} style={styles.footer}>
           <Text style={styles.footerText}>SnapSort v1.0.0</Text>
           <Text style={styles.footerSubtext}>
-            Note: RevenueCat integration requires native code and won't work in the web preview.
+            Your photos stay on your device. Only AI analysis metadata is stored securely.
           </Text>
         </Animated.View>
       </ScrollView>
@@ -430,20 +463,14 @@ export default function SettingsScreen() {
       <AuthModal
         visible={showAuthModal}
         onClose={() => setShowAuthModal(false)}
-        onSuccess={() => {
-          setShowAuthModal(false);
-          loadUserProfile();
-        }}
+        onSuccess={handleAuthSuccess}
         initialMode="signin"
       />
 
       <SourceFolderPicker
         visible={showSourcePicker}
         onClose={() => setShowSourcePicker(false)}
-        onSelect={(folders) => {
-          setSelectedFolders(folders.map(f => f.id));
-          Alert.alert('Sources Updated', `Now managing ${folders.length} photo sources.`);
-        }}
+        onSelect={handleSourceFolderSelect}
         selectedFolders={selectedFolders}
       />
     </SafeAreaView>
@@ -482,6 +509,32 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: lightTheme.colors.text,
     marginBottom: lightTheme.spacing.md,
+  },
+  errorContainer: {
+    backgroundColor: `${lightTheme.colors.error}15`,
+    borderRadius: lightTheme.borderRadius.lg,
+    padding: lightTheme.spacing.md,
+    marginBottom: lightTheme.spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.error,
+  },
+  retryButton: {
+    backgroundColor: lightTheme.colors.error,
+    paddingHorizontal: lightTheme.spacing.sm,
+    paddingVertical: lightTheme.spacing.xs,
+    borderRadius: lightTheme.borderRadius.sm,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
   },
   profileCard: {
     backgroundColor: lightTheme.colors.surface,

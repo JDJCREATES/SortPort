@@ -2,14 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert } from 'react-native';
 import { Folder, Check, X, HardDrive, Smartphone, Camera, Download } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
+import { PhotoLoader } from '../utils/photoLoader';
 import { lightTheme } from '../utils/theme';
 
 interface SourceFolder {
   id: string;
   name: string;
-  path: string;
   count: number;
   icon: React.ReactNode;
   description: string;
@@ -33,6 +32,10 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
     }
   }, [visible]);
 
+  useEffect(() => {
+    setTempSelected(selectedFolders);
+  }, [selectedFolders]);
+
   const loadFolders = async () => {
     setLoading(true);
     try {
@@ -42,7 +45,6 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
           {
             id: 'all_photos',
             name: 'All Photos',
-            path: '/storage/emulated/0/DCIM',
             count: 1247,
             icon: <Smartphone size={20} color={lightTheme.colors.primary} />,
             description: 'All photos on your device'
@@ -50,7 +52,6 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
           {
             id: 'camera',
             name: 'Camera',
-            path: '/storage/emulated/0/DCIM/Camera',
             count: 892,
             icon: <Camera size={20} color={lightTheme.colors.secondary} />,
             description: 'Photos taken with camera'
@@ -58,7 +59,6 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
           {
             id: 'downloads',
             name: 'Downloads',
-            path: '/storage/emulated/0/Download',
             count: 156,
             icon: <Download size={20} color={lightTheme.colors.warning} />,
             description: 'Downloaded images'
@@ -66,7 +66,6 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
           {
             id: 'screenshots',
             name: 'Screenshots',
-            path: '/storage/emulated/0/Pictures/Screenshots',
             count: 234,
             icon: <HardDrive size={20} color={lightTheme.colors.success} />,
             description: 'Screen captures'
@@ -75,29 +74,37 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
         setFolders(mockFolders);
       } else {
         // Real implementation for native platforms
-        const albums = await MediaLibrary.getAlbumsAsync({
-          includeSmartAlbums: true,
-        });
+        const availableFolders = await PhotoLoader.getAvailableFolders();
+        
+        const folderData: SourceFolder[] = availableFolders.map((folder) => {
+          let icon = <Folder size={20} color={lightTheme.colors.primary} />;
+          let description = `${folder.count} photos`;
 
-        const folderPromises = albums.map(async (album) => {
-          const assets = await MediaLibrary.getAssetsAsync({
-            album: album.id,
-            mediaType: 'photo',
-            first: 1,
-          });
+          // Assign specific icons based on folder name
+          if (folder.name.toLowerCase().includes('camera')) {
+            icon = <Camera size={20} color={lightTheme.colors.secondary} />;
+            description = 'Photos taken with camera';
+          } else if (folder.name.toLowerCase().includes('download')) {
+            icon = <Download size={20} color={lightTheme.colors.warning} />;
+            description = 'Downloaded images';
+          } else if (folder.name.toLowerCase().includes('screenshot')) {
+            icon = <HardDrive size={20} color={lightTheme.colors.success} />;
+            description = 'Screen captures';
+          } else if (folder.id === 'all_photos') {
+            icon = <Smartphone size={20} color={lightTheme.colors.primary} />;
+            description = 'All photos on your device';
+          }
 
           return {
-            id: album.id,
-            name: album.title,
-            path: album.title,
-            count: album.assetCount,
-            icon: <Folder size={20} color={lightTheme.colors.primary} />,
-            description: `${album.assetCount} photos`,
+            id: folder.id,
+            name: folder.name,
+            count: folder.count,
+            icon,
+            description,
           };
         });
 
-        const resolvedFolders = await Promise.all(folderPromises);
-        setFolders(resolvedFolders);
+        setFolders(folderData);
       }
     } catch (error) {
       console.error('Error loading folders:', error);
@@ -177,9 +184,9 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
                     <View style={styles.folderInfo}>
                       <Text style={styles.folderName}>{folder.name}</Text>
                       <Text style={styles.folderDescription}>{folder.description}</Text>
-                      <Text style={styles.folderPath}>{folder.path}</Text>
+                      <Text style={styles.folderCount}>{folder.count} photos</Text>
                     </View>
-                    <View style={styles.folderCount}>
+                    <View style={styles.folderCountBadge}>
                       <Text style={styles.countText}>{folder.count}</Text>
                     </View>
                     {tempSelected.includes(folder.id) && (
@@ -316,13 +323,13 @@ const styles = StyleSheet.create({
     color: lightTheme.colors.textSecondary,
     marginBottom: 2,
   },
-  folderPath: {
+  folderCount: {
     fontSize: 12,
     fontFamily: 'Inter-Regular',
     color: lightTheme.colors.textSecondary,
     opacity: 0.7,
   },
-  folderCount: {
+  folderCountBadge: {
     backgroundColor: lightTheme.colors.primary,
     borderRadius: lightTheme.borderRadius.sm,
     paddingHorizontal: lightTheme.spacing.sm,
