@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Alert } from 'react-native';
 import { router } from 'expo-router';
-import { Camera, Sparkles, Zap, ArrowRight } from 'lucide-react-native';
+import { Camera, Sparkles, Zap, ArrowRight, LogIn } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp, SlideInRight } from 'react-native-reanimated';
 import { PhotoLoader } from '../utils/photoLoader';
 import { SupabaseAuth } from '../utils/supabase';
@@ -59,6 +59,20 @@ export default function WelcomeScreen() {
     }
   };
 
+  const handleSignInPrompt = () => {
+    Alert.alert(
+      'Sign In Required',
+      'To access all features and sync your albums across devices, please sign in to your account.',
+      [
+        { text: 'Maybe Later', style: 'cancel', onPress: handleGetStarted },
+        { 
+          text: 'Sign In', 
+          onPress: () => setShowAuthModal(true)
+        }
+      ]
+    );
+  };
+
   const handleAuthSuccess = async () => {
     setIsAuthenticated(true);
     setShowAuthModal(false);
@@ -113,18 +127,30 @@ export default function WelcomeScreen() {
               <ArrowRight size={20} color={lightTheme.colors.primary} />
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.startButton} onPress={handleGetStarted}>
-              <Text style={styles.startButtonText}>
-                {isAuthenticated ? 'Get Started' : 'Sign In to Continue'}
-              </Text>
-            </TouchableOpacity>
+            <>
+              {!isAuthenticated && (
+                <TouchableOpacity style={styles.signInButton} onPress={() => setShowAuthModal(true)}>
+                  <LogIn size={20} color="white" />
+                  <Text style={styles.signInButtonText}>Sign In</Text>
+                </TouchableOpacity>
+              )}
+              
+              <TouchableOpacity 
+                style={[styles.startButton, !isAuthenticated && styles.startButtonSecondary]} 
+                onPress={isAuthenticated ? handleGetStarted : handleSignInPrompt}
+              >
+                <Text style={[styles.startButtonText, !isAuthenticated && styles.startButtonTextSecondary]}>
+                  {isAuthenticated ? 'Get Started' : 'Continue as Guest'}
+                </Text>
+              </TouchableOpacity>
+            </>
           )}
         </Animated.View>
 
         {!isAuthenticated && currentSlide === slides.length - 1 && (
           <Animated.View entering={FadeInDown.delay(800)} style={styles.authHint}>
             <Text style={styles.authHintText}>
-              Create an account to sync your albums across devices and access premium features
+              Sign in to sync your albums across devices and access premium features, or continue as a guest to try the app.
             </Text>
           </Animated.View>
         )}
@@ -213,6 +239,27 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: lightTheme.colors.primary,
   },
+  signInButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: lightTheme.colors.primary,
+    paddingVertical: lightTheme.spacing.lg,
+    borderRadius: lightTheme.borderRadius.lg,
+    alignItems: 'center',
+    marginBottom: lightTheme.spacing.md,
+    gap: lightTheme.spacing.sm,
+    elevation: 4,
+    shadowColor: lightTheme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  signInButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
+  },
   startButton: {
     backgroundColor: lightTheme.colors.primary,
     paddingVertical: lightTheme.spacing.lg,
@@ -224,10 +271,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
+  startButtonSecondary: {
+    backgroundColor: lightTheme.colors.surface,
+    borderWidth: 2,
+    borderColor: lightTheme.colors.primary,
+    elevation: 1,
+    shadowOpacity: 0.1,
+  },
   startButtonText: {
     color: 'white',
     fontSize: 18,
     fontFamily: 'Inter-Bold',
+  },
+  startButtonTextSecondary: {
+    color: lightTheme.colors.primary,
   },
   authHint: {
     marginTop: lightTheme.spacing.lg,
