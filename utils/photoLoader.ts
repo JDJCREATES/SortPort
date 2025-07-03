@@ -3,32 +3,37 @@ import { Platform } from 'react-native';
 import { ImageMeta } from '../types';
 import { MediaStorage } from './mediaStorage';
 
+export type PermissionStatus = 'granted' | 'denied' | 'undetermined';
+
 export class PhotoLoader {
-  static async requestPermissions(): Promise<boolean> {
+  static async requestPermissions(): Promise<PermissionStatus> {
     try {
       if (Platform.OS === 'web') {
-        // Web doesn't need media library permissions but can't access photos
-        return false;
+        // Web doesn't need media library permissions but can't access photos  
+        return 'denied';
       }
       
       const { status } = await MediaLibrary.requestPermissionsAsync();
-      return status === 'granted';
+      return status as PermissionStatus;
     } catch (error) {
       console.error('Error requesting permissions:', error);
-      return false;
+      return 'denied';
     }
   }
 
   static async loadRecentPhotos(limit: number = 100): Promise<ImageMeta[]> {
     try {
       if (Platform.OS === 'web') {
-        // Web cannot access device photos - return empty array
-        return [];
+        throw new Error('Photo access is not available on web. Please use the mobile app to access your photos.');
       }
 
-      const hasPermission = await this.requestPermissions();
-      if (!hasPermission) {
-        throw new Error('Photo library permission not granted');
+      const permissionStatus = await this.requestPermissions();
+      if (permissionStatus !== 'granted') {
+        if (permissionStatus === 'denied') {
+          throw new Error('Photo library access denied. Please enable photo permissions in your device settings to use AI sorting.');
+        } else {
+          throw new Error('Photo library permission required. Please grant access to your photos to continue.');
+        }
       }
 
       // Get user's selected folders from settings
@@ -81,19 +86,18 @@ export class PhotoLoader {
       }));
     } catch (error) {
       console.error('Error loading photos:', error);
-      return []; // Return empty array instead of mock data
+      throw error; // Re-throw to let caller handle the error
     }
   }
 
   static async loadAllPhotoIds(selectedFolders: string[] = ['all_photos']): Promise<Array<{id: string, uri: string}>> {
     try {
       if (Platform.OS === 'web') {
-        // Web cannot access device photos
-        return [];
+        throw new Error('Photo access is not available on web.');
       }
 
-      const hasPermission = await this.requestPermissions();
-      if (!hasPermission) {
+      const permissionStatus = await this.requestPermissions();
+      if (permissionStatus !== 'granted') {
         throw new Error('Photo library permission not granted');
       }
 
@@ -215,13 +219,12 @@ export class PhotoLoader {
   static async getAvailableFolders(): Promise<Array<{id: string, name: string, count: number}>> {
     try {
       if (Platform.OS === 'web') {
-        // Web cannot access device folders - return empty array
-        return [];
+        throw new Error('Photo folder access is not available on web.');
       }
 
-      const hasPermission = await this.requestPermissions();
-      if (!hasPermission) {
-        return [];
+      const permissionStatus = await this.requestPermissions();
+      if (permissionStatus !== 'granted') {
+        throw new Error('Photo library permission required to access folders.');
       }
 
       const albums = await MediaLibrary.getAlbumsAsync({
@@ -240,7 +243,7 @@ export class PhotoLoader {
       return folders;
     } catch (error) {
       console.error('Error getting available folders:', error);
-      return [];
+      throw error;
     }
   }
 }

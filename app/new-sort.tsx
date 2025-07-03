@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Alert, ScrollView } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Wand as Wand2, Save, CircleAlert as AlertCircle } from 'lucide-react-native';
 import { PictureHackBar } from '../components/PictureHackBar';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { AlbumCard } from '../components/AlbumCard';
-import { PhotoLoader } from '../utils/photoLoader';
+import { PhotoLoader, PermissionStatus } from '../utils/photoLoader';
 import { LangChainAgent } from '../utils/langchainAgent';
 import { AlbumUtils } from '../utils/albumUtils';
 import { RevenueCatManager } from '../utils/revenuecat';
@@ -14,6 +14,7 @@ import { lightTheme } from '../utils/theme';
 
 export default function NewSortScreen() {
   const params = useLocalSearchParams();
+  const navigationRouter = useRouter();
   const initialPrompt = params.prompt as string || '';
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -23,6 +24,8 @@ export default function NewSortScreen() {
   const [photos, setPhotos] = useState<ImageMeta[]>([]);
   const [currentPrompt, setCurrentPrompt] = useState(initialPrompt);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>('undetermined');
 
   useEffect(() => {
     loadPhotos();
@@ -32,24 +35,48 @@ export default function NewSortScreen() {
   }, []);
 
   const loadPhotos = async () => {
+    setLoading(true);
+    setError(null);
+    
     try {
-      setError(null);
+      // First check permissions
+      const status = await PhotoLoader.requestPermissions();
+      setPermissionStatus(status);
+      
+      if (status !== 'granted') {
+        if (status === 'denied') {
+          setError('Photo library access denied. Please enable photo permissions in your device settings to use AI sorting.');
+        } else {
+          setError('Photo library permission required. Please grant access to your photos to continue.');
+        }
+        setPhotos([]);
+        return;
+      }
+      
+      // Load photos if permissions are granted
       const recentPhotos = await PhotoLoader.loadRecentPhotos(50);
       setPhotos(recentPhotos);
       
       if (recentPhotos.length === 0) {
-        setError('No photos found. Please ensure you have photos in your gallery and have granted photo library permissions.');
+        setError('No photos found on your device. Please add some photos to your gallery and try again.');
       }
     } catch (error: any) {
       console.error('Error loading photos:', error);
-      setError(error.message || 'Failed to load photos. Please check permissions.');
+      setError(error.message || 'Failed to load photos. Please check your permissions and try again.');
       setPhotos([]);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleSort = async (prompt: string) => {
-    if (photos.length === 0) {
-      Alert.alert('No Photos', 'No photos found to sort. Please ensure you have photos in your gallery and have granted photo library permissions.');
+    if (photos.length === 0 && permissionStatus === 'granted') {
+      Alert.alert('No Photos', 'No photos found to sort. Please add some photos to your gallery and try again.');
+      return;
+    }
+    
+    if (permissionStatus !== 'granted') {
+      Alert.alert('Permission Required', 'Please grant photo library access to use AI sorting.');
       return;
     }
 
@@ -171,11 +198,19 @@ export default function NewSortScreen() {
   const handleRetryLoadPhotos = () => {
     loadPhotos();
   };
+  
+  const handleBackPress = () => {
+    if (navigationRouter.canGoBack()) {
+      navigationRouter.back();
+    } else {
+      navigationRouter.replace('/(tabs)');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <ArrowLeft size={24} color={lightTheme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>New Sort</Text>
@@ -195,7 +230,7 @@ export default function NewSortScreen() {
           <PictureHackBar 
             onSubmit={handleSort}
             placeholder="Sort my vacation photos, receipts, screenshots..."
-            disabled={isProcessing || photos.length === 0}
+            disabled={isProcessing}
           />
 
           {currentPrompt && !isProcessing && (
@@ -206,15 +241,23 @@ export default function NewSortScreen() {
           )}
         </View>
 
+        {loading && (
+          <View style={styles.loadingSection}>
+            <Text style={styles.loadingText}>Loading photos...</Text>
+          </View>
+        )}
+
         {error && (
           <View style={styles.errorSection}>
             <View style={styles.errorContainer}>
               <AlertCircle size={20} color={lightTheme.colors.error} />
               <Text style={styles.errorText}>{error}</Text>
             </View>
-            {photos.length === 0 && (
+            {(permissionStatus !== 'granted' || photos.length === 0) && (
               <TouchableOpacity style={styles.retryButton} onPress={handleRetryLoadPhotos}>
-                <Text style={styles.retryButtonText}>Retry Loading Photos</Text>
+                <Text style={styles.retryButtonText}>
+                  {permissionStatus !== 'granted' ? 'Grant Permissions' : 'Retry Loading Photos'}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -262,7 +305,7 @@ export default function NewSortScreen() {
           </View>
         )}
 
-        {!results && !isProcessing && !error && photos.length > 0 && (
+        {!results && !isProcessing && !error && !loading && photos.length > 0 && (
           <View style={styles.welcomeSection}>
             <Text style={styles.welcomeTitle}>Welcome to AI Sorting!</Text>
             <Text style={styles.welcomeText}>
@@ -296,6 +339,25 @@ export default function NewSortScreen() {
                 <Text style={styles.examplePromptText}>"Find all screenshots"</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        )}
+        
+        {!results && !isProcessing && !error && !loading && photos.length === 0 && permissionStatus === 'granted' && (
+          <View style={styles.welcomeSection}>
+            <Text style={styles.welcomeTitle}>No Photos Found</Text>
+            <Text style={styles.welcomeText}>
+              • Add some photos to your device gallery
+            </Text>
+            <Text style={styles.welcomeText}>
+              • Make sure photos are saved to your device
+            </Text>
+            <Text style={styles.welcomeText}>
+              • Try taking a few photos with your camera
+            </Text>
+            
+            <TouchableOpacity style={styles.retryButton} onPress={handleRetryLoadPhotos}>
+              <Text style={styles.retryButtonText}>Check Again</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -377,6 +439,16 @@ const styles = StyleSheet.create({
     color: lightTheme.colors.text,
     fontFamily: 'Inter-Regular',
     fontStyle: 'italic',
+  },
+  loadingSection: {
+    padding: lightTheme.spacing.lg,
+    paddingTop: 0,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: lightTheme.colors.textSecondary,
+    fontFamily: 'Inter-Regular',
   },
   errorSection: {
     padding: lightTheme.spacing.lg,
