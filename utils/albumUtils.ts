@@ -39,13 +39,9 @@ export class AlbumUtils {
       // Load all photo IDs from the entire device
       const allPhotoIds = await PhotoLoader.loadAllPhotoIds(['all_photos']);
       
-      if (allPhotoIds.length === 0) {
-        console.log('No photos found, skipping All Photos album');
-        return;
-      }
-
+      // Always create/update the album, even if empty
       const imageIds = allPhotoIds.map(photo => photo.id);
-      const thumbnail = allPhotoIds[0]?.uri || '';
+      const thumbnail = allPhotoIds.length > 0 ? allPhotoIds[0].uri : '';
 
       if (existingAlbums && existingAlbums.length > 0) {
         // Update existing "All Photos" album
@@ -70,7 +66,7 @@ export class AlbumUtils {
           if (updateError) {
             console.error('Error updating All Photos album:', updateError);
           } else {
-            console.log(`Updated All Photos album with ${imageIds.length} photos`);
+            console.log(`Updated All Photos album with ${imageIds.length} photos${imageIds.length === 0 ? ' (empty)' : ''}`);
           }
         }
       } else {
@@ -96,7 +92,7 @@ export class AlbumUtils {
         if (insertError) {
           console.error('Error creating All Photos album:', insertError);
         } else {
-          console.log(`Created All Photos album with ${imageIds.length} photos`);
+          console.log(`Created All Photos album with ${imageIds.length} photos${imageIds.length === 0 ? ' (empty)' : ''}`);
         }
       }
     } catch (error) {
