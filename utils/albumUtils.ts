@@ -1,6 +1,15 @@
 import { supabase } from './supabase';
 import { Album, SortSession } from '../types';
 
+// Helper function to generate a UUID
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 export class AlbumUtils {
   /**
    * Save albums to Supabase database
@@ -298,7 +307,7 @@ export class AlbumUtils {
 
       const defaultAlbums: Album[] = [
         {
-          id: `smart_documents_${user.id}`,
+          id: generateUUID(),
           name: 'Documents & Receipts',
           imageIds: [],
           tags: ['receipt', 'bill', 'invoice', 'document', 'text'],
@@ -307,7 +316,7 @@ export class AlbumUtils {
           thumbnail: '',
         },
         {
-          id: `smart_travel_${user.id}`,
+          id: generateUUID(),
           name: 'Travel & Adventures',
           imageIds: [],
           tags: ['travel', 'vacation', 'trip', 'adventure', 'landscape'],
@@ -316,7 +325,7 @@ export class AlbumUtils {
           thumbnail: '',
         },
         {
-          id: `smart_screenshots_${user.id}`,
+          id: generateUUID(),
           name: 'Screenshots & Apps',
           imageIds: [],
           tags: ['screenshot', 'screen', 'app', 'interface'],
@@ -325,7 +334,7 @@ export class AlbumUtils {
           thumbnail: '',
         },
         {
-          id: `smart_food_${user.id}`,
+          id: generateUUID(),
           name: 'Food & Dining',
           imageIds: [],
           tags: ['food', 'meal', 'restaurant', 'cooking', 'dining'],
@@ -334,7 +343,7 @@ export class AlbumUtils {
           thumbnail: '',
         },
         {
-          id: `smart_people_${user.id}`,
+          id: generateUUID(),
           name: 'People & Portraits',
           imageIds: [],
           tags: ['people', 'portrait', 'selfie', 'family', 'friends'],
@@ -343,7 +352,7 @@ export class AlbumUtils {
           thumbnail: '',
         },
         {
-          id: `smart_nature_${user.id}`,
+          id: generateUUID(),
           name: 'Nature & Outdoors',
           imageIds: [],
           tags: ['nature', 'outdoor', 'landscape', 'trees', 'sky', 'animals'],
