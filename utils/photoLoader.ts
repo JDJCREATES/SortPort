@@ -92,6 +92,8 @@ export class PhotoLoader {
 
   static async loadAllPhotoIds(selectedFolders: string[] = ['all_photos']): Promise<Array<{id: string, uri: string}>> {
     try {
+      console.log('📁 loadAllPhotoIds called with selectedFolders:', selectedFolders);
+      
       if (Platform.OS === 'web') {
         throw new Error('Photo access is not available on web.');
       }
@@ -104,6 +106,7 @@ export class PhotoLoader {
       let allPhotoIds: Array<{id: string, uri: string}> = [];
 
       if (selectedFolders.length === 0 || selectedFolders.includes('all_photos')) {
+        console.log('📸 Loading all photos from device...');
         // Load all photos with pagination
         let after: string | undefined;
         const batchSize = 1000;
@@ -126,10 +129,12 @@ export class PhotoLoader {
 
           // Break if we've loaded all photos
           if (!assets.hasNextPage) {
+            console.log('📸 Finished loading all photos, total:', allPhotoIds.length);
             break;
           }
         } while (after);
       } else {
+        console.log('📁 Loading photos from specific albums/folders...');
         // Load from specific albums/folders
         const albums = await MediaLibrary.getAlbumsAsync({
           includeSmartAlbums: true,
@@ -138,8 +143,11 @@ export class PhotoLoader {
         const selectedAlbums = albums.filter(album => 
           selectedFolders.includes(album.id) || selectedFolders.includes(album.title)
         );
+        
+        console.log('📁 Found matching albums:', selectedAlbums.map(a => ({ id: a.id, title: a.title, assetCount: a.assetCount })));
 
         for (const album of selectedAlbums) {
+          console.log(`📁 Loading photos from album: ${album.title} (${album.assetCount} assets)`);
           let after: string | undefined;
           const batchSize = 1000;
 
@@ -162,6 +170,7 @@ export class PhotoLoader {
 
             // Break if we've loaded all photos from this album
             if (!assets.hasNextPage) {
+              console.log(`📁 Finished loading from album: ${album.title}, photos added: ${assets.assets.length}`);
               break;
             }
           } while (after);
@@ -175,6 +184,7 @@ export class PhotoLoader {
         allPhotoIds = Array.from(uniquePhotoIds.values());
       }
 
+      console.log('📸 Final allPhotoIds count:', allPhotoIds.length);
       return allPhotoIds;
     } catch (error) {
       console.error('Error loading all photo IDs:', error);

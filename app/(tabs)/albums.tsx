@@ -1,37 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { Search, Filter, Grid2x2 as Grid } from 'lucide-react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { useApp } from '../../contexts/AppContext';
 import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
-import { Album } from '../../types';
-import { AlbumUtils } from '../../utils/albumUtils';
 import { lightTheme } from '../../utils/theme';
 
 export default function AlbumsScreen() {
-  const [albums, setAlbums] = useState<Album[]>([]);
+  const { albums, isLoadingAlbums, refreshAlbums } = useApp();
   const [filteredAlbums, setFilteredAlbums] = useState<Album[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showLocked, setShowLocked] = useState(true);
 
-  useEffect(() => {
-    loadAlbums();
-  }, []);
+  // Refresh albums when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshAlbums();
+    }, [refreshAlbums])
+  );
 
-  useEffect(() => {
+  React.useEffect(() => {
     filterAlbums();
   }, [albums, showLocked]);
-
-  const loadAlbums = async () => {
-    try {
-      const allAlbums = await AlbumUtils.loadAlbums();
-      setAlbums(allAlbums);
-    } catch (error) {
-      console.error('Error loading albums:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const filterAlbums = () => {
     let filtered = albums;
@@ -72,7 +63,7 @@ export default function AlbumsScreen() {
       </Animated.View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {loading ? (
+        {isLoadingAlbums ? (
           <Animated.View entering={FadeInUp.delay(200)} style={styles.loadingContainer}>
             <Text style={styles.loadingText}>Loading albums...</Text>
           </Animated.View>

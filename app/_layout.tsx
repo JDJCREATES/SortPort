@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { useFonts } from 'expo-font';
+import { AppProvider } from '../contexts/AppContext';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -18,8 +19,6 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   useFrameworkReady();
-  const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   const [fontsLoaded, fontError] = useFonts({
     'Inter-Regular': Inter_400Regular,
@@ -29,15 +28,29 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    checkFirstLaunch();
-    checkAuthStatus();
-  }, []);
-
-  useEffect(() => {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
+  return (
+    <AppProvider>
+      <RootNavigator />
+      <StatusBar style="auto" />
+    </AppProvider>
+  );
+}
+
+function RootNavigator() {
+  const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    checkFirstLaunch();
+  }, []);
 
   const checkFirstLaunch = async () => {
     try {
@@ -54,51 +67,23 @@ export default function RootLayout() {
     }
   };
 
-  const checkAuthStatus = async () => {
-    try {
-      const user = await SupabaseAuth.getCurrentUser();
-      setIsAuthenticated(!!user);
-    } catch (error: any) {
-      console.error('Error checking auth status:', error);
-      // If there's an auth error, treat as not authenticated
-      // This ensures users can still access the login screen
-      setIsAuthenticated(false);
-    }
-  };
-
-  // Set up auth state listener
-  useEffect(() => {
-    const { data: { subscription } } = SupabaseAuth.onAuthStateChange((event, session) => {
-      setIsAuthenticated(!!session?.user);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (!fontsLoaded && !fontError) {
-    return null;
-  }
-
-  if (isFirstLaunch === null || isAuthenticated === null) {
-    return null; // Still loading
+  if (isFirstLaunch === null) {
+    return null; // Still checking first launch
   }
 
   return (
-    <>
-      <Stack screenOptions={{ headerShown: false }}>
-        {isFirstLaunch || !isAuthenticated ? (
+    <Stack screenOptions={{ headerShown: false }}>
+      {isFirstLaunch ? (
+        <Stack.Screen name="welcome" />
+      ) : (
+        <>
+          <Stack.Screen name="(tabs)" />
           <Stack.Screen name="welcome" />
-        ) : (
-          <>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="welcome" />
-          </>
-        )}
-        <Stack.Screen name="new-sort" />
-        <Stack.Screen name="album/[id]" />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </>
+        </>
+      )}
+      <Stack.Screen name="new-sort" />
+      <Stack.Screen name="album/[id]" />
+      <Stack.Screen name="+not-found" />
+    </Stack>
   );
 }

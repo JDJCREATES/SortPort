@@ -9,14 +9,14 @@ import { lightTheme } from '../../utils/theme';
 interface AccountSectionProps {
   userProfile: UserProfile | null;
   isLoadingProfile: boolean;
-  setUserProfile: (profile: UserProfile | null) => void;
+  signOut: () => Promise<void>;
   setShowAuthModal: (show: boolean) => void;
 }
 
 export function AccountSection({ 
   userProfile, 
   isLoadingProfile, 
-  setUserProfile, 
+  signOut,
   setShowAuthModal 
 }: AccountSectionProps) {
   const handleSignOut = async () => {
@@ -28,31 +28,7 @@ export function AccountSection({
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              // Always clear the local user profile state first
-              setUserProfile(null);
-              
-              // Attempt to sign out from Supabase
-              await SupabaseAuth.signOut();
-              
-              // Navigate to welcome screen and clear navigation stack
-              router.replace('/welcome');
-              
-              Alert.alert('Signed Out', 'You have been signed out successfully.');
-            } catch (error: any) {
-              console.error('Sign out error:', error);
-              
-              // Even if sign out fails, we've already cleared the local state
-              // and navigated to welcome screen
-              router.replace('/welcome');
-              
-              Alert.alert(
-                'Session Cleared', 
-                'Your local session has been cleared. If you continue to experience issues, please restart the app.'
-              );
-            }
-          },
+          onPress: signOut,
         },
       ]
     );

@@ -1,81 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Plus, Wand as Wand2, TrendingUp, Zap, Clock } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { useApp } from '../../contexts/AppContext';
 import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
 import { PictureHackBar } from '../../components/PictureHackBar';
 import { InfoIcon } from '../../components/InfoIcon';
-import { Album, UserFlags, AppSettings } from '../../types';
-import { AlbumUtils } from '../../utils/albumUtils';
 import { AutoSortManager } from '../../utils/autoSortManager';
-import { RevenueCatManager } from '../../utils/revenuecat';
-import { MediaStorage } from '../../utils/mediaStorage';
 import { lightTheme } from '../../utils/theme';
 
 export default function HomeScreen() {
-  const [albums, setAlbums] = useState<Album[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [userFlags, setUserFlags] = useState<UserFlags>({
-    isSubscribed: false,
-    hasUnlockPack: false,
-    isProUser: false,
-  });
-  const [settings, setSettings] = useState<AppSettings>({
-    darkMode: false,
-    autoSort: false,
-    nsfwFilter: true,
-    notifications: true,
-    selectedFolders: ['all_photos'],
-    lastAutoSortTimestamp: 0,
-  });
-  const [autoSortStatus, setAutoSortStatus] = useState<'idle' | 'running' | 'completed'>('idle');
-
-  useEffect(() => {
-    loadAlbums();
-    loadUserFlags();
-    loadSettings();
-  }, []);
-
-  useEffect(() => {
-    // Set up auto-sort trigger when settings or user flags change
-    if (settings.autoSort && userFlags.isSubscribed) {
-      scheduleAutoSort();
-    }
-  }, [settings.autoSort, userFlags.isSubscribed]);
-
-  const loadAlbums = async () => {
-    try {
-      // Ensure All Photos album exists first
-      await AlbumUtils.ensureAllPhotosAlbumExists();
-      
-      const smartAlbums = await AlbumUtils.getSmartAlbums();
-      setAlbums(smartAlbums.slice(0, 6)); // Show only first 6 on home
-    } catch (error) {
-      console.error('Error loading albums:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadUserFlags = async () => {
-    try {
-      const revenueCat = RevenueCatManager.getInstance();
-      const flags = await revenueCat.getUserFlags();
-      setUserFlags(flags);
-    } catch (error) {
-      console.error('Error loading user flags:', error);
-    }
-  };
-
-  const loadSettings = async () => {
-    try {
-      const savedSettings = await MediaStorage.loadSettings();
-      setSettings(savedSettings);
-    } catch (error) {
-      console.error('Error loading settings:', error);
-    }
-  };
+  const { 
+    albums, 
+    isLoadingAlbums, 
+    userFlags, 
+    settings, 
+    refreshAlbums 
+  } = useApp();
 
   const scheduleAutoSort = async () => {
     // Debounce auto-sort to prevent too frequent runs
@@ -90,7 +32,7 @@ export default function HomeScreen() {
           if (success) {
             setAutoSortStatus('completed');
             // Reload albums to show updated data
-            await loadAlbums();
+            await refreshAlbums();
             
             // Reset status after showing completion
             setTimeout(() => {
@@ -184,13 +126,13 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </Animated.View>
 
-          {loading ? (
+          {isLoadingAlbums ? (
             <Animated.View entering={FadeInDown.delay(400)} style={styles.loadingContainer}>
               <Text style={styles.loadingText}>Loading albums...</Text>
             </Animated.View>
           ) : (
             <View style={styles.albumGrid}>
-              {albums.map((album, index) => (
+              {albums.slice(0, 6).map((album, index) => (
                 <AnimatedAlbumCard
                   key={album.id}
                   album={album}
