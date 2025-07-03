@@ -247,7 +247,6 @@ export default function NewSortScreen() {
             <Text style={styles.welcomeText}>
               • Preview results before saving to your collection
             </Text>
-            
             <View style={styles.examplePrompts}>
               <Text style={styles.exampleTitle}>Example prompts:</Text>
               <TouchableOpacity 
