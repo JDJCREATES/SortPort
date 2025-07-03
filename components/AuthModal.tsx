@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { X, Mail, Lock, User, Eye, EyeOff } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { SupabaseAuth } from '../utils/supabase';
+import { useApp } from '../contexts/AppContext';
 import { lightTheme } from '../utils/theme';
 
 interface AuthModalProps {
@@ -13,6 +13,7 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' }: AuthModalProps) {
+  const { signIn, signUp } = useApp();
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,9 +35,9 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
     setLoading(true);
     try {
       if (mode === 'signin') {
-        await SupabaseAuth.signIn(email, password);
+        await signIn(email, password);
       } else {
-        await SupabaseAuth.signUp(email, password, fullName);
+        await signUp(email, password, fullName);
       }
       
       onSuccess();

@@ -6,13 +6,14 @@ import Animated, { FadeInDown, FadeInUp, SlideInRight } from 'react-native-reani
 import { PhotoLoader } from '../utils/photoLoader';
 import { SupabaseAuth } from '../utils/supabase';
 import { AuthModal } from '../components/AuthModal';
+import { useApp } from '../contexts/AppContext';
 import { lightTheme } from '../utils/theme';
 
 export default function WelcomeScreen() {
+  const { signIn, signUp } = useApp();
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const slides = [
     {
@@ -32,25 +33,7 @@ export default function WelcomeScreen() {
     },
   ];
 
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = async () => {
-    try {
-      const user = await SupabaseAuth.getCurrentUser();
-      setIsAuthenticated(!!user);
-    } catch (error) {
-      console.error('Error checking auth status:', error);
-    }
-  };
-
   const handleGetStarted = async () => {
-    if (!isAuthenticated) {
-      setShowAuthModal(true);
-      return;
-    }
-
     const granted = await PhotoLoader.requestPermissions();
     setPermissionGranted(granted);
     
@@ -74,7 +57,6 @@ export default function WelcomeScreen() {
   };
 
   const handleAuthSuccess = async () => {
-    setIsAuthenticated(true);
     setShowAuthModal(false);
     
     const granted = await PhotoLoader.requestPermissions();
@@ -128,26 +110,24 @@ export default function WelcomeScreen() {
             </TouchableOpacity>
           ) : (
             <>
-              {!isAuthenticated && (
-                <TouchableOpacity style={styles.signInButton} onPress={() => setShowAuthModal(true)}>
-                  <LogIn size={20} color="white" />
-                  <Text style={styles.signInButtonText}>Sign In</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity style={styles.signInButton} onPress={() => setShowAuthModal(true)}>
+                <LogIn size={20} color="white" />
+                <Text style={styles.signInButtonText}>Sign In</Text>
+              </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.startButton, !isAuthenticated && styles.startButtonSecondary]} 
-                onPress={isAuthenticated ? handleGetStarted : handleSignInPrompt}
+                style={[styles.startButton, styles.startButtonSecondary]} 
+                onPress={handleSignInPrompt}
               >
-                <Text style={[styles.startButtonText, !isAuthenticated && styles.startButtonTextSecondary]}>
-                  {isAuthenticated ? 'Get Started' : 'Continue as Guest'}
+                <Text style={[styles.startButtonText, styles.startButtonTextSecondary]}>
+                  Continue as Guest
                 </Text>
               </TouchableOpacity>
             </>
           )}
         </Animated.View>
 
-        {!isAuthenticated && currentSlide === slides.length - 1 && (
+        {currentSlide === slides.length - 1 && (
           <Animated.View entering={FadeInDown.delay(800)} style={styles.authHint}>
             <Text style={styles.authHintText}>
               Sign in to sync your albums across devices and access premium features, or continue as a guest to try the app.
@@ -159,7 +139,10 @@ export default function WelcomeScreen() {
       <AuthModal
         visible={showAuthModal}
         onClose={() => setShowAuthModal(false)}
-        onSuccess={handleAuthSuccess}
+        onSuccess={() => {
+          setShowAuthModal(false);
+          handleGetStarted();
+        }}
         initialMode="signup"
       />
     </SafeAreaView>
