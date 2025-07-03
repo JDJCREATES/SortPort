@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
-import { Crown, Clock as Unlock, RefreshCw, Trash2, Palette, Settings as SettingsIcon, LogOut, User, Folder } from 'lucide-react-native';
+import { Crown, Clock as Unlock, RefreshCw, Trash2, Palette, Settings as SettingsIcon, LogOut, User, Folder, LogIn } from 'lucide-react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { SubscriptionModal } from '../../components/SubscriptionModal';
 import { ColorPicker } from '../../components/ColorPicker';
@@ -27,7 +27,7 @@ export default function SettingsScreen() {
     selectedFolders: ['all_photos'],
   });
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState<'primary' | 'secondary' | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -41,14 +41,16 @@ export default function SettingsScreen() {
   }, []);
 
   const loadUserProfile = async () => {
+    setIsLoadingProfile(true);
     try {
-      setAuthError(null);
       const profile = await SupabaseAuth.getProfile();
       setUserProfile(profile);
     } catch (error: any) {
       console.error('Error loading user profile:', error);
-      setAuthError(error.message || 'Failed to load user profile');
+      // Don't show error to user - just treat as not logged in
       setUserProfile(null);
+    } finally {
+      setIsLoadingProfile(false);
     }
   };
 
@@ -96,7 +98,6 @@ export default function SettingsScreen() {
             try {
               await SupabaseAuth.signOut();
               setUserProfile(null);
-              setAuthError(null);
               Alert.alert('Signed Out', 'You have been signed out successfully.');
             } catch (error: any) {
               console.error('Sign out error:', error);
@@ -194,19 +195,11 @@ export default function SettingsScreen() {
         <Animated.View entering={FadeInUp.delay(150)} style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
           
-          {authError && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{authError}</Text>
-              <TouchableOpacity 
-                style={styles.retryButton}
-                onPress={loadUserProfile}
-              >
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </TouchableOpacity>
+          {isLoadingProfile ? (
+            <View style={styles.loadingCard}>
+              <Text style={styles.loadingText}>Loading account...</Text>
             </View>
-          )}
-          
-          {userProfile ? (
+          ) : userProfile ? (
             <View style={styles.profileCard}>
               <View style={styles.profileHeader}>
                 <User size={24} color={lightTheme.colors.primary} />
@@ -221,16 +214,16 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : !authError && (
+          ) : (
             <TouchableOpacity 
               style={styles.signInCard}
               onPress={() => setShowAuthModal(true)}
             >
-              <User size={24} color={lightTheme.colors.textSecondary} />
+              <LogIn size={24} color={lightTheme.colors.primary} />
               <View style={styles.signInInfo}>
-                <Text style={styles.signInTitle}>Sign In</Text>
+                <Text style={styles.signInTitle}>Sign In to SnapSort</Text>
                 <Text style={styles.signInDescription}>
-                  Sync your albums and access premium features
+                  Sync your albums across devices and access premium features
                 </Text>
               </View>
             </TouchableOpacity>
@@ -481,31 +474,21 @@ const styles = StyleSheet.create({
     color: lightTheme.colors.text,
     marginBottom: lightTheme.spacing.md,
   },
-  errorContainer: {
-    backgroundColor: `${lightTheme.colors.error}15`,
+  loadingCard: {
+    backgroundColor: lightTheme.colors.surface,
     borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.md,
-    marginBottom: lightTheme.spacing.sm,
-    flexDirection: 'row',
+    padding: lightTheme.spacing.lg,
     alignItems: 'center',
-    justifyContent: 'space-between',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
-  errorText: {
-    flex: 1,
-    fontSize: 14,
+  loadingText: {
+    fontSize: 16,
+    color: lightTheme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.error,
-  },
-  retryButton: {
-    backgroundColor: lightTheme.colors.error,
-    paddingHorizontal: lightTheme.spacing.sm,
-    paddingVertical: lightTheme.spacing.xs,
-    borderRadius: lightTheme.borderRadius.sm,
-  },
-  retryButtonText: {
-    color: 'white',
-    fontSize: 12,
-    fontFamily: 'Inter-SemiBold',
   },
   profileCard: {
     backgroundColor: lightTheme.colors.surface,
@@ -544,25 +527,29 @@ const styles = StyleSheet.create({
     backgroundColor: lightTheme.colors.surface,
     borderRadius: lightTheme.borderRadius.lg,
     padding: lightTheme.spacing.lg,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    elevation: 2,
+    shadowColor: lightTheme.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: `${lightTheme.colors.primary}20`,
   },
   signInInfo: {
     flex: 1,
-    marginLeft: lightTheme.spacing.sm,
+    marginLeft: lightTheme.spacing.md,
   },
   signInTitle: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     color: lightTheme.colors.text,
+    marginBottom: lightTheme.spacing.xs,
   },
   signInDescription: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: lightTheme.colors.textSecondary,
+    lineHeight: 20,
   },
   premiumCard: {
     backgroundColor: lightTheme.colors.surface,
