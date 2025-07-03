@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Share, Download, Edit, Trash2, Grid, List } from 'lucide-react-native';
+import { ArrowLeft, Share, Download, CreditCard as Edit, Trash2, Grid2x2 as Grid, List } from 'lucide-react-native';
 import { Album, ImageMeta } from '../../types';
 import { AlbumUtils } from '../../utils/albumUtils';
 import { PhotoLoader } from '../../utils/photoLoader';

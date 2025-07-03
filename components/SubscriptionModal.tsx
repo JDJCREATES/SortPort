@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert } from 'react-native';
-import { X, Crown, Unlock, Check, Sparkles, Zap, Shield, Cloud } from 'lucide-react-native';
+import { X, Crown, Clock as Unlock, Check, Sparkles, Zap, Shield, Cloud } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp, SlideInRight } from 'react-native-reanimated';
 import { RevenueCatManager } from '../utils/revenuecat';
 import { lightTheme } from '../utils/theme';
