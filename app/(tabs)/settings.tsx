@@ -361,7 +361,12 @@ export default function SettingsScreen() {
             </View>
             <Switch
               value={settings.autoSort && userFlags.isSubscribed}
-              onValueChange={(value) => userFlags.isSubscribed && updateSetting('autoSort', value)}
+              onValueChange={(value) => {
+                if (userFlags.isSubscribed) {
+                  updateSetting('autoSort', value);
+                }
+                // Don't return anything (void)
+              }}
               disabled={!userFlags.isSubscribed}
               trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
             />
@@ -379,7 +384,12 @@ export default function SettingsScreen() {
             </View>
             <Switch
               value={!settings.nsfwFilter && userFlags.hasUnlockPack}
-              onValueChange={(value) => userFlags.hasUnlockPack && updateSetting('nsfwFilter', !value)}
+              onValueChange={(value) => {
+                if (userFlags.hasUnlockPack) {
+                  updateSetting('nsfwFilter', !value);
+                }
+                // Don't return anything (void)
+              }}
               disabled={!userFlags.hasUnlockPack}
               trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
             />
