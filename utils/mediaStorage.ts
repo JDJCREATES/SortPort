@@ -99,7 +99,7 @@ export class MediaStorage {
       // Create a new album in the device's photo library
       const album = await MediaLibrary.createAlbumAsync(
         `SnapSort_${albumName}`,
-        null,
+        undefined,
         false
       );
       

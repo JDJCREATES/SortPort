@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import { Search, Filter, Grid2x2 as Grid } from 'lucide-react-native';
@@ -7,34 +7,52 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
 import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
 import { lightTheme } from '../../utils/theme';
+import { Album } from '../../types';
 
 export default function AlbumsScreen() {
   const { albums, isLoadingAlbums, refreshAlbums } = useApp();
-  const [filteredAlbums, setFilteredAlbums] = useState<Album[]>([]);
   const [showLocked, setShowLocked] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Refresh albums when screen comes into focus
-  useFocusEffect(
-    React.useCallback(() => {
-      refreshAlbums();
-    }, [refreshAlbums])
-  );
-
-  React.useEffect(() => {
-    filterAlbums();
-  }, [albums, showLocked]);
-
-  const filterAlbums = () => {
-    let filtered = albums;
+  // Memoize filtered albums to prevent unnecessary recalculations
+  const filteredAlbums = useMemo(() => {
+    if (!albums || albums.length === 0) return [];
     
     if (!showLocked) {
-      filtered = albums.filter(album => !album.isLocked);
+      return albums.filter(album => !album.isLocked);
     }
     
-    setFilteredAlbums(filtered);
-  };
+    return albums;
+  }, [albums, showLocked]);
 
-  const handleAlbumPress = (album: Album) => {
+  // Stable refresh function to prevent infinite re-renders
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return; // Prevent multiple simultaneous refreshes
+    
+    try {
+      setIsRefreshing(true);
+      await refreshAlbums();
+    } catch (error) {
+      console.error('Error refreshing albums:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refreshAlbums, isRefreshing]);
+
+  // Only refresh when screen comes into focus, not on every render
+  useFocusEffect(
+    useCallback(() => {
+      // Only refresh if we don't have albums or if it's been a while
+      const shouldRefresh = !albums || albums.length === 0 || 
+        (Date.now() - (albums[0]?.createdAt || 0)) > 5 * 60 * 1000; // 5 minutes
+      
+      if (shouldRefresh && !isRefreshing) {
+        handleRefresh();
+      }
+    }, [albums, handleRefresh, isRefreshing])
+  );
+
+  const handleAlbumPress = useCallback((album: Album) => {
     if (album.isLocked) {
       // Show premium prompt
       router.push('/settings');
@@ -42,10 +60,57 @@ export default function AlbumsScreen() {
     }
     
     router.push(`/album/${album.id}`);
-  };
+  }, []);
 
-  const toggleShowLocked = () => {
-    setShowLocked(!showLocked);
+  const toggleShowLocked = useCallback(() => {
+    setShowLocked(prev => !prev);
+  }, []);
+
+  const renderEmptyState = useCallback(() => (
+    <Animated.View entering={FadeInUp.delay(200)} style={styles.emptyContainer}>
+      <Text style={styles.emptyTitle}>No Albums Yet</Text>
+      <Text style={styles.emptyText}>
+        Use the Picture Hack feature to create your first smart album!
+      </Text>
+      <TouchableOpacity
+        style={styles.createButton}
+        onPress={() => router.push('/new-sort')}
+      >
+        <Text style={styles.createButtonText}>Create Album</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  ), []);
+
+  const renderLoadingState = useCallback(() => (
+    <Animated.View entering={FadeInUp.delay(200)} style={styles.loadingContainer}>
+      <Text style={styles.loadingText}>Loading albums...</Text>
+    </Animated.View>
+  ), []);
+
+  const renderAlbumGrid = useCallback(() => (
+    <Animated.View entering={FadeInUp.delay(200)} style={styles.albumGrid}>
+      {filteredAlbums.map((album, index) => (
+        <AnimatedAlbumCard
+          key={album.id}
+          album={album}
+          onPress={() => handleAlbumPress(album)}
+          showLocked={showLocked}
+          index={index}
+        />
+      ))}
+    </Animated.View>
+  ), [filteredAlbums, handleAlbumPress, showLocked]);
+
+  const renderContent = () => {
+    if (isLoadingAlbums || isRefreshing) {
+      return renderLoadingState();
+    }
+    
+    if (filteredAlbums.length === 0) {
+      return renderEmptyState();
+    }
+    
+    return renderAlbumGrid();
   };
 
   return (
@@ -56,43 +121,34 @@ export default function AlbumsScreen() {
           <Text style={styles.title}>All Albums</Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.filterButton} onPress={toggleShowLocked}>
-            <Filter size={20} color={showLocked ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
+          <TouchableOpacity 
+            style={[
+              styles.filterButton,
+              showLocked && styles.filterButtonActive
+            ]} 
+            onPress={toggleShowLocked}
+            disabled={isRefreshing}
+          >
+            <Filter 
+              size={20} 
+              color={showLocked ? lightTheme.colors.primary : lightTheme.colors.textSecondary} 
+            />
           </TouchableOpacity>
         </View>
       </Animated.View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {isLoadingAlbums ? (
-          <Animated.View entering={FadeInUp.delay(200)} style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading albums...</Text>
-          </Animated.View>
-        ) : filteredAlbums.length === 0 ? (
-          <Animated.View entering={FadeInUp.delay(200)} style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>No Albums Yet</Text>
-            <Text style={styles.emptyText}>
-              Use the Picture Hack feature to create your first smart album!
-            </Text>
-            <TouchableOpacity
-              style={styles.createButton}
-              onPress={() => router.push('/new-sort')}
-            >
-              <Text style={styles.createButtonText}>Create Album</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        ) : (
-          <Animated.View entering={FadeInUp.delay(200)} style={styles.albumGrid}>
-            {filteredAlbums.map((album, index) => (
-              <AnimatedAlbumCard
-                key={album.id}
-                album={album}
-                onPress={() => handleAlbumPress(album)}
-                showLocked={showLocked}
-                index={index}
-              />
-            ))}
-          </Animated.View>
-        )}
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={lightTheme.colors.primary}
+          />
+        }
+      >
+        {renderContent()}
 
         <Animated.View entering={FadeInUp.delay(300)} style={styles.filterInfo}>
           <Text style={styles.filterInfoText}>
@@ -143,6 +199,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
+  },
+  filterButtonActive: {
+    backgroundColor: lightTheme.colors.primary + '20',
+    borderWidth: 1,
+    borderColor: lightTheme.colors.primary + '40',
   },
   scrollView: {
     flex: 1,
@@ -196,6 +257,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
+    gap: lightTheme.spacing.md,
   },
   filterInfo: {
     paddingVertical: lightTheme.spacing.lg,

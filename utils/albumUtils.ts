@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { Album, SortSession } from '../types';
 import { PhotoLoader } from './photoLoader';
+import { MediaStorage } from './mediaStorage';
 
 // Helper function to generate a UUID
 function generateUUID(): string {

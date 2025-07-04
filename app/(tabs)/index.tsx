@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Plus, Wand as Wand2, TrendingUp, Zap, Clock } from 'lucide-react-native';
@@ -9,6 +9,9 @@ import { PictureHackBar } from '../../components/PictureHackBar';
 import { InfoIcon } from '../../components/InfoIcon';
 import { AutoSortManager } from '../../utils/autoSortManager';
 import { lightTheme } from '../../utils/theme';
+import { Album } from '../../types';
+
+type AutoSortStatus = 'idle' | 'running' | 'completed';
 
 export default function HomeScreen() {
   const { 
@@ -18,6 +21,8 @@ export default function HomeScreen() {
     settings, 
     refreshAlbums 
   } = useApp();
+
+  const [autoSortStatus, setAutoSortStatus] = useState<AutoSortStatus>('idle');
 
   const scheduleAutoSort = async () => {
     // Debounce auto-sort to prevent too frequent runs
