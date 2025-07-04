@@ -4,13 +4,7 @@
     "slug": "snapsort",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -18,24 +12,25 @@
       "supportsTablet": true
     },
     "android": {
-      
       "permissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "package": "com.anonymous.snapsort"
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
+    "web": {},
     "sdkVersion": "53.0.0",
     "plugins": [
       "expo-font",
       "expo-router",
       "expo-web-browser",
       "expo-audio"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5724954c-d3aa-4a15-b10d-cc264171827d"
+      }
+    }
   }
 }
