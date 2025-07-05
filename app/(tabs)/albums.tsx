@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
-import { Search, Filter, Grid2x2 as Grid, Plus, AlertCircle, LayoutGrid } from 'lucide-react-native';
+import { Search, Filter, Grid2x2 as Grid, Plus, CircleAlert as AlertCircle, LayoutGrid } from 'lucide-react-native';
 import Animated, { FadeInUp, FadeInDown, SlideInRight } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
 import { ResponsiveAlbumGrid } from '../../components/ResponsiveAlbumGrid';

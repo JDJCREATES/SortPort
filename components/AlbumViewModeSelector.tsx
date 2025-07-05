@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Pressable } from 'react-native';
-import { Grid2x2, Grid3x3, MoreHorizontal, Maximize2 } from 'lucide-react-native';
+import { Grid2x2, Grid3x3, MoveHorizontal as MoreHorizontal, Maximize2 } from 'lucide-react-native';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { AlbumViewMode } from '../types/display';
 import { lightTheme } from '../utils/theme';
