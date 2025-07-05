@@ -26,16 +26,7 @@ import Animated, {
   clamp,
   useAnimatedGestureHandler,
 } from 'react-native-reanimated';
-import {
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Share as ShareIcon,
-  Download,
-  Info,
-  Heart,
-  MoreVertical,
-} from 'lucide-react-native';
+import { X, ChevronLeft, ChevronRight, Share as ShareIcon, Download, Info, Heart, MoveVertical as MoreVertical } from 'lucide-react-native';
 import { ImageViewerData } from '../types/display';
 import { lightTheme } from '../utils/theme';
 
