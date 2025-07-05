@@ -4,6 +4,7 @@ import { RevenueCatManager } from '../utils/revenuecat';
 import { MediaStorage } from '../utils/mediaStorage';
 import { AlbumUtils } from '../utils/albumUtils';
 import { UserFlags, AppSettings, Album } from '../types';
+import { PhotoLoader } from '../utils/photoLoader';
 
 // Define the state shape
 interface AppState {
@@ -353,6 +354,14 @@ export function AppProvider({ children }: AppProviderProps) {
     dispatch({ type: 'SET_ALBUMS_LOADING', payload: true });
     
     try {
+      // Check permissions before loading albums
+      const permissionResult = await PhotoLoader.checkAndRequestPermissions();
+      
+      if (!permissionResult.granted) {
+        console.warn('⚠️ Photo permissions not granted:', permissionResult.message);
+        // Still try to load albums from database, but they might be empty
+      }
+      
       // Ensure All Photos album exists first
       await AlbumUtils.ensureAllPhotosAlbumExists();
       
@@ -361,8 +370,7 @@ export function AppProvider({ children }: AppProviderProps) {
       dispatch({ type: 'SET_ALBUMS', payload: albums });
     } catch (error) {
       console.error('Error loading albums:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load albums';
-      dispatch({ type: 'SET_ALBUMS_ERROR', payload: errorMessage });
+      dispatch({ type: 'SET_ALBUMS_LOADING', payload: false });
     }
   };
 

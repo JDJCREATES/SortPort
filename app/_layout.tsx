@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useFrameworkReady } from '@/hooks/useFrameworkReady';
+import { useFrameworkReady } from '../hooks/useFrameworkReady';
 import { useFonts } from 'expo-font';
 import { AppProvider } from '../contexts/AppContext';
 import {
@@ -68,22 +68,25 @@ function RootNavigator() {
   };
 
   if (isFirstLaunch === null) {
-    return null; // Still checking first launch
+    return null;
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      {isFirstLaunch ? (
-        <Stack.Screen name="welcome" />
-      ) : (
-        <>
-          <Stack.Screen name="(tabs)" />
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        {isFirstLaunch ? (
           <Stack.Screen name="welcome" />
-        </>
-      )}
-      <Stack.Screen name="new-sort" />
-      <Stack.Screen name="album/[id]" />
-      <Stack.Screen name="+not-found" />
-    </Stack>
+        ) : (
+          <>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="welcome" />
+          </>
+        )}
+        <Stack.Screen name="new-sort" />
+        <Stack.Screen name="album/[id]" />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+      <StatusBar style="auto" />
+    </>
   );
 }

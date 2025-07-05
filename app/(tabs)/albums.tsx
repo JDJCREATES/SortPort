@@ -195,23 +195,17 @@ export default function AlbumsScreen() {
       const timeSinceLastFetch = now - lastDataFetchTime.current;
       
       const shouldRefresh = (
-        // No albums and not currently loading
         (!albums || albums.length === 0) && !isLoadingAlbums
       ) || (
-        // Data is stale and enough time has passed since last refresh
-        timeSinceLastFetch > STALE_DATA_THRESHOLD && 
+        // Increase this threshold to prevent frequent refreshes
+        timeSinceLastFetch > 10 * 60 * 1000 && // 10 minutes instead of 5
         timeSinceLastRefresh > REFRESH_COOLDOWN
       ) || (
-        // Has error and can retry
         state.hasError && state.retryCount < MAX_RETRY_ATTEMPTS
       );
       
       if (shouldRefresh && !state.isRefreshing) {
-        console.log('🔄 Refreshing albums on focus - reason:', {
-          noAlbums: !albums || albums.length === 0,
-          staleData: timeSinceLastFetch > STALE_DATA_THRESHOLD,
-          hasError: state.hasError,
-        });
+        console.log('🔄 Refreshing albums on focus');
         handleRefresh();
       }
     }, [albums, handleRefresh, isLoadingAlbums, state.isRefreshing, state.hasError, state.retryCount])

@@ -9,21 +9,27 @@ export class PhotoLoader {
   static async requestPermissions(): Promise<PermissionStatus> {
     try {
       if (Platform.OS === 'web') {
-        // Web doesn't need media library permissions but can't access photos  
         return 'denied';
       }
       
-      // Request basic media library permissions
+      // Request basic media library permissions first
       const { status } = await MediaLibrary.requestPermissionsAsync();
       
+      if (status !== 'granted') {
+        return status as PermissionStatus;
+      }
+      
       // On Android, also request media location permission if available
-      if (Platform.OS === 'android' && status === 'granted') {
+      if (Platform.OS === 'android') {
         try {
-          // This is optional - don't fail if not available
-          await MediaLibrary.requestPermissionsAsync(true); // Request write permissions too
+          const { status: writeStatus } = await MediaLibrary.requestPermissionsAsync(true);
+          console.log('📱 Media location permission status:', writeStatus);
+          
+          if (writeStatus !== 'granted') {
+            console.warn('⚠️ Media location permission not granted, some features may be limited');
+          }
         } catch (error) {
-          console.warn('Media location permission not available or denied:', error);
-          // Continue anyway - basic functionality will still work
+          console.warn('⚠️ Media location permission not available:', error);
         }
       }
       
@@ -31,6 +37,52 @@ export class PhotoLoader {
     } catch (error) {
       console.error('Error requesting permissions:', error);
       return 'denied';
+    }
+  }
+
+  static async checkAndRequestPermissions(): Promise<{
+    granted: boolean;
+    shouldShowRationale: boolean;
+    message: string;
+  }> {
+    try {
+      const status = await this.requestPermissions();
+      
+      switch (status) {
+        case 'granted':
+          return {
+            granted: true,
+            shouldShowRationale: false,
+            message: 'Permissions granted'
+          };
+        
+        case 'denied':
+          return {
+            granted: false,
+            shouldShowRationale: true,
+            message: 'Photo access is required to view your albums. Please grant permission in your device settings.'
+          };
+        
+        case 'undetermined':
+          return {
+            granted: false,
+            shouldShowRationale: true,
+            message: 'Photo access permission is needed to continue.'
+          };
+        
+        default:
+          return {
+            granted: false,
+            shouldShowRationale: true,
+            message: 'Unable to access photos. Please check your permissions.'
+          };
+      }
+    } catch (error) {
+      return {
+        granted: false,
+        shouldShowRationale: true,
+        message: 'Error checking permissions. Please try again.'
+      };
     }
   }
 
@@ -215,6 +267,8 @@ export class PhotoLoader {
     hasMore: boolean;
   }> {
     try {
+      console.log('📸 loadPhotosByIds called with:', photoIds.length, 'IDs, first:', first);
+      
       if (Platform.OS === 'web') {
         throw new Error('Photo access is not available on web.');
       }
@@ -224,7 +278,7 @@ export class PhotoLoader {
         throw new Error('Photo library permission not granted');
       }
 
-      // Find the starting index
+      // Find starting index
       let startIndex = 0;
       if (afterId) {
         const afterIndex = photoIds.findIndex(id => id === afterId);
@@ -233,98 +287,68 @@ export class PhotoLoader {
         }
       }
 
-      // Get the batch of photo IDs
+      // Get batch of IDs
       const batchIds = photoIds.slice(startIndex, startIndex + first);
       
       if (batchIds.length === 0) {
-        return {
-          photos: [],
-          nextAfterId: null,
-          hasMore: false,
-        };
+        return { photos: [], nextAfterId: null, hasMore: false };
       }
 
-      // Load the actual photo assets
+      console.log('📸 Looking for photos with IDs:', batchIds.slice(0, 5), '...');
+
+      // Load MORE assets to increase chance of finding our photos
       const photos: ImageMeta[] = [];
-      
-      for (const photoId of batchIds) {
-        try {
-          // Try to get full asset info with metadata first
-          const assetInfo = await MediaLibrary.getAssetInfoAsync(photoId, {
-            shouldDownloadFromNetwork: false,
-          });
-          
+      let after: string | undefined;
+      let foundCount = 0;
+      let attempts = 0;
+      const maxAttempts = 10; // Prevent infinite loop
+
+      while (foundCount < batchIds.length && attempts < maxAttempts) {
+        const assets = await MediaLibrary.getAssetsAsync({
+          mediaType: 'photo',
+          first: 2000, // Increased from 1000
+          after,
+          sortBy: ['creationTime'],
+        });
+
+        // Find photos in this batch
+        const foundInBatch = assets.assets.filter(asset => 
+          batchIds.includes(asset.id)
+        );
+
+        // Add found photos
+        foundInBatch.forEach(asset => {
           photos.push({
-            id: assetInfo.id,
-            uri: assetInfo.uri,
-            filename: assetInfo.filename,
-            width: assetInfo.width,
-            height: assetInfo.height,
-            creationTime: assetInfo.creationTime,
-            modificationTime: assetInfo.modificationTime,
-            // Include additional metadata if available
-            ...(assetInfo.exif && { exif: assetInfo.exif }),
-            ...(assetInfo.location && { location: assetInfo.location }),
+            id: asset.id,
+            uri: asset.uri,
+            filename: asset.filename,
+            width: asset.width,
+            height: asset.height,
+            creationTime: asset.creationTime,
+            modificationTime: asset.modificationTime,
           });
-        } catch (error) {
-          // Handle ACCESS_MEDIA_LOCATION permission errors gracefully
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          
-          if (errorMessage.includes('ACCESS_MEDIA_LOCATION') || errorMessage.includes('ExifInterface')) {
-            console.warn(`Skipping photo ${photoId} due to location permission, trying basic info`);
-            
-            // Fallback: Try to get basic asset info without EXIF
-            try {
-              // Get basic asset info by loading recent assets and finding our photo
-              let found = false;
-              let after: string | undefined;
-              
-              // Search in batches until we find our photo
-              while (!found) {
-                const basicAssets = await MediaLibrary.getAssetsAsync({
-                  mediaType: 'photo',
-                  first: 1000,
-                  after,
-                  sortBy: ['creationTime'],
-                });
-                
-                const asset = basicAssets.assets.find(a => a.id === photoId);
-                if (asset) {
-                  photos.push({
-                    id: asset.id,
-                    uri: asset.uri,
-                    filename: asset.filename,
-                    width: asset.width,
-                    height: asset.height,
-                    creationTime: asset.creationTime,
-                    modificationTime: asset.modificationTime,
-                  });
-                  found = true;
-                }
-                
-                // If no more pages or we've searched enough, break
-                if (!basicAssets.hasNextPage || basicAssets.assets.length === 0) {
-                  break;
-                }
-                
-                after = basicAssets.endCursor;
-              }
-              
-              if (!found) {
-                console.warn(`Could not find photo ${photoId} in basic asset search`);
-              }
-            } catch (fallbackError) {
-              console.error(`Failed to load photo ${photoId} with fallback:`, fallbackError);
-            }
-          } else {
-            console.error(`Error loading photo ${photoId}:`, error);
-          }
+        });
+
+        foundCount = photos.length;
+        attempts++;
+
+        console.log(`📸 Attempt ${attempts}: Found ${foundInBatch.length} photos in this batch, total found: ${foundCount}/${batchIds.length}`);
+
+        // If no more pages, break
+        if (!assets.hasNextPage) {
+          console.log('📸 Reached end of photos');
+          break;
         }
+
+        after = assets.endCursor;
       }
 
-      const nextIndex = startIndex + first;
-      const hasMore = nextIndex < photoIds.length;
-      const nextAfterId = hasMore && photos.length > 0 ? photos[photos.length - 1].id : null;
+      console.log('📸 Final result: Found', photos.length, 'photos out of', batchIds.length, 'requested');
+
+      // Calculate next batch info
+      const actualNextIndex = startIndex + photos.length; // Use actual found photos, not requested
+      const hasMore = actualNextIndex < photoIds.length;
+      const nextAfterId = hasMore && photos.length > 0 ? photoIds[actualNextIndex] : null;
 
       return {
         photos,
@@ -332,12 +356,8 @@ export class PhotoLoader {
         hasMore,
       };
     } catch (error) {
-      console.error('Error loading photos by IDs:', error);
-      return {
-        photos: [],
-        nextAfterId: null,
-        hasMore: false,
-      };
+      console.error('❌ Error loading photos by IDs:', error);
+      return { photos: [], nextAfterId: null, hasMore: false };
     }
   }
 

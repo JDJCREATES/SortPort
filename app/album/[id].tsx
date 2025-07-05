@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -22,13 +22,14 @@ import { RevenueCatManager } from '../../utils/revenuecat';
 import { SubscriptionModal } from '../../components/SubscriptionModal';
 import { ImageFullscreenViewer } from '../../components/ImageFullscreenViewer';
 import { lightTheme } from '../../utils/theme';
+import * as IntentLauncher from 'expo-intent-launcher';
+import * as Application from 'expo-application';
 
 const PHOTOS_PER_BATCH = 20;
 
-export default function AlbumDetailScreen() {
-  const { id } = useLocalSearchParams();
-  const albumId = id as string;
-
+export default function AlbumScreen() {
+  const { id: albumId } = useLocalSearchParams();
+  
   const [album, setAlbum] = useState<Album | null>(null);
   const [photos, setPhotos] = useState<ImageMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,10 +46,27 @@ export default function AlbumDetailScreen() {
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
+  // Add a ref to prevent loading when already loaded
+  const hasLoadedRef = useRef(false);
+
   useEffect(() => {
-    loadAlbum();
+    // Only load if we haven't loaded this album yet
+    if (!hasLoadedRef.current) {
+      loadAlbum();
+    }
+  }, []); // Remove albumId from dependencies to prevent re-runs
+
+  useEffect(() => {
     loadUserFlags();
   }, []);
+
+  // Reset when albumId changes (navigating to different album)
+  useEffect(() => {
+    hasLoadedRef.current = false;
+    setLoading(true);
+    setPhotos([]);
+    setAlbum(null);
+  }, [albumId]);
 
   const loadUserFlags = async () => {
     try {
@@ -61,35 +79,60 @@ export default function AlbumDetailScreen() {
   };
 
   const loadAlbum = async () => {
+    if (hasLoadedRef.current) {
+      console.log('🚫 Album already loaded, skipping...');
+      return;
+    }
+
+    hasLoadedRef.current = true;
+
     try {
+      console.log('🔍 Loading album with ID:', albumId);
+      
       const albums = await AlbumUtils.loadAlbums();
+      console.log('📱 Total albums loaded:', albums.length);
+      
       const foundAlbum = albums.find(a => a.id === albumId);
       
       if (!foundAlbum) {
+        console.log('❌ Album not found with ID:', albumId);
         Alert.alert('Album Not Found', 'This album no longer exists.');
         router.back();
         return;
       }
 
+      console.log('✅ Found album:', foundAlbum.name, 'with', foundAlbum.imageIds?.length, 'photos');
       setAlbum(foundAlbum);
 
       // Load actual photos if available
-      if (foundAlbum.imageIds.length > 0) {
+      if (foundAlbum.imageIds && foundAlbum.imageIds.length > 0) {
         try {
+          console.log('📸 Starting to load photos for album:', foundAlbum.name);
+          
           const result = await PhotoLoader.loadPhotosByIds(
             foundAlbum.imageIds,
             PHOTOS_PER_BATCH
           );
           
+          console.log('📸 Photo loading result - setting', result.photos.length, 'photos in state');
+          
           setPhotos(result.photos);
           setNextPhotoCursor(result.nextAfterId);
           setHasMorePhotos(result.hasMore);
         } catch (error) {
-          console.error('Error loading photos:', error);
+          console.error('❌ Error loading photos:', error);
+          setPhotos([]);
+          setNextPhotoCursor(null);
+          setHasMorePhotos(false);
         }
+      } else {
+        console.log('📱 Album has no imageIds');
+        setPhotos([]);
+        setNextPhotoCursor(null);
+        setHasMorePhotos(false);
       }
     } catch (error) {
-      console.error('Error loading album:', error);
+      console.error('❌ Error loading album:', error);
       Alert.alert('Error', 'Failed to load album.');
       router.back();
     } finally {
@@ -263,24 +306,22 @@ export default function AlbumDetailScreen() {
     setViewMode(viewMode === 'grid' ? 'list' : 'grid');
   };
 
-  const renderPhotoItem = ({ item: photo, index }: { item: ImageMeta; index: number }) => (
-    <Animated.View entering={FadeInDown.delay(index * 50)}>
-      <TouchableOpacity
-        style={viewMode === 'grid' ? styles.gridPhoto : styles.listPhoto}
+  const renderPhotoItem = ({ item, index }: { item: ImageMeta; index: number }) => {
+    return (
+      <TouchableOpacity 
+        style={styles.gridPhoto}
         onPress={() => handleImagePress(index)}
       >
-        <Image source={{ uri: photo.uri }} style={viewMode === 'grid' ? styles.gridImage : styles.listImage} />
-        {viewMode === 'list' && (
-          <View style={styles.listPhotoInfo}>
-            <Text style={styles.listPhotoName} numberOfLines={1}>{photo.filename}</Text>
-            <Text style={styles.listPhotoDate}>
-              {new Date(photo.creationTime).toLocaleDateString()}
-            </Text>
-          </View>
-        )}
+        <Image 
+          source={{ uri: item.uri }} 
+          style={styles.gridImage}
+          resizeMode="cover"
+          onLoad={() => console.log('✅ Image loaded:', item.id)}
+          onError={(error) => console.log('❌ Image error:', item.id, error)}
+        />
       </TouchableOpacity>
-    </Animated.View>
-  );
+    );
+  };
 
   const renderFooter = () => {
     if (!isFetchingMore) return null;
@@ -370,12 +411,10 @@ export default function AlbumDetailScreen() {
             data={photos}
             renderItem={renderPhotoItem}
             keyExtractor={(item) => item.id}
-            numColumns={viewMode === 'grid' ? 3 : 1}
-            key={viewMode} // Force re-render when view mode changes
+            numColumns={3}
             contentContainerStyle={styles.photoContainer}
             onEndReached={loadMorePhotos}
             onEndReachedThreshold={0.5}
-            ListFooterComponent={renderFooter}
             showsVerticalScrollIndicator={false}
           />
         ) : (
@@ -508,9 +547,9 @@ const styles = StyleSheet.create({
   gridPhoto: {
     flex: 1,
     aspectRatio: 1,
+    margin: 2,
     borderRadius: lightTheme.borderRadius.sm,
     overflow: 'hidden',
-    margin: lightTheme.spacing.xs,
   },
   gridImage: {
     width: '100%',
@@ -568,9 +607,5 @@ const styles = StyleSheet.create({
     padding: lightTheme.spacing.lg,
     gap: lightTheme.spacing.sm,
   },
-  loadingText: {
-    fontSize: 14,
-    color: lightTheme.colors.textSecondary,
-    fontFamily: 'Inter-Regular',
-  },
+  
 });
