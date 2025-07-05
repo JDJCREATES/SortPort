@@ -3,10 +3,12 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Ale
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Share, Download, CreditCard as Edit, Trash2, Grid2x2 as Grid, List } from 'lucide-react-native';
 import { Album, ImageMeta } from '../../types';
+import { ImageViewerData } from '../../types/display';
 import { AlbumUtils } from '../../utils/albumUtils';
 import { PhotoLoader } from '../../utils/photoLoader';
 import { RevenueCatManager } from '../../utils/revenuecat';
 import { SubscriptionModal } from '../../components/SubscriptionModal';
+import { ImageFullscreenViewer } from '../../components/ImageFullscreenViewer';
 import { lightTheme } from '../../utils/theme';
 
 export default function AlbumDetailScreen() {
@@ -23,6 +25,8 @@ export default function AlbumDetailScreen() {
     isProUser: false,
   });
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showImageViewer, setShowImageViewer] = useState(false);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   useEffect(() => {
     loadAlbum();
@@ -72,6 +76,32 @@ export default function AlbumDetailScreen() {
       setLoading(false);
     }
   };
+
+  const handleImagePress = (index: number) => {
+    setSelectedImageIndex(index);
+    setShowImageViewer(true);
+  };
+
+  const handleImageViewerClose = () => {
+    setShowImageViewer(false);
+  };
+
+  const handleImageChange = (index: number) => {
+    setSelectedImageIndex(index);
+  };
+
+  // Convert photos to ImageViewerData format
+  const imageViewerData: ImageViewerData[] = photos.map(photo => ({
+    id: photo.id,
+    uri: photo.uri,
+    filename: photo.filename,
+    width: photo.width,
+    height: photo.height,
+    creationTime: photo.creationTime,
+    modificationTime: photo.modificationTime,
+    fileSize: undefined, // Would need to be fetched separately
+    location: undefined, // Would need to be fetched separately
+  }));
 
   const handleShare = () => {
     if (!userFlags.hasUnlockPack) {
@@ -268,9 +298,7 @@ export default function AlbumDetailScreen() {
               <TouchableOpacity
                 key={photo.id}
                 style={viewMode === 'grid' ? styles.gridPhoto : styles.listPhoto}
-                onPress={() => {
-                  Alert.alert('Photo Details', `Photo: ${photo.filename}\nCreated: ${new Date(photo.creationTime).toLocaleDateString()}`);
-                }}
+                onPress={() => handleImagePress(index)}
               >
                 <Image source={{ uri: photo.uri }} style={viewMode === 'grid' ? styles.gridImage : styles.listImage} />
                 {viewMode === 'list' && (
@@ -298,6 +326,14 @@ export default function AlbumDetailScreen() {
         visible={showSubscriptionModal}
         onClose={() => setShowSubscriptionModal(false)}
         onSuccess={handleSubscriptionSuccess}
+      />
+
+      <ImageFullscreenViewer
+        visible={showImageViewer}
+        images={imageViewerData}
+        initialIndex={selectedImageIndex}
+        onClose={handleImageViewerClose}
+        onImageChange={handleImageChange}
       />
     </SafeAreaView>
   );

@@ -13,17 +13,16 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
-import { Search, Filter, Grid2x2 as Grid, Plus, AlertCircle } from 'lucide-react-native';
+import { Search, Filter, Grid2x2 as Grid, Plus, AlertCircle, LayoutGrid } from 'lucide-react-native';
 import Animated, { FadeInUp, FadeInDown, SlideInRight } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
-import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
+import { ResponsiveAlbumGrid } from '../../components/ResponsiveAlbumGrid';
+import { AlbumViewModeSelector } from '../../components/AlbumViewModeSelector';
 import { lightTheme } from '../../utils/theme';
 import { Album } from '../../types';
+import { AlbumViewMode } from '../../types/display';
 
 const { width: screenWidth } = Dimensions.get('window');
-const CARD_MARGIN = lightTheme.spacing.md;
-const CARDS_PER_ROW = 2;
-const CARD_WIDTH = (screenWidth - (lightTheme.spacing.lg * 2) - (CARD_MARGIN * (CARDS_PER_ROW - 1))) / CARDS_PER_ROW;
 
 // Constants for better maintainability
 const REFRESH_COOLDOWN = 30 * 1000; // 30 seconds
@@ -40,6 +39,8 @@ interface AlbumsScreenState {
   retryCount: number;
   hasError: boolean;
   errorMessage: string;
+  viewMode: AlbumViewMode;
+  showViewModeSelector: boolean;
 }
 
 export default function AlbumsScreen() {
@@ -55,6 +56,8 @@ export default function AlbumsScreen() {
     retryCount: 0,
     hasError: false,
     errorMessage: '',
+    viewMode: 'grid-2',
+    showViewModeSelector: false,
   });
 
   // Refs for performance optimization
@@ -72,8 +75,6 @@ export default function AlbumsScreen() {
       }
     };
   }, []);
-
-
 
   // Memoized filtered and sorted albums
   const processedAlbums = useMemo(() => {
@@ -268,6 +269,14 @@ export default function AlbumsScreen() {
     }
   }, []);
 
+  const handleViewModeChange = useCallback((viewMode: AlbumViewMode) => {
+    setState(prev => ({ ...prev, viewMode }));
+  }, []);
+
+  const toggleViewModeSelector = useCallback(() => {
+    setState(prev => ({ ...prev, showViewModeSelector: !prev.showViewModeSelector }));
+  }, []);
+
   // Render functions
   const renderErrorState = useCallback(() => (
     <Animated.View entering={FadeInUp.delay(200)} style={styles.errorContainer}>
@@ -310,23 +319,15 @@ export default function AlbumsScreen() {
   ), [state.retryCount]);
 
   const renderAlbumGrid = useCallback(() => (
-    <Animated.View entering={FadeInUp.delay(200)} style={styles.albumGrid}>
-      {processedAlbums.map((album, index) => (
-        <Animated.View
-          key={album.id}
-          entering={SlideInRight.delay(index * 50)}
-          style={[styles.albumCardContainer, { width: CARD_WIDTH }]}
-        >
-          <AnimatedAlbumCard
-            album={album}
-            onPress={() => handleAlbumPress(album)}
-            showLocked={state.showLocked}
-            index={index}
-          />
-        </Animated.View>
-      ))}
+    <Animated.View entering={FadeInUp.delay(200)}>
+      <ResponsiveAlbumGrid
+        albums={processedAlbums}
+        viewMode={state.viewMode}
+        onAlbumPress={handleAlbumPress}
+        showLocked={state.showLocked}
+      />
     </Animated.View>
-  ), [processedAlbums, handleAlbumPress, state.showLocked]);
+  ), [processedAlbums, state.viewMode, handleAlbumPress, state.showLocked]);
 
   const renderContent = () => {
     if (state.hasError && state.retryCount >= MAX_RETRY_ATTEMPTS) {
@@ -354,6 +355,21 @@ export default function AlbumsScreen() {
         <TouchableOpacity 
           style={[
             styles.filterButton,
+            state.showViewModeSelector && styles.filterButtonActive
+          ]} 
+          onPress={toggleViewModeSelector}
+          disabled={state.isRefreshing}
+          accessibilityLabel="Change view mode"
+          accessibilityRole="button"
+        >
+          <LayoutGrid 
+            size={20} 
+            color={state.showViewModeSelector ? lightTheme.colors.primary : lightTheme.colors.textSecondary} 
+          />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[
+            styles.filterButton,
             state.showLocked && styles.filterButtonActive
           ]} 
           onPress={handleToggleShowLocked}
@@ -370,11 +386,27 @@ export default function AlbumsScreen() {
     </Animated.View>
   );
 
+  const renderViewModeSelector = () => {
+    if (!state.showViewModeSelector) return null;
+    
+    return (
+      <Animated.View 
+        entering={FadeInDown.delay(100)} 
+        style={styles.viewModeSelectorContainer}
+      >
+        <AlbumViewModeSelector
+          currentMode={state.viewMode}
+          onModeChange={handleViewModeChange}
+        />
+      </Animated.View>
+    );
+  };
+
   const renderFooter = () => (
     <Animated.View entering={FadeInDown.delay(300)} style={styles.footer}>
       <Text style={styles.footerText}>
         {state.showLocked 
-                ? `Showing ${processedAlbums.length} albums (including locked)`
+          ? `Showing ${processedAlbums.length} albums (including locked)`
           : `Showing ${processedAlbums.length} unlocked albums`
         }
       </Text>
@@ -394,6 +426,7 @@ export default function AlbumsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {renderHeader()}
+      {renderViewModeSelector()}
 
       <ScrollView 
         style={styles.scrollView} 
@@ -484,6 +517,12 @@ const styles = StyleSheet.create({
     backgroundColor: lightTheme.colors.primary + '20',
     borderWidth: 1,
     borderColor: lightTheme.colors.primary + '40',
+  },
+  viewModeSelectorContainer: {
+    backgroundColor: lightTheme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: lightTheme.colors.border,
+    paddingVertical: lightTheme.spacing.sm,
   },
   scrollView: {
     flex: 1,
@@ -601,15 +640,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-  },
-  albumGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    paddingTop: lightTheme.spacing.md,
-  },
-  albumCardContainer: {
-    marginBottom: lightTheme.spacing.lg,
   },
   footer: {
     paddingVertical: lightTheme.spacing.xl,
