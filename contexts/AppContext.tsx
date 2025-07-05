@@ -23,6 +23,7 @@ interface AppState {
   // Albums
   albums: Album[];
   isLoadingAlbums: boolean;
+  albumsError: string | null;
   
   // General loading states
   isInitializing: boolean;
@@ -39,6 +40,7 @@ type AppAction =
   | { type: 'SET_SETTINGS'; payload: AppSettings }
   | { type: 'SET_ALBUMS_LOADING'; payload: boolean }
   | { type: 'SET_ALBUMS'; payload: Album[] }
+  | { type: 'SET_ALBUMS_ERROR'; payload: string | null }
   | { type: 'ADD_ALBUM'; payload: Album }
   | { type: 'UPDATE_ALBUM'; payload: { id: string; updates: Partial<Album> } }
   | { type: 'REMOVE_ALBUM'; payload: string };
@@ -65,6 +67,7 @@ const initialState: AppState = {
   isLoadingSettings: true,
   albums: [],
   isLoadingAlbums: true,
+  albumsError: null,
   isInitializing: true,
 };
 
@@ -101,7 +104,19 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isLoadingAlbums: action.payload };
     
     case 'SET_ALBUMS':
-      return { ...state, albums: action.payload, isLoadingAlbums: false };
+      return { 
+        ...state, 
+        albums: action.payload, 
+        isLoadingAlbums: false,
+        albumsError: null // Clear error on successful load
+      };
+    
+    case 'SET_ALBUMS_ERROR': // ADD THIS CASE
+      return { 
+        ...state, 
+        albumsError: action.payload,
+        isLoadingAlbums: false 
+      };
     
     case 'ADD_ALBUM':
       return {
@@ -346,7 +361,8 @@ export function AppProvider({ children }: AppProviderProps) {
       dispatch({ type: 'SET_ALBUMS', payload: albums });
     } catch (error) {
       console.error('Error loading albums:', error);
-      dispatch({ type: 'SET_ALBUMS_LOADING', payload: false });
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load albums';
+      dispatch({ type: 'SET_ALBUMS_ERROR', payload: errorMessage });
     }
   };
 
