@@ -13,7 +13,20 @@ export class PhotoLoader {
         return 'denied';
       }
       
+      // Request basic media library permissions
       const { status } = await MediaLibrary.requestPermissionsAsync();
+      
+      // On Android, also request media location permission if available
+      if (Platform.OS === 'android' && status === 'granted') {
+        try {
+          // This is optional - don't fail if not available
+          await MediaLibrary.requestPermissionsAsync(true); // Request write permissions too
+        } catch (error) {
+          console.warn('Media location permission not available or denied:', error);
+          // Continue anyway - basic functionality will still work
+        }
+      }
+      
       return status as PermissionStatus;
     } catch (error) {
       console.error('Error requesting permissions:', error);
@@ -236,28 +249,76 @@ export class PhotoLoader {
       
       for (const photoId of batchIds) {
         try {
-          const assets = await MediaLibrary.getAssetsAsync({
-            mediaType: 'photo',
-            first: 1,
-            sortBy: ['creationTime'],
+          // Try to get full asset info with metadata first
+          const assetInfo = await MediaLibrary.getAssetInfoAsync(photoId, {
+            shouldDownloadFromNetwork: false,
           });
-
-          // Find the specific asset by ID
-          const asset = assets.assets.find(a => a.id === photoId);
-          if (asset) {
-            photos.push({
-              id: asset.id,
-              uri: asset.uri,
-              filename: asset.filename,
-              width: asset.width,
-              height: asset.height,
-              creationTime: asset.creationTime,
-              modificationTime: asset.modificationTime,
-            });
-          }
+          
+          photos.push({
+            id: assetInfo.id,
+            uri: assetInfo.uri,
+            filename: assetInfo.filename,
+            width: assetInfo.width,
+            height: assetInfo.height,
+            creationTime: assetInfo.creationTime,
+            modificationTime: assetInfo.modificationTime,
+            // Include additional metadata if available
+            ...(assetInfo.exif && { exif: assetInfo.exif }),
+            ...(assetInfo.location && { location: assetInfo.location }),
+          });
         } catch (error) {
-          console.error(`Error loading photo ${photoId}:`, error);
-          // Continue with other photos
+          // Handle ACCESS_MEDIA_LOCATION permission errors gracefully
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          
+          if (errorMessage.includes('ACCESS_MEDIA_LOCATION') || errorMessage.includes('ExifInterface')) {
+            console.warn(`Skipping photo ${photoId} due to location permission, trying basic info`);
+            
+            // Fallback: Try to get basic asset info without EXIF
+            try {
+              // Get basic asset info by loading recent assets and finding our photo
+              let found = false;
+              let after: string | undefined;
+              
+              // Search in batches until we find our photo
+              while (!found) {
+                const basicAssets = await MediaLibrary.getAssetsAsync({
+                  mediaType: 'photo',
+                  first: 1000,
+                  after,
+                  sortBy: ['creationTime'],
+                });
+                
+                const asset = basicAssets.assets.find(a => a.id === photoId);
+                if (asset) {
+                  photos.push({
+                    id: asset.id,
+                    uri: asset.uri,
+                    filename: asset.filename,
+                    width: asset.width,
+                    height: asset.height,
+                    creationTime: asset.creationTime,
+                    modificationTime: asset.modificationTime,
+                  });
+                  found = true;
+                }
+                
+                // If no more pages or we've searched enough, break
+                if (!basicAssets.hasNextPage || basicAssets.assets.length === 0) {
+                  break;
+                }
+                
+                after = basicAssets.endCursor;
+              }
+              
+              if (!found) {
+                console.warn(`Could not find photo ${photoId} in basic asset search`);
+              }
+            } catch (fallbackError) {
+              console.error(`Failed to load photo ${photoId} with fallback:`, fallbackError);
+            }
+          } else {
+            console.error(`Error loading photo ${photoId}:`, error);
+          }
         }
       }
 
