@@ -192,6 +192,94 @@ export class PhotoLoader {
     }
   }
 
+  static async loadPhotosByIds(
+    photoIds: string[], 
+    first: number = 20, 
+    afterId?: string
+  ): Promise<{
+    photos: ImageMeta[];
+    nextAfterId: string | null;
+    hasMore: boolean;
+  }> {
+    try {
+      if (Platform.OS === 'web') {
+        throw new Error('Photo access is not available on web.');
+      }
+
+      const permissionStatus = await this.requestPermissions();
+      if (permissionStatus !== 'granted') {
+        throw new Error('Photo library permission not granted');
+      }
+
+      // Find the starting index
+      let startIndex = 0;
+      if (afterId) {
+        const afterIndex = photoIds.findIndex(id => id === afterId);
+        if (afterIndex !== -1) {
+          startIndex = afterIndex + 1;
+        }
+      }
+
+      // Get the batch of photo IDs
+      const batchIds = photoIds.slice(startIndex, startIndex + first);
+      
+      if (batchIds.length === 0) {
+        return {
+          photos: [],
+          nextAfterId: null,
+          hasMore: false,
+        };
+      }
+
+      // Load the actual photo assets
+      const photos: ImageMeta[] = [];
+      
+      for (const photoId of batchIds) {
+        try {
+          const assets = await MediaLibrary.getAssetsAsync({
+            mediaType: 'photo',
+            first: 1,
+            sortBy: ['creationTime'],
+          });
+
+          // Find the specific asset by ID
+          const asset = assets.assets.find(a => a.id === photoId);
+          if (asset) {
+            photos.push({
+              id: asset.id,
+              uri: asset.uri,
+              filename: asset.filename,
+              width: asset.width,
+              height: asset.height,
+              creationTime: asset.creationTime,
+              modificationTime: asset.modificationTime,
+            });
+          }
+        } catch (error) {
+          console.error(`Error loading photo ${photoId}:`, error);
+          // Continue with other photos
+        }
+      }
+
+      const nextIndex = startIndex + first;
+      const hasMore = nextIndex < photoIds.length;
+      const nextAfterId = hasMore && photos.length > 0 ? photos[photos.length - 1].id : null;
+
+      return {
+        photos,
+        nextAfterId,
+        hasMore,
+      };
+    } catch (error) {
+      console.error('Error loading photos by IDs:', error);
+      return {
+        photos: [],
+        nextAfterId: null,
+        hasMore: false,
+      };
+    }
+  }
+
   static async getPhotoBase64(uri: string): Promise<string> {
     try {
       const response = await fetch(uri);

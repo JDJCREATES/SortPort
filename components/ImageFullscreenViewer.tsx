@@ -26,9 +26,21 @@ import Animated, {
   clamp,
   useAnimatedGestureHandler,
 } from 'react-native-reanimated';
-import { X, ChevronLeft, ChevronRight, Share as ShareIcon, Download, Info, Heart, MoveVertical as MoreVertical } from 'lucide-react-native';
+import { 
+  X, 
+  ChevronLeft, 
+  ChevronRight, 
+  Share as ShareIcon, 
+  Download, 
+  Info, 
+  Heart, 
+  MoveVertical as MoreVertical,
+  Crop
+} from 'lucide-react-native';
 import { ImageViewerData } from '../types/display';
 import { lightTheme } from '../utils/theme';
+
+type ResizeMode = 'contain' | 'cover' | 'stretch' | 'center';
 
 interface ImageFullscreenViewerProps {
   visible: boolean;
@@ -54,6 +66,7 @@ export function ImageFullscreenViewer({
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [isInfoVisible, setIsInfoVisible] = useState(false);
   const [isControlsVisible, setIsControlsVisible] = useState(true);
+  const [imageResizeMode, setImageResizeMode] = useState<ResizeMode>('contain');
 
   // Animation values
   const scale = useSharedValue(1);
@@ -139,6 +152,12 @@ export function ImageFullscreenViewer({
     );
   }, [isInfoVisible, infoPanelTranslateY]);
 
+  const cycleResizeMode = useCallback(() => {
+    const modes: ResizeMode[] = ['contain', 'cover', 'stretch', 'center'];
+    const currentIndex = modes.indexOf(imageResizeMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    setImageResizeMode(modes[nextIndex]);
+  }, [imageResizeMode]);
   const handleShare = useCallback(async () => {
     if (!currentImage) return;
     
@@ -264,6 +283,9 @@ export function ImageFullscreenViewer({
   // Swipe up gesture for info panel
   const swipeUpGesture = Gesture.Pan()
     .onUpdate((event) => {
+      // Only allow info panel toggle when image is not zoomed
+      if (scale.value > 1.1) return;
+      
       if (event.translationY < -SWIPE_THRESHOLD && !isInfoVisible) {
         runOnJS(toggleInfoPanel)();
       } else if (event.translationY > SWIPE_THRESHOLD && isInfoVisible) {
@@ -352,7 +374,7 @@ export function ImageFullscreenViewer({
               <Animated.Image
                 source={{ uri: currentImage.uri }}
                 style={[styles.image, imageAnimatedStyle]}
-                resizeMode="contain"
+                resizeMode={imageResizeMode}
               />
             </Animated.View>
           </GestureDetector>
@@ -366,6 +388,9 @@ export function ImageFullscreenViewer({
               {currentImage.filename}
             </Text>
             <View style={styles.headerActions}>
+              <Pressable style={styles.headerButton} onPress={cycleResizeMode}>
+                <Crop size={20} color="white" />
+              </Pressable>
               <Pressable style={styles.headerButton} onPress={handleShare}>
                 <ShareIcon size={20} color="white" />
               </Pressable>
@@ -396,6 +421,9 @@ export function ImageFullscreenViewer({
           <Animated.View style={[styles.counter, controlsAnimatedStyle]}>
             <Text style={styles.counterText}>
               {currentIndex + 1} of {images.length}
+            </Text>
+            <Text style={styles.resizeModeText}>
+              {imageResizeMode.charAt(0).toUpperCase() + imageResizeMode.slice(1)}
             </Text>
           </Animated.View>
 
@@ -561,6 +589,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
+    marginBottom: 4,
+  },
+  resizeModeText: {
+    color: 'white',
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    opacity: 0.8,
   },
   infoPanel: {
     position: 'absolute',

@@ -1,7 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  SafeAreaView, 
+  ScrollView, 
+  TouchableOpacity, 
+  Alert, 
+  Image,
+  ActivityIndicator,
+  FlatList
+} from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Share, Download, CreditCard as Edit, Trash2, Grid2x2 as Grid, List } from 'lucide-react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Album, ImageMeta } from '../../types';
 import { ImageViewerData } from '../../types/display';
 import { AlbumUtils } from '../../utils/albumUtils';
@@ -11,6 +23,8 @@ import { SubscriptionModal } from '../../components/SubscriptionModal';
 import { ImageFullscreenViewer } from '../../components/ImageFullscreenViewer';
 import { lightTheme } from '../../utils/theme';
 
+const PHOTOS_PER_BATCH = 20;
+
 export default function AlbumDetailScreen() {
   const { id } = useLocalSearchParams();
   const albumId = id as string;
@@ -18,6 +32,9 @@ export default function AlbumDetailScreen() {
   const [album, setAlbum] = useState<Album | null>(null);
   const [photos, setPhotos] = useState<ImageMeta[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nextPhotoCursor, setNextPhotoCursor] = useState<string | null>(null);
+  const [hasMorePhotos, setHasMorePhotos] = useState(false);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [userFlags, setUserFlags] = useState({
     isSubscribed: false,
@@ -59,11 +76,14 @@ export default function AlbumDetailScreen() {
       // Load actual photos if available
       if (foundAlbum.imageIds.length > 0) {
         try {
-          const allPhotos = await PhotoLoader.loadRecentPhotos(100);
-          const albumPhotos = allPhotos.filter(photo => 
-            foundAlbum.imageIds.includes(photo.id)
+          const result = await PhotoLoader.loadPhotosByIds(
+            foundAlbum.imageIds,
+            PHOTOS_PER_BATCH
           );
-          setPhotos(albumPhotos);
+          
+          setPhotos(result.photos);
+          setNextPhotoCursor(result.nextAfterId);
+          setHasMorePhotos(result.hasMore);
         } catch (error) {
           console.error('Error loading photos:', error);
         }
@@ -74,6 +94,29 @@ export default function AlbumDetailScreen() {
       router.back();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMorePhotos = async () => {
+    if (!album || isFetchingMore || !hasMorePhotos || !nextPhotoCursor) {
+      return;
+    }
+
+    setIsFetchingMore(true);
+    try {
+      const result = await PhotoLoader.loadPhotosByIds(
+        album.imageIds,
+        PHOTOS_PER_BATCH,
+        nextPhotoCursor
+      );
+
+      setPhotos(prevPhotos => [...prevPhotos, ...result.photos]);
+      setNextPhotoCursor(result.nextAfterId);
+      setHasMorePhotos(result.hasMore);
+    } catch (error) {
+      console.error('Error loading more photos:', error);
+    } finally {
+      setIsFetchingMore(false);
     }
   };
 
@@ -220,6 +263,36 @@ export default function AlbumDetailScreen() {
     setViewMode(viewMode === 'grid' ? 'list' : 'grid');
   };
 
+  const renderPhotoItem = ({ item: photo, index }: { item: ImageMeta; index: number }) => (
+    <Animated.View entering={FadeInDown.delay(index * 50)}>
+      <TouchableOpacity
+        style={viewMode === 'grid' ? styles.gridPhoto : styles.listPhoto}
+        onPress={() => handleImagePress(index)}
+      >
+        <Image source={{ uri: photo.uri }} style={viewMode === 'grid' ? styles.gridImage : styles.listImage} />
+        {viewMode === 'list' && (
+          <View style={styles.listPhotoInfo}>
+            <Text style={styles.listPhotoName} numberOfLines={1}>{photo.filename}</Text>
+            <Text style={styles.listPhotoDate}>
+              {new Date(photo.creationTime).toLocaleDateString()}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+
+  const renderFooter = () => {
+    if (!isFetchingMore) return null;
+    
+    return (
+      <View style={styles.loadingFooter}>
+        <ActivityIndicator size="small" color={lightTheme.colors.primary} />
+        <Text style={styles.loadingText}>Loading more photos...</Text>
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -293,25 +366,18 @@ export default function AlbumDetailScreen() {
         </View>
 
         {photos.length > 0 ? (
-          <View style={viewMode === 'grid' ? styles.photoGrid : styles.photoList}>
-            {photos.map((photo, index) => (
-              <TouchableOpacity
-                key={photo.id}
-                style={viewMode === 'grid' ? styles.gridPhoto : styles.listPhoto}
-                onPress={() => handleImagePress(index)}
-              >
-                <Image source={{ uri: photo.uri }} style={viewMode === 'grid' ? styles.gridImage : styles.listImage} />
-                {viewMode === 'list' && (
-                  <View style={styles.listPhotoInfo}>
-                    <Text style={styles.listPhotoName} numberOfLines={1}>{photo.filename}</Text>
-                    <Text style={styles.listPhotoDate}>
-                      {new Date(photo.creationTime).toLocaleDateString()}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
+          <FlatList
+            data={photos}
+            renderItem={renderPhotoItem}
+            keyExtractor={(item) => item.id}
+            numColumns={viewMode === 'grid' ? 3 : 1}
+            key={viewMode} // Force re-render when view mode changes
+            contentContainerStyle={styles.photoContainer}
+            onEndReached={loadMorePhotos}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={renderFooter}
+            showsVerticalScrollIndicator={false}
+          />
         ) : (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyTitle}>No Photos Available</Text>
@@ -436,24 +502,19 @@ const styles = StyleSheet.create({
   actionButtonTextDisabled: {
     color: lightTheme.colors.textSecondary,
   },
-  photoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  photoContainer: {
     padding: lightTheme.spacing.md,
-    gap: lightTheme.spacing.sm,
   },
   gridPhoto: {
-    width: '31%',
+    flex: 1,
     aspectRatio: 1,
     borderRadius: lightTheme.borderRadius.sm,
     overflow: 'hidden',
+    margin: lightTheme.spacing.xs,
   },
   gridImage: {
     width: '100%',
     height: '100%',
-  },
-  photoList: {
-    padding: lightTheme.spacing.md,
   },
   listPhoto: {
     flexDirection: 'row',
@@ -462,6 +523,7 @@ const styles = StyleSheet.create({
     borderRadius: lightTheme.borderRadius.md,
     padding: lightTheme.spacing.sm,
     marginBottom: lightTheme.spacing.sm,
+    marginHorizontal: lightTheme.spacing.md,
   },
   listImage: {
     width: 60,
@@ -498,5 +560,17 @@ const styles = StyleSheet.create({
     color: lightTheme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     textAlign: 'center',
+  },
+  loadingFooter: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: lightTheme.spacing.lg,
+    gap: lightTheme.spacing.sm,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: lightTheme.colors.textSecondary,
+    fontFamily: 'Inter-Regular',
   },
 });
