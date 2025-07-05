@@ -1,20 +1,41 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  SafeAreaView, 
-  ScrollView, 
-  TouchableOpacity, 
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  TouchableOpacity,
   RefreshControl,
   Alert,
   Dimensions,
-  Platform
+  Platform,
+  InteractionManager,
+  LayoutAnimation,
 } from 'react-native';
-import { router } from 'expo-router';
-import { useFocusEffect } from 'expo-router';
-import { Search, Filter, Grid2x2 as Grid, Plus, CircleAlert as AlertCircle, LayoutGrid } from 'lucide-react-native';
-import Animated, { FadeInUp, FadeInDown, SlideInRight } from 'react-native-reanimated';
+import { router, useFocusEffect } from 'expo-router';
+import {
+  Search,
+  Filter,
+  Grid2x2 as Grid,
+  Plus,
+  CircleAlert as AlertCircle,
+  LayoutGrid,
+} from 'lucide-react-native';
+import Animated, {
+  FadeInUp,
+  FadeInDown,
+  SlideInRight,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
 import { ResponsiveAlbumGrid } from '../../components/ResponsiveAlbumGrid';
 import { AlbumViewModeSelector } from '../../components/AlbumViewModeSelector';
@@ -24,11 +45,12 @@ import { AlbumViewMode } from '../../types/display';
 
 const { width: screenWidth } = Dimensions.get('window');
 
-// Constants for better maintainability
-const REFRESH_COOLDOWN = 30 * 1000; // 30 seconds
-const STALE_DATA_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+// Performance constants
+const REFRESH_COOLDOWN = 15 * 1000; // Reduced to 15 seconds
+const STALE_DATA_THRESHOLD = 3 * 60 * 1000; // Reduced to 3 minutes
 const MAX_RETRY_ATTEMPTS = 3;
-const RETRY_DELAY = 1000; // 1 second
+const RETRY_DELAY = 1000;
+const DEBOUNCE_DELAY = 300;
 
 interface AlbumsScreenState {
   showLocked: boolean;
@@ -41,12 +63,21 @@ interface AlbumsScreenState {
   errorMessage: string;
   viewMode: AlbumViewMode;
   showViewModeSelector: boolean;
+  isInitialLoad: boolean;
 }
+
+interface CacheEntry {
+  data: Album[];
+  timestamp: number;
+  query: string;
+}
+
+const albumCache = new Map<string, CacheEntry>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 export default function AlbumsScreen() {
   const { albums, isLoadingAlbums, refreshAlbums } = useApp();
-  
-  // State management
+
   const [state, setState] = useState<AlbumsScreenState>({
     showLocked: true,
     isRefreshing: false,
@@ -58,48 +89,88 @@ export default function AlbumsScreen() {
     errorMessage: '',
     viewMode: 'grid-2',
     showViewModeSelector: false,
+    isInitialLoad: true,
   });
 
-  // Refs for performance optimization
+  // Performance refs
   const lastRefreshTime = useRef<number>(0);
   const lastDataFetchTime = useRef<number>(0);
-  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const isMountedRef = useRef<boolean>(true);
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
+
+  // Animated values for smooth transitions
+  const headerOpacity = useSharedValue(1);
+  const contentTranslateY = useSharedValue(0);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-      }
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
   }, []);
 
-  // Memoized filtered and sorted albums
+  // Cache key generator
+  const getCacheKey = useCallback(
+    (query: string, sortBy: string, sortOrder: string, showLocked: boolean) => {
+      return `${query}-${sortBy}-${sortOrder}-${showLocked}`;
+    },
+    []
+  );
+
+  // Debounced search
+  const debouncedSearch = useCallback((query: string) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      setState((prev) => ({ ...prev, searchQuery: query }));
+    }, DEBOUNCE_DELAY);
+  }, []);
+
+  // Memoized filtered and sorted albums with caching
   const processedAlbums = useMemo(() => {
     if (!albums || albums.length === 0) return [];
-    
+
+    const cacheKey = getCacheKey(
+      state.searchQuery,
+      state.sortBy,
+      state.sortOrder,
+      state.showLocked
+    );
+    const cached = albumCache.get(cacheKey);
+
+    // Return cached result if valid
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached.data;
+    }
+
     let filtered = albums;
-    
+
     // Apply locked filter
     if (!state.showLocked) {
-      filtered = filtered.filter(album => !album.isLocked);
+      filtered = filtered.filter((album) => !album.isLocked);
     }
-    
+
     // Apply search filter
     if (state.searchQuery.trim()) {
       const query = state.searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(album => 
-        album.name.toLowerCase().includes(query) ||
-        album.tags?.some(tag => tag.toLowerCase().includes(query))
+      filtered = filtered.filter(
+        (album) =>
+          album.name.toLowerCase().includes(query) ||
+          album.tags?.some((tag) => tag.toLowerCase().includes(query))
       );
     }
-    
+
     // Apply sorting
     const sorted = [...filtered].sort((a, b) => {
       let comparison = 0;
-      
+
       switch (state.sortBy) {
         case 'name':
           comparison = a.name.localeCompare(b.name);
@@ -113,145 +184,220 @@ export default function AlbumsScreen() {
         default:
           comparison = 0;
       }
-      
+
       return state.sortOrder === 'asc' ? comparison : -comparison;
     });
-    
+
+    // Cache the result
+    albumCache.set(cacheKey, {
+      data: sorted,
+      timestamp: Date.now(),
+      query: cacheKey,
+    });
+
     return sorted;
-  }, [albums, state.showLocked, state.searchQuery, state.sortBy, state.sortOrder]);
+  }, [
+    albums,
+    state.showLocked,
+    state.searchQuery,
+    state.sortBy,
+    state.sortOrder,
+    getCacheKey,
+  ]);
 
-  // Stable refresh function with retry logic
-  const handleRefresh = useCallback(async (isRetry: boolean = false) => {
-    if (state.isRefreshing && !isRetry) return;
-    
-    const now = Date.now();
-    const timeSinceLastRefresh = now - lastRefreshTime.current;
-    
-    // Prevent too frequent refreshes (unless it's a retry)
-    if (!isRetry && timeSinceLastRefresh < REFRESH_COOLDOWN) {
-      console.log('🚫 Refresh blocked - too soon since last refresh');
-      return;
-    }
-    
-    try {
-      if (isMountedRef.current) {
-        setState(prev => ({ 
-          ...prev, 
-          isRefreshing: true, 
-          hasError: false, 
-          errorMessage: '' 
-        }));
+  // Enhanced refresh function with promise deduplication
+  const handleRefresh = useCallback(
+    async (isRetry: boolean = false, force: boolean = false) => {
+      // Prevent concurrent refreshes
+      if (refreshPromiseRef.current && !force) {
+        return refreshPromiseRef.current;
       }
-      
-      console.log('🔄 Refreshing albums...');
-      await refreshAlbums();
-      
-      if (isMountedRef.current) {
-        lastRefreshTime.current = now;
-        lastDataFetchTime.current = now;
-        setState(prev => ({ 
-          ...prev, 
-          isRefreshing: false, 
-          retryCount: 0,
-          hasError: false,
-          errorMessage: ''
-        }));
+
+      if (state.isRefreshing && !isRetry && !force) return;
+
+      const now = Date.now();
+      const timeSinceLastRefresh = now - lastRefreshTime.current;
+
+      // Prevent too frequent refreshes unless forced
+      if (!isRetry && !force && timeSinceLastRefresh < REFRESH_COOLDOWN) {
+        console.log('🚫 Refresh blocked - too soon since last refresh');
+        return;
       }
-      
-      console.log('✅ Albums refreshed successfully');
-    } catch (error) {
-      console.error('❌ Error refreshing albums:', error);
-      
-      if (isMountedRef.current) {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to refresh albums';
-        const newRetryCount = state.retryCount + 1;
-        
-        setState(prev => ({
-          ...prev,
-          isRefreshing: false,
-          hasError: true,
-          errorMessage,
-          retryCount: newRetryCount,
-        }));
-        
-        // Auto-retry logic
-        if (newRetryCount < MAX_RETRY_ATTEMPTS) {
-          console.log(`🔄 Auto-retrying in ${RETRY_DELAY}ms (attempt ${newRetryCount + 1}/${MAX_RETRY_ATTEMPTS})`);
-          retryTimeoutRef.current = setTimeout(() => {
-            if (isMountedRef.current) {
-              handleRefresh(true);
+
+      const refreshPromise = (async () => {
+        try {
+          if (isMountedRef.current) {
+            setState((prev) => ({
+              ...prev,
+              isRefreshing: true,
+              hasError: false,
+              errorMessage: '',
+              isInitialLoad: false,
+            }));
+
+            // Animate content during refresh
+            contentTranslateY.value = withSpring(-10, { damping: 15 });
+          }
+
+          console.log('🔄 Refreshing albums...');
+
+          // Use InteractionManager for better performance
+          await new Promise((resolve) => {
+            InteractionManager.runAfterInteractions(() => {
+              resolve(refreshAlbums());
+            });
+          });
+
+          if (isMountedRef.current) {
+            lastRefreshTime.current = now;
+            lastDataFetchTime.current = now;
+
+            // Clear cache on successful refresh
+            albumCache.clear();
+
+            setState((prev) => ({
+              ...prev,
+              isRefreshing: false,
+              retryCount: 0,
+              hasError: false,
+              errorMessage: '',
+            }));
+
+            // Reset animation
+            contentTranslateY.value = withSpring(0, { damping: 15 });
+          }
+
+          console.log('✅ Albums refreshed successfully');
+        } catch (error) {
+          console.error('❌ Error refreshing albums:', error);
+
+          if (isMountedRef.current) {
+            const errorMessage =
+              error instanceof Error
+                ? error.message
+                : 'Failed to refresh albums';
+            const newRetryCount = state.retryCount + 1;
+
+            setState((prev) => ({
+              ...prev,
+              isRefreshing: false,
+              hasError: true,
+              errorMessage,
+              retryCount: newRetryCount,
+            }));
+
+            // Reset animation
+            contentTranslateY.value = withSpring(0, { damping: 15 });
+
+            // Auto-retry with exponential backoff
+            if (newRetryCount < MAX_RETRY_ATTEMPTS) {
+              console.log(
+                `🔄 Auto-retrying in ${RETRY_DELAY * newRetryCount}ms`
+              );
+              retryTimeoutRef.current = setTimeout(() => {
+                if (isMountedRef.current) {
+                  handleRefresh(true);
+                }
+              }, RETRY_DELAY * newRetryCount);
             }
-          }, RETRY_DELAY * newRetryCount); // Exponential backoff
+          }
+        } finally {
+          refreshPromiseRef.current = null;
         }
-      }
-    }
-  }, [refreshAlbums, state.isRefreshing, state.retryCount]);
+      })();
 
-  // Smart focus effect with data staleness check
+      refreshPromiseRef.current = refreshPromise;
+      return refreshPromise;
+    },
+    [refreshAlbums, state.isRefreshing, state.retryCount, contentTranslateY]
+  );
+
+  // Smart focus effect with improved logic
   useFocusEffect(
     useCallback(() => {
       const now = Date.now();
       const timeSinceLastRefresh = now - lastRefreshTime.current;
       const timeSinceLastFetch = now - lastDataFetchTime.current;
-      
-      const shouldRefresh = (
-        (!albums || albums.length === 0) && !isLoadingAlbums
-      ) || (
-        // Increase this threshold to prevent frequent refreshes
-        timeSinceLastFetch > 10 * 60 * 1000 && // 10 minutes instead of 5
-        timeSinceLastRefresh > REFRESH_COOLDOWN
-      ) || (
-        state.hasError && state.retryCount < MAX_RETRY_ATTEMPTS
-      );
-      
+
+      const shouldRefresh =
+        // No albums and not currently loading
+        ((!albums || albums.length === 0) && !isLoadingAlbums) ||
+        // Data is stale and enough time has passed
+        (timeSinceLastFetch > STALE_DATA_THRESHOLD &&
+          timeSinceLastRefresh > REFRESH_COOLDOWN) ||
+        // Has error and retries available
+        (state.hasError && state.retryCount < MAX_RETRY_ATTEMPTS) ||
+        // Initial load
+        (state.isInitialLoad && !isLoadingAlbums);
+
       if (shouldRefresh && !state.isRefreshing) {
         console.log('🔄 Refreshing albums on focus');
         handleRefresh();
       }
-    }, [albums, handleRefresh, isLoadingAlbums, state.isRefreshing, state.hasError, state.retryCount])
+    }, [
+      albums,
+      handleRefresh,
+      isLoadingAlbums,
+      state.isRefreshing,
+      state.hasError,
+      state.retryCount,
+      state.isInitialLoad,
+    ])
   );
 
-  // Event handlers
-  const handleAlbumPress = useCallback((album: Album) => {
-    try {
-      if (album.isLocked) {
-        Alert.alert(
-          'Premium Feature',
-          'This album is locked. Upgrade to SnapSort Pro to access all albums.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Upgrade', onPress: () => router.push('/settings') }
-          ]
-        );
-        return;
+  // Optimized event handlers
+  const handleAlbumPress = useCallback(
+    (album: Album) => {
+      try {
+        if (album.isLocked) {
+          Alert.alert(
+            'Premium Feature',
+            'This album is locked. Upgrade to SnapSort Pro to access all albums.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Upgrade', onPress: () => router.push('/settings') },
+            ]
+          );
+          return;
+        }
+
+        // Animate before navigation
+        headerOpacity.value = withTiming(0.5, { duration: 200 });
+
+        router.push(`/album/${album.id}`);
+      } catch (error) {
+        console.error('Error navigating to album:', error);
+        Alert.alert('Error', 'Failed to open album. Please try again.');
       }
-      
-      router.push(`/album/${album.id}`);
-    } catch (error) {
-      console.error('Error navigating to album:', error);
-      Alert.alert('Error', 'Failed to open album. Please try again.');
-    }
-  }, []);
+    },
+    [headerOpacity]
+  );
 
   const handleToggleShowLocked = useCallback(() => {
-    setState(prev => ({ ...prev, showLocked: !prev.showLocked }));
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setState((prev) => ({ ...prev, showLocked: !prev.showLocked }));
   }, []);
 
-  const handleSearchChange = useCallback((query: string) => {
-    setState(prev => ({ ...prev, searchQuery: query }));
-  }, []);
+  const handleSearchChange = useCallback(
+    (query: string) => {
+      debouncedSearch(query);
+    },
+    [debouncedSearch]
+  );
 
   const handleSortChange = useCallback((sortBy: 'name' | 'date' | 'count') => {
-    setState(prev => ({
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setState((prev) => ({
       ...prev,
       sortBy,
-      sortOrder: prev.sortBy === sortBy && prev.sortOrder === 'desc' ? 'asc' : 'desc'
+      sortOrder:
+        prev.sortBy === sortBy && prev.sortOrder === 'desc' ? 'asc' : 'desc',
     }));
   }, []);
 
   const handleRetry = useCallback(() => {
-    setState(prev => ({ ...prev, retryCount: 0 }));
-    handleRefresh(true);
+    setState((prev) => ({ ...prev, retryCount: 0 }));
+    handleRefresh(true, true);
   }, [handleRefresh]);
 
   const handleCreateAlbum = useCallback(() => {
@@ -264,116 +410,195 @@ export default function AlbumsScreen() {
   }, []);
 
   const handleViewModeChange = useCallback((viewMode: AlbumViewMode) => {
-    setState(prev => ({ ...prev, viewMode }));
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setState((prev) => ({ ...prev, viewMode }));
   }, []);
 
   const toggleViewModeSelector = useCallback(() => {
-    setState(prev => ({ ...prev, showViewModeSelector: !prev.showViewModeSelector }));
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setState((prev) => ({
+      ...prev,
+      showViewModeSelector: !prev.showViewModeSelector,
+    }));
   }, []);
 
-  // Render functions
-  const renderErrorState = useCallback(() => (
-    <Animated.View entering={FadeInUp.delay(200)} style={styles.errorContainer}>
-      <AlertCircle size={48} color={lightTheme.colors.error} />
-      <Text style={styles.errorTitle}>Something went wrong</Text>
-      <Text style={styles.errorText}>{state.errorMessage}</Text>
-      <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
-        <Text style={styles.retryButtonText}>Try Again</Text>
-      </TouchableOpacity>
-    </Animated.View>
-  ), [state.errorMessage, handleRetry]);
+  // Animated styles
+  const headerAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+  }));
 
-  const renderEmptyState = useCallback(() => (
-    <Animated.View entering={FadeInUp.delay(200)} style={styles.emptyContainer}>
-      <Grid size={64} color={lightTheme.colors.textSecondary} />
-      <Text style={styles.emptyTitle}>
-        {state.searchQuery ? 'No matching albums' : 'No Albums Yet'}
-      </Text>
-      <Text style={styles.emptyText}>
-        {state.searchQuery 
-          ? `No albums match "${state.searchQuery}". Try a different search term.`
-          : 'Use the Picture Hack feature to create your first smart album!'
-        }
-      </Text>
-      {!state.searchQuery && (
-        <TouchableOpacity style={styles.createButton} onPress={handleCreateAlbum}>
-          <Plus size={20} color="white" />
-          <Text style={styles.createButtonText}>Create Album</Text>
-        </TouchableOpacity>
-      )}
-    </Animated.View>
-  ), [state.searchQuery, handleCreateAlbum]);
+  const contentAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: contentTranslateY.value }],
+  }));
 
-  const renderLoadingState = useCallback(() => (
-    <Animated.View entering={FadeInUp.delay(200)} style={styles.loadingContainer}>
-      <Text style={styles.loadingText}>
-        {state.retryCount > 0 ? `Retrying... (${state.retryCount}/${MAX_RETRY_ATTEMPTS})` : 'Loading albums...'}
-      </Text>
-    </Animated.View>
-  ), [state.retryCount]);
+  // Render functions with performance optimizations
+  const renderErrorState = useCallback(
+    () => (
+      <Animated.View
+        entering={FadeInUp.delay(200)}
+        style={styles.errorContainer}
+      >
+        <AlertCircle size={48} color={lightTheme.colors.error} />
+        <Text style={styles.errorTitle}>Something went wrong</Text>
+        <Text style={styles.errorText}>{state.errorMessage}</Text>
+        <View style={styles.errorActions}>
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+          {state.retryCount > 0 && (
+            <Text style={styles.retryCountText}>
+              Attempt {state.retryCount}/{MAX_RETRY_ATTEMPTS}
+            </Text>
+          )}
+        </View>
+      </Animated.View>
+    ),
+    [state.errorMessage, state.retryCount, handleRetry]
+  );
 
-  const renderAlbumGrid = useCallback(() => (
-    <Animated.View entering={FadeInUp.delay(200)}>
-      <ResponsiveAlbumGrid
-        albums={processedAlbums}
-        viewMode={state.viewMode}
-        onAlbumPress={handleAlbumPress}
-        showLocked={state.showLocked}
-      />
-    </Animated.View>
-  ), [processedAlbums, state.viewMode, handleAlbumPress, state.showLocked]);
+  const renderEmptyState = useCallback(
+    () => (
+      <Animated.View
+        entering={FadeInUp.delay(200)}
+        style={styles.emptyContainer}
+      >
+        <Grid size={64} color={lightTheme.colors.textSecondary} />
+        <Text style={styles.emptyTitle}>
+          {state.searchQuery ? 'No matching albums' : 'No Albums Yet'}
+        </Text>
+        <Text style={styles.emptyText}>
+          {state.searchQuery
+            ? `No albums match "${state.searchQuery}". Try a different search term.`
+            : 'Use the Picture Hack feature to create your first smart album!'}
+        </Text>
+        {!state.searchQuery && (
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={handleCreateAlbum}
+          >
+            <Plus size={20} color="white" />
+            <Text style={styles.createButtonText}>Create Album</Text>
+          </TouchableOpacity>
+        )}
+      </Animated.View>
+    ),
+    [state.searchQuery, handleCreateAlbum]
+  );
+
+  const renderLoadingState = useCallback(
+    () => (
+      <Animated.View
+        entering={FadeInUp.delay(200)}
+        style={styles.loadingContainer}
+      >
+        <Text style={styles.loadingText}>
+          {state.retryCount > 0
+            ? `Retrying... (${state.retryCount}/${MAX_RETRY_ATTEMPTS})`
+            : state.isInitialLoad
+            ? 'Loading your albums...'
+            : 'Refreshing albums...'}
+        </Text>
+      </Animated.View>
+    ),
+    [state.retryCount, state.isInitialLoad]
+  );
+
+  const renderAlbumGrid = useCallback(
+    () => (
+      <Animated.View
+        entering={FadeInUp.delay(200)}
+        style={contentAnimatedStyle}
+      >
+        <ResponsiveAlbumGrid
+          albums={processedAlbums}
+          viewMode={state.viewMode}
+          onAlbumPress={handleAlbumPress}
+          showLocked={state.showLocked}
+        />
+      </Animated.View>
+    ),
+    [
+      processedAlbums,
+      state.viewMode,
+      handleAlbumPress,
+      state.showLocked,
+      contentAnimatedStyle,
+    ]
+  );
 
   const renderContent = () => {
     if (state.hasError && state.retryCount >= MAX_RETRY_ATTEMPTS) {
       return renderErrorState();
     }
-    
+
     if (isLoadingAlbums && !albums?.length) {
       return renderLoadingState();
     }
-    
-    if (processedAlbums.length === 0 && !isLoadingAlbums && !state.isRefreshing) {
+
+    if (
+      processedAlbums.length === 0 &&
+      !isLoadingAlbums &&
+      !state.isRefreshing
+    ) {
       return renderEmptyState();
     }
-    
+
     return renderAlbumGrid();
   };
 
   const renderHeader = () => (
-    <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
+    <Animated.View
+      entering={FadeInUp.delay(100)}
+      style={[styles.header, headerAnimatedStyle]}
+    >
       <View style={styles.headerLeft}>
         <Grid size={24} color={lightTheme.colors.primary} />
         <Text style={styles.title}>All Albums</Text>
+        {state.isRefreshing && (
+          <View style={styles.refreshIndicator}>
+            <Text style={styles.refreshText}>Updating...</Text>
+          </View>
+        )}
       </View>
       <View style={styles.headerActions}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
             styles.filterButton,
-            state.showViewModeSelector && styles.filterButtonActive
-          ]} 
+            state.showViewModeSelector && styles.filterButtonActive,
+          ]}
           onPress={toggleViewModeSelector}
           disabled={state.isRefreshing}
           accessibilityLabel="Change view mode"
           accessibilityRole="button"
         >
-          <LayoutGrid 
-            size={20} 
-            color={state.showViewModeSelector ? lightTheme.colors.primary : lightTheme.colors.textSecondary} 
+          <LayoutGrid
+            size={20}
+            color={
+              state.showViewModeSelector
+                ? lightTheme.colors.primary
+                : lightTheme.colors.textSecondary
+            }
           />
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
             styles.filterButton,
-            state.showLocked && styles.filterButtonActive
-          ]} 
+            state.showLocked && styles.filterButtonActive,
+          ]}
           onPress={handleToggleShowLocked}
           disabled={state.isRefreshing}
-          accessibilityLabel={state.showLocked ? "Hide locked albums" : "Show locked albums"}
+          accessibilityLabel={
+            state.showLocked ? 'Hide locked albums' : 'Show locked albums'
+          }
           accessibilityRole="button"
         >
-          <Filter 
-            size={20} 
-            color={state.showLocked ? lightTheme.colors.primary : lightTheme.colors.textSecondary} 
+          <Filter
+            size={20}
+            color={
+              state.showLocked
+                ? lightTheme.colors.primary
+                : lightTheme.colors.textSecondary
+            }
           />
         </TouchableOpacity>
       </View>
@@ -382,10 +607,10 @@ export default function AlbumsScreen() {
 
   const renderViewModeSelector = () => {
     if (!state.showViewModeSelector) return null;
-    
+
     return (
-      <Animated.View 
-        entering={FadeInDown.delay(100)} 
+      <Animated.View
+        entering={FadeInDown.delay(100)}
         style={styles.viewModeSelectorContainer}
       >
         <AlbumViewModeSelector
@@ -399,10 +624,9 @@ export default function AlbumsScreen() {
   const renderFooter = () => (
     <Animated.View entering={FadeInDown.delay(300)} style={styles.footer}>
       <Text style={styles.footerText}>
-        {state.showLocked 
+        {state.showLocked
           ? `Showing ${processedAlbums.length} albums (including locked)`
-          : `Showing ${processedAlbums.length} unlocked albums`
-        }
+          : `Showing ${processedAlbums.length} unlocked albums`}
       </Text>
       {state.searchQuery && (
         <Text style={styles.footerSearchText}>
@@ -411,10 +635,18 @@ export default function AlbumsScreen() {
       )}
       {albums && albums.length > 0 && (
         <Text style={styles.footerStatsText}>
-          Total: {albums.length} albums • {albums.reduce((sum, album) => sum + (album.count || 0), 0)} photos
+          Total: {albums.length} albums •{' '}
+          {albums.reduce((sum, album) => sum + (album.count || 0), 0)} photos
         </Text>
       )}
     </Animated.View>
+  );
+
+  // Reset header opacity when screen comes back into focus
+  useFocusEffect(
+    useCallback(() => {
+      headerOpacity.value = withTiming(1, { duration: 300 });
+    }, [headerOpacity])
   );
 
   return (
@@ -422,17 +654,18 @@ export default function AlbumsScreen() {
       {renderHeader()}
       {renderViewModeSelector()}
 
-      <ScrollView 
-        style={styles.scrollView} 
+      <Animated.ScrollView
+        style={styles.scrollView}
         contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={state.isRefreshing}
-            onRefresh={() => handleRefresh(false)}
+            onRefresh={() => handleRefresh(false, true)}
             tintColor={lightTheme.colors.primary}
             title="Pull to refresh"
             titleColor={lightTheme.colors.textSecondary}
+            progressBackgroundColor={lightTheme.colors.surface}
           />
         }
         keyboardShouldPersistTaps="handled"
@@ -441,7 +674,7 @@ export default function AlbumsScreen() {
       >
         {renderContent()}
         {renderFooter()}
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }
@@ -483,6 +716,14 @@ const styles = StyleSheet.create({
     color: lightTheme.colors.text,
     letterSpacing: -0.5,
   },
+  refreshIndicator: {
+    marginLeft: lightTheme.spacing.sm,
+  },
+  refreshText: {
+    fontSize: 12,
+    color: lightTheme.colors.primary,
+    fontFamily: 'Inter-Medium',
+  },
   headerActions: {
     flexDirection: 'row',
     gap: lightTheme.spacing.sm,
@@ -514,7 +755,7 @@ const styles = StyleSheet.create({
   },
   viewModeSelectorContainer: {
     backgroundColor: lightTheme.colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: lightTheme.colors.border,
     paddingVertical: lightTheme.spacing.sm,
   },
@@ -560,6 +801,10 @@ const styles = StyleSheet.create({
     marginBottom: lightTheme.spacing.lg,
     lineHeight: 22,
   },
+  errorActions: {
+    alignItems: 'center',
+    gap: lightTheme.spacing.sm,
+  },
   retryButton: {
     backgroundColor: lightTheme.colors.primary,
     paddingHorizontal: lightTheme.spacing.xl,
@@ -583,6 +828,11 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
+  },
+  retryCountText: {
+    fontSize: 12,
+    color: lightTheme.colors.textSecondary,
+    fontFamily: 'Inter-Regular',
   },
   emptyContainer: {
     paddingVertical: lightTheme.spacing.xl * 2,
@@ -638,7 +888,7 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: lightTheme.spacing.xl,
     alignItems: 'center',
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: lightTheme.colors.border,
     marginTop: lightTheme.spacing.lg,
   },
