@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -11,6 +11,7 @@ import Animated, {
 import { Lock, Sparkles } from 'lucide-react-native';
 import { Album } from '../types';
 import { AlbumViewMode } from '../types/display';
+import { OptimizedImage } from './OptimizedImage';
 import { lightTheme } from '../utils/theme';
 
 interface AnimatedAlbumCardProps {
@@ -90,12 +91,14 @@ export function AnimatedAlbumCard({
         isLargeMode && styles.largeImageContainer
       ]}>
         {album.thumbnail ? (
-          <Image 
-            source={{ uri: album.thumbnail }} 
+          <OptimizedImage
+            uri={album.thumbnail}
             style={[
               styles.thumbnail,
               isLargeMode && styles.largeThumbnail
-            ]} 
+            ]}
+            priority="high"
+            showLoadingIndicator={true}
           />
         ) : (
           <View style={[

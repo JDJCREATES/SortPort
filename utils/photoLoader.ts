@@ -2,6 +2,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
 import { ImageMeta } from '../types';
 import { MediaStorage } from './mediaStorage';
+import { ImageCacheManager } from './imageCache';
 
 export type PermissionStatus = 'granted' | 'denied' | 'undetermined';
 
@@ -143,12 +144,19 @@ export class PhotoLoader {
       return allAssets.map(asset => ({
         id: asset.id,
         uri: asset.uri,
+        thumbnailUri: undefined, // Could be enhanced to generate thumbnails
         filename: asset.filename,
         width: asset.width,
         height: asset.height,
         creationTime: asset.creationTime,
         modificationTime: asset.modificationTime,
       }));
+
+      // Preload first batch of images for better performance
+      const firstBatchUris = allAssets.slice(0, 10).map(asset => asset.uri);
+      ImageCacheManager.preloadImages(firstBatchUris, 'high');
+
+      return result;
     } catch (error) {
       console.error('Error loading photos:', error);
       throw error; // Re-throw to let caller handle the error
@@ -321,6 +329,7 @@ export class PhotoLoader {
           photos.push({
             id: asset.id,
             uri: asset.uri,
+            thumbnailUri: undefined, // Could be enhanced to generate thumbnails
             filename: asset.filename,
             width: asset.width,
             height: asset.height,
@@ -344,6 +353,16 @@ export class PhotoLoader {
       }
 
       console.log('📸 Final result: Found', photos.length, 'photos out of', batchIds.length, 'requested');
+
+      // Preload next batch for smoother scrolling
+      if (photos.length > 0) {
+        const nextBatchStart = actualNextIndex;
+        const nextBatchIds = photoIds.slice(nextBatchStart, nextBatchStart + 10);
+        if (nextBatchIds.length > 0) {
+          // We don't have URIs for next batch yet, but we can prepare the cache
+          ImageCacheManager.preloadUpcomingImages(photos, 0, 5);
+        }
+      }
 
       // Calculate next batch info
       const actualNextIndex = startIndex + photos.length; // Use actual found photos, not requested

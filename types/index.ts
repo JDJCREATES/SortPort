@@ -1,6 +1,7 @@
 export interface ImageMeta {
   id: string;
   uri: string;
+  thumbnailUri?: string;
   filename: string;
   width: number;
   height: number;

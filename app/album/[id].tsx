@@ -6,7 +6,6 @@ import {
   SafeAreaView, 
   TouchableOpacity, 
   Alert, 
-  Image,
   ActivityIndicator,
   FlatList,
   InteractionManager,
@@ -31,11 +30,14 @@ import { PhotoLoader } from '../../utils/photoLoader';
 import { RevenueCatManager } from '../../utils/revenuecat';
 import { SubscriptionModal } from '../../components/SubscriptionModal';
 import { ImageFullscreenViewer } from '../../components/ImageFullscreenViewer';
+import { OptimizedImage } from '../../components/OptimizedImage';
+import { ImageCacheManager } from '../../utils/imageCache';
+import { useImagePreloader } from '../../hooks/useImagePreloader';
 import { lightTheme } from '../../utils/theme';
 
-const PHOTOS_PER_BATCH = 30; // Increased batch size
+const PHOTOS_PER_BATCH = 20; // Optimized batch size for better performance
 const PRELOAD_THRESHOLD = 0.8; // Start loading when 80% scrolled
-const IMAGE_CACHE_SIZE = 100; // Cache up to 100 images
+const PRELOAD_LOOKAHEAD = 15; // Number of images to preload ahead
 
 interface AlbumScreenState {
   album: Album | null;
@@ -69,54 +71,19 @@ const OptimizedImage = React.memo(({
   onPress: (index: number) => void;
   style: any;
 }) => {
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  
-  const opacity = useSharedValue(0);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
-  
-  const handleLoad = useCallback(() => {
-    setImageLoaded(true);
-    opacity.value = withSpring(1, { damping: 15, stiffness: 200 });
-  }, [opacity]);
-  
-  const handleError = useCallback(() => {
-    setImageError(true);
-    console.warn('Image failed to load:', item.id);
-  }, [item.id]);
-  
   const handlePress = useCallback(() => {
     onPress(index);
   }, [index, onPress]);
   
-  if (imageError) {
-    return (
-      <View style={[style, styles.errorImageContainer]}>
-        <Text style={styles.errorImageText}>Failed to load</Text>
-      </View>
-    );
-  }
-  
   return (
     <TouchableOpacity style={style} onPress={handlePress} activeOpacity={0.8}>
-      <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
-        <Image 
-          source={{ uri: item.uri }} 
-          style={styles.gridImage}
-          resizeMode="cover"
-          onLoad={handleLoad}
-          onError={handleError}
-          fadeDuration={0} // Disable default fade for custom animation
-        />
-      </Animated.View>
-      {!imageLoaded && !imageError && (
-        <View style={styles.imageLoadingContainer}>
-          <ActivityIndicator size="small" color={lightTheme.colors.primary} />
-        </View>
-      )}
+      <OptimizedImage
+        uri={item.uri}
+        thumbnailUri={item.thumbnailUri}
+        style={styles.gridImage}
+        priority={index < 10 ? 'high' : 'normal'}
+        showLoadingIndicator={true}
+      />
     </TouchableOpacity>
   );
 });
@@ -152,6 +119,14 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const isMountedRef = useRef(true);
+
+  // Auto-preload images based on scroll position
+  useImagePreloader({
+    images: state.photos,
+    currentIndex: Math.floor(state.photos.length * 0.7), // Estimate current visible index
+    lookahead: PRELOAD_LOOKAHEAD,
+    enabled: !state.loading && state.photos.length > 0,
+  });
 
   // Cleanup on unmount
   useEffect(() => {
@@ -255,6 +230,11 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
             );
             
             if (isMountedRef.current) {
+              // Preload first batch of images
+              if (result.photos.length > 0) {
+                ImageCacheManager.preloadUpcomingImages(result.photos, 0, PRELOAD_LOOKAHEAD);
+              }
+
               setState(prev => ({
                 ...prev,
                 photos: result.photos,
@@ -318,6 +298,14 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
       );
 
       if (isMountedRef.current) {
+        // Preload upcoming images for smoother scrolling
+        const allPhotos = [...state.photos, ...result.photos];
+        ImageCacheManager.preloadUpcomingImages(
+          allPhotos, 
+          allPhotos.length - PRELOAD_LOOKAHEAD, 
+          PRELOAD_LOOKAHEAD
+        );
+
         setState(prev => ({
           ...prev,
           photos: [...prev.photos, ...result.photos],
@@ -512,11 +500,11 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
           ListFooterComponent={renderFooter}
           showsVerticalScrollIndicator={false}
           removeClippedSubviews={true}
-          maxToRenderPerBatch={PHOTOS_PER_BATCH}
-          windowSize={10}
-          initialNumToRender={15}
+          maxToRenderPerBatch={15}
+          windowSize={8}
+          initialNumToRender={12}
           getItemLayout={getItemLayout}
-          updateCellsBatchingPeriod={50}
+          updateCellsBatchingPeriod={100}
         />
       ) : (
         <Animated.View entering={FadeInUp.delay(300)} style={styles.emptyContainer}>
@@ -709,23 +697,6 @@ const styles = StyleSheet.create({
   gridImage: {
     width: '100%',
     height: '100%',
-  },
-  imageLoadingContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: lightTheme.colors.surface,
-  },
-  errorImageContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: lightTheme.colors.surface,
-  },
-  errorImageText: {
-    fontSize: 10,
-    color: lightTheme.colors.textSecondary,
-    fontFamily: 'Inter-Regular',
-    textAlign: 'center',
   },
   emptyContainer: {
     flex: 1,

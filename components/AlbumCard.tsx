@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Lock } from 'lucide-react-native';
 import { Album } from '../types';
+import { OptimizedImage } from './OptimizedImage';
 import { lightTheme } from '../utils/theme';
 
 interface AlbumCardProps {
@@ -15,7 +16,12 @@ export function AlbumCard({ album, onPress, showLocked = true }: AlbumCardProps)
     <TouchableOpacity style={styles.container} onPress={onPress}>
       <View style={styles.imageContainer}>
         {album.thumbnail ? (
-          <Image source={{ uri: album.thumbnail }} style={styles.thumbnail} />
+          <OptimizedImage
+            uri={album.thumbnail}
+            style={styles.thumbnail}
+            priority="normal"
+            showLoadingIndicator={true}
+          />
         ) : (
           <View style={styles.placeholderThumbnail}>
             <Text style={styles.placeholderText}>📷</Text>

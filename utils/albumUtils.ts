@@ -52,7 +52,7 @@ export class AlbumUtils {
       
       // Always create/update the album, even if empty
       const imageIds = allPhotoIds.map(photo => photo.id);
-      const thumbnail = allPhotoIds.length > 0 ? allPhotoIds[0].uri : '';
+      const thumbnail = allPhotoIds.length > 0 ? allPhotoIds[0].uri : undefined;
 
       if (existingAlbums && existingAlbums.length > 0) {
         // Update existing "All Photos" album
@@ -69,7 +69,7 @@ export class AlbumUtils {
             .update({
               image_ids: imageIds,
               count: imageIds.length,
-              thumbnail: thumbnail,
+              thumbnail: thumbnail || null,
               updated_at: new Date().toISOString(),
             })
             .eq('id', existingAlbum.id);
@@ -88,7 +88,7 @@ export class AlbumUtils {
           name: 'All Photos',
           image_ids: imageIds,
           tags: ['all', 'photos', 'device'],
-          thumbnail: thumbnail,
+          thumbnail: thumbnail || null,
           count: imageIds.length,
           is_locked: false,
           is_all_photos_album: true,
