@@ -1,4 +1,3 @@
-import FastImage from 'react-native-fast-image';
 import { Platform } from 'react-native';
 import { ImageMeta } from '../types';
 
@@ -9,49 +8,9 @@ export class ImageCacheManager {
   private static readonly PRELOAD_DELAY = 100; // ms between preloads
 
   /**
-   * Preload images for better performance
+   * Preload images for better performance (Web implementation)
    */
   static async preloadImages(uris: string[], priority: 'high' | 'normal' | 'low' = 'normal'): Promise<void> {
-    if (Platform.OS === 'web') {
-      // Web fallback - use Image preloading
-      return this.preloadImagesWeb(uris);
-    }
-
-    const fastImagePriority = priority === 'high' 
-      ? FastImage.priority.high 
-      : priority === 'low' 
-      ? FastImage.priority.low 
-      : FastImage.priority.normal;
-
-    const sources = uris
-      .filter(uri => !this.preloadQueue.has(uri))
-      .map(uri => {
-        this.preloadQueue.add(uri);
-        return { uri, priority: fastImagePriority };
-      });
-
-    if (sources.length === 0) return;
-
-    try {
-      // Batch preload to avoid overwhelming the system
-      for (let i = 0; i < sources.length; i += this.PRELOAD_BATCH_SIZE) {
-        const batch = sources.slice(i, i + this.PRELOAD_BATCH_SIZE);
-        await FastImage.preload(batch);
-        
-        // Small delay between batches
-        if (i + this.PRELOAD_BATCH_SIZE < sources.length) {
-          await new Promise(resolve => setTimeout(resolve, this.PRELOAD_DELAY));
-        }
-      }
-    } catch (error) {
-      console.warn('Error preloading images:', error);
-    }
-  }
-
-  /**
-   * Web fallback for image preloading
-   */
-  private static async preloadImagesWeb(uris: string[]): Promise<void> {
     const promises = uris
       .filter(uri => !this.preloadQueue.has(uri))
       .map(uri => {
@@ -89,21 +48,22 @@ export class ImageCacheManager {
   }
 
   /**
-   * Clear image caches
+   * Clear image caches (Web implementation)
    */
   static async clearCache(): Promise<void> {
-    if (Platform.OS === 'web') {
-      // Web doesn't have a direct cache clear method
-      this.preloadQueue.clear();
-      return;
-    }
-
-    try {
-      await FastImage.clearMemoryCache();
-      await FastImage.clearDiskCache();
-      this.preloadQueue.clear();
-    } catch (error) {
-      console.warn('Error clearing image cache:', error);
+    // Web doesn't have a direct cache clear method
+    this.preloadQueue.clear();
+    
+    // Clear browser cache if possible (limited in web environment)
+    if ('caches' in window) {
+      try {
+        const cacheNames = await caches.keys();
+        await Promise.all(
+          cacheNames.map(cacheName => caches.delete(cacheName))
+        );
+      } catch (error) {
+        console.warn('Error clearing web cache:', error);
+      }
     }
   }
 

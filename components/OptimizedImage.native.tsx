@@ -93,32 +93,6 @@ export function OptimizedImage({
     ? FastImage.priority.low 
     : FastImage.priority.normal;
 
-  if (Platform.OS === 'web') {
-    // Fallback to regular Image on web
-    return (
-      <View style={[styles.container, containerStyle]}>
-        <img
-          src={uri}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: resizeMode === FastImage.resizeMode.cover ? 'cover' : 'contain',
-            opacity: isLoading ? 0 : 1,
-            transition: 'opacity 0.3s ease',
-          }}
-          onLoad={handleLoad}
-          onError={handleError}
-          alt=""
-        />
-        {isLoading && showLoadingIndicator && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={lightTheme.colors.primary} />
-          </View>
-        )}
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, containerStyle]} testID={testID}>
       {/* Thumbnail layer */}

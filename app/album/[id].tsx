@@ -333,10 +333,9 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const renderPhotoItem = useCallback(({ item, index }: { item: ImageMeta; index: number }) => {
     return (
       <OptimizedImage
-        item={item}
-        index={index}
-        onPress={handleImagePress}
+        uri={item.uri}
         style={styles.gridPhoto}
+        onLoad={() => {}}
       />
     );
   }, [handleImagePress]);
