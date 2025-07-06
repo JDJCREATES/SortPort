@@ -60,33 +60,6 @@ interface UserFlags {
   isProUser: boolean;
 }
 
-const OptimizedImage = React.memo(({ 
-  item, 
-  index, 
-  onPress, 
-  style 
-}: { 
-  item: ImageMeta; 
-  index: number; 
-  onPress: (index: number) => void;
-  style: any;
-}) => {
-  const handlePress = useCallback(() => {
-    onPress(index);
-  }, [index, onPress]);
-  
-  return (
-    <TouchableOpacity style={style} onPress={handlePress} activeOpacity={0.8}>
-      <OptimizedImage
-        uri={item.uri}
-        thumbnailUri={item.thumbnailUri}
-        style={styles.gridImage}
-        priority={index < 10 ? 'high' : 'normal'}
-        showLoadingIndicator={true}
-      />
-    </TouchableOpacity>
-  );
-});
 
 export default function AlbumScreen() {
   const { id: albumId } = useLocalSearchParams();
