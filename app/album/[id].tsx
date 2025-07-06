@@ -14,7 +14,7 @@ import {
   Platform
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Share, Download, CreditCard as Edit, Trash2, Grid2x2 as Grid, List } from 'lucide-react-native';
+import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import Animated, { 
   FadeInDown, 
   FadeInUp, 
@@ -414,7 +414,7 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
             style={styles.actionButton} 
             onPress={() => userFlags.hasUnlockPack ? null : setState(prev => ({ ...prev, showSubscriptionModal: true }))}
           >
-            <Share size={16} color={userFlags.hasUnlockPack ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
+            <Feather name="share" size={16} color={userFlags.hasUnlockPack ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
             <Text style={[styles.actionButtonText, !userFlags.hasUnlockPack && styles.actionButtonTextDisabled]}>Share</Text>
           </TouchableOpacity>
           
@@ -422,7 +422,7 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
             style={styles.actionButton} 
             onPress={() => userFlags.isSubscribed ? null : setState(prev => ({ ...prev, showSubscriptionModal: true }))}
           >
-            <Download size={16} color={userFlags.isSubscribed ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
+            <Feather name="download" size={16} color={userFlags.isSubscribed ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
             <Text style={[styles.actionButtonText, !userFlags.isSubscribed && styles.actionButtonTextDisabled]}>Export</Text>
           </TouchableOpacity>
         </View>
@@ -486,14 +486,14 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     <SafeAreaView style={styles.container}>
       <Animated.View entering={SlideInRight.delay(100)} style={styles.header}>
         <TouchableOpacity style={styles.headerBackButton} onPress={() => router.back()}>
-          <ArrowLeft size={24} color={lightTheme.colors.text} />
+          <Ionicons name="arrow-back" size={24} color={lightTheme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{state.album.name}</Text>
         <TouchableOpacity style={styles.viewModeButton} onPress={toggleViewMode}>
           {state.viewMode === 'grid' ? (
-            <List size={20} color={lightTheme.colors.textSecondary} />
+            <Feather name="list" size={20} color={lightTheme.colors.textSecondary} />
           ) : (
-            <Grid size={20} color={lightTheme.colors.textSecondary} />
+            <MaterialIcons name="grid-view" size={20} color={lightTheme.colors.textSecondary} />
           )}
         </TouchableOpacity>
       </Animated.View>
