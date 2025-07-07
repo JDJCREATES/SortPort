@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as MediaLibrary from 'expo-media-library';
-import { AppSettings, CustomThemeColors } from '../types';
+import { Platform } from 'react-native';
+import { AppSettings, CustomThemeColors, ImageMeta } from '../types';
 
 export class MediaStorage {
   private static SETTINGS_KEY = '@snapsort_settings';
@@ -94,18 +95,75 @@ export class MediaStorage {
     }
   }
 
-  static async exportAlbum(albumId: string, albumName: string): Promise<string> {
+  static async saveAlbumToDevice(photos: ImageMeta[], folderName: string): Promise<void> {
     try {
-      // Create a new album in the device's photo library
-      const album = await MediaLibrary.createAlbumAsync(
-        `SnapSort_${albumName}`,
-        undefined,
-        false
-      );
-      
-      return album.id;
+      // Check if running on web
+      if (Platform.OS === 'web') {
+        throw new Error('Album export is only available on mobile devices. Please use the mobile app to export albums.');
+      }
+
+      // Request media library permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Media library permission is required to export albums. Please grant permission in your device settings.');
+      }
+
+      if (photos.length === 0) {
+        throw new Error('No photos to export. The album appears to be empty.');
+      }
+
+      // Create assets from photo URIs
+      const createdAssets: MediaLibrary.Asset[] = [];
+      const failedPhotos: string[] = [];
+
+      for (const photo of photos) {
+        try {
+          const asset = await MediaLibrary.createAssetAsync(photo.uri);
+          createdAssets.push(asset);
+        } catch (error) {
+          console.warn(`Failed to create asset for photo ${photo.filename}:`, error);
+          failedPhotos.push(photo.filename);
+        }
+      }
+
+      if (createdAssets.length === 0) {
+        throw new Error('Failed to create any assets from the photos. Please check that the photos are accessible.');
+      }
+
+      // Check if album already exists
+      let targetAlbum: MediaLibrary.Album | null = null;
+      try {
+        targetAlbum = await MediaLibrary.getAlbumAsync(folderName);
+      } catch (error) {
+        // Album doesn't exist, we'll create it
+        console.log(`Album "${folderName}" doesn't exist, will create new one`);
+      }
+
+      if (targetAlbum) {
+        // Add assets to existing album
+        await MediaLibrary.addAssetsToAlbumAsync(createdAssets, targetAlbum.id);
+        console.log(`✅ Added ${createdAssets.length} photos to existing album "${folderName}"`);
+      } else {
+        // Create new album with first asset, then add remaining assets
+        const firstAsset = createdAssets[0];
+        const newAlbum = await MediaLibrary.createAlbumAsync(folderName, firstAsset, false);
+        
+        // Add remaining assets if any
+        if (createdAssets.length > 1) {
+          const remainingAssets = createdAssets.slice(1);
+          await MediaLibrary.addAssetsToAlbumAsync(remainingAssets, newAlbum.id);
+        }
+        
+        console.log(`✅ Created new album "${folderName}" with ${createdAssets.length} photos`);
+      }
+
+      // Log any failed photos
+      if (failedPhotos.length > 0) {
+        console.warn(`⚠️ Failed to export ${failedPhotos.length} photos:`, failedPhotos);
+      }
+
     } catch (error) {
-      console.error('Error exporting album:', error);
+      console.error('Error saving album to device:', error);
       throw error;
     }
   }

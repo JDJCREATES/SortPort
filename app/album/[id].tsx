@@ -30,6 +30,7 @@ import { PhotoLoader } from '../../utils/photoLoader';
 import { RevenueCatManager } from '../../utils/revenuecat';
 import { SubscriptionModal } from '../../components/SubscriptionModal';
 import { ImageFullscreenViewer } from '../../components/ImageFullscreenViewer';
+import { ExportAlbumModal } from '../../components/ExportAlbumModal';
 import { OptimizedImage } from '../../components/OptimizedImage';
 import { ImageCacheManager } from '../../utils/imageCache';
 import { useImagePreloader } from '../../hooks/useImagePreloader';
@@ -50,6 +51,7 @@ interface AlbumScreenState {
   showSubscriptionModal: boolean;
   showImageViewer: boolean;
   selectedImageIndex: number;
+  showExportModal: boolean;
   error: string | null;
   retryCount: number;
 }
@@ -75,6 +77,7 @@ export default function AlbumScreen() {
     showSubscriptionModal: false,
     showImageViewer: false,
     selectedImageIndex: 0,
+    showExportModal: false,
     error: null,
     retryCount: 0,
   });
@@ -382,7 +385,22 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
           
           <TouchableOpacity 
             style={styles.actionButton} 
-            onPress={() => userFlags.isSubscribed ? null : setState(prev => ({ ...prev, showSubscriptionModal: true }))}
+            onPress={() => {
+              if (Platform.OS === 'web') {
+                Alert.alert(
+                  'Feature Not Available',
+                  'Album export is only available on mobile devices. Please use the mobile app to export albums.',
+                  [{ text: 'OK' }]
+                );
+                return;
+              }
+              
+              if (userFlags.isSubscribed) {
+                setState(prev => ({ ...prev, showExportModal: true }));
+              } else {
+                setState(prev => ({ ...prev, showSubscriptionModal: true }));
+              }
+            }}
           >
             <Feather name="download" size={16} color={userFlags.isSubscribed ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
             <Text style={[styles.actionButtonText, !userFlags.isSubscribed && styles.actionButtonTextDisabled]}>Export</Text>
@@ -504,6 +522,13 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         initialIndex={state.selectedImageIndex}
         onClose={handleImageViewerClose}
         onImageChange={handleImageChange}
+      />
+
+      <ExportAlbumModal
+        visible={state.showExportModal}
+        onClose={() => setState(prev => ({ ...prev, showExportModal: false }))}
+        albumName={state.album?.name || 'Album'}
+        photos={state.photos}
       />
     </SafeAreaView>
   );
