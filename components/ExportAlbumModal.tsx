@@ -12,7 +12,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { X, Download, AlertTriangle, FolderPlus } from 'lucide-react-native';
+import { X, Download, TriangleAlert as AlertTriangle, FolderPlus } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { ImageMeta } from '../types';
 import { MediaStorage } from '../utils/mediaStorage';
