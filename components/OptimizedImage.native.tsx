@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Platform, TouchableOpacity } from 'react-native';
 import FastImage, { FastImageProps, ResizeMode } from 'react-native-fast-image';
 import { ImageStyle } from 'react-native';
 import Animated, { 
@@ -18,6 +18,7 @@ interface OptimizedImageProps {
   priority?: 'low' | 'normal' | 'high';
   showLoadingIndicator?: boolean;
   placeholderColor?: string;
+  onPress?: () => void;
   onLoad?: () => void;
   onError?: (error: any) => void;
   testID?: string;
@@ -33,6 +34,7 @@ export function OptimizedImage({
   priority = 'normal',
   showLoadingIndicator = true,
   placeholderColor = lightTheme.colors.surface,
+  onPress,
   onLoad,
   onError,
   testID,
@@ -94,7 +96,13 @@ export function OptimizedImage({
     : FastImage.priority.normal;
 
   return (
-    <View style={[styles.container, containerStyle]} testID={testID}>
+    <TouchableOpacity 
+      style={[styles.container, containerStyle]} 
+      testID={testID}
+      onPress={onPress}
+      disabled={!onPress}
+      activeOpacity={onPress ? 0.8 : 1}
+    >
       {/* Thumbnail layer */}
       {thumbnailUri && !showFullImage && (
         <AnimatedFastImage
@@ -131,7 +139,7 @@ export function OptimizedImage({
           </View>
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 

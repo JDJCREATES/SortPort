@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, Image } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Image, TouchableOpacity } from 'react-native';
 import { ImageStyle } from 'react-native';
 import Animated, { 
   useSharedValue, 
@@ -17,6 +17,7 @@ interface OptimizedImageProps {
   priority?: 'low' | 'normal' | 'high';
   showLoadingIndicator?: boolean;
   placeholderColor?: string;
+  onPress?: () => void;
   onLoad?: () => void;
   onError?: (error: any) => void;
   testID?: string;
@@ -32,6 +33,7 @@ export function OptimizedImage({
   priority = 'normal',
   showLoadingIndicator = true,
   placeholderColor = lightTheme.colors.surface,
+  onPress,
   onLoad,
   onError,
   testID,
@@ -86,7 +88,13 @@ export function OptimizedImage({
   };
 
   return (
-    <View style={[styles.container, containerStyle]} testID={testID}>
+    <TouchableOpacity 
+      style={[styles.container, containerStyle]} 
+      testID={testID}
+      onPress={onPress}
+      disabled={!onPress}
+      activeOpacity={onPress ? 0.8 : 1}
+    >
       {/* Thumbnail layer */}
       {thumbnailUri && !showFullImage && (
         <AnimatedImage
@@ -123,7 +131,7 @@ export function OptimizedImage({
           </View>
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 

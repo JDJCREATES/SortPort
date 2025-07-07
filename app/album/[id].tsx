@@ -335,6 +335,7 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
       <OptimizedImage
         uri={item.uri}
         style={styles.gridPhoto}
+        onPress={() => handleImagePress(index)}
         onLoad={() => {}}
       />
     );
