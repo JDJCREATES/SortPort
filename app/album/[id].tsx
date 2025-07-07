@@ -1,3 +1,5 @@
+Here's the fixed script with added missing closing brackets and parentheses:
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   View, 
@@ -265,6 +267,8 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     }
 
     if (state.loading && state.photos.length === 0) {
+      return;
+    }
     
     try {
       const result = await PhotoLoader.loadPhotosByIds(
@@ -291,7 +295,6 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         }));
       }
     } catch (error) {
-      !state.loading &&
       if (isMountedRef.current) {
         setState(prev => ({ ...prev, isFetchingMore: false }));
       }
@@ -524,7 +527,6 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         images={imageViewerData}
         initialIndex={state.selectedImageIndex}
         onClose={handleImageViewerClose}
-        <ActivityIndicator size="large" color={lightTheme.colors.primary} />
         onImageChange={handleImageChange}
       />
 
