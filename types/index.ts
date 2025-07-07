@@ -39,6 +39,7 @@ export interface Album {
   thumbnail?: string;
   count: number;
   isAllPhotosAlbum?: boolean;
+  isModeratedAlbum?: boolean;
 }
 
 export interface SortSession {
@@ -91,6 +92,7 @@ export interface AppSettings {
   customColors?: CustomThemeColors;
   selectedFolders?: string[];
   lastAutoSortTimestamp?: number;
+  showModeratedContent?: boolean;
 }
 
 export interface RevenueCatProduct {
@@ -107,4 +109,39 @@ export interface PurchaseInfo {
   purchaseDate: string;
   originalPurchaseDate: string;
   expirationDate?: string;
+}
+
+export interface ModerationLabel {
+  Name: string;
+  Confidence: number;
+  ParentName?: string;
+}
+
+export interface ModeratedFolder {
+  id: string;
+  user_id: string;
+  folder_id: string;
+  folder_name: string;
+  last_scanned_at: string;
+  status: 'pending' | 'scanning' | 'scanned' | 'error';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModeratedImage {
+  id: string;
+  user_id: string;
+  image_id: string;
+  folder_id: string;
+  is_nsfw: boolean;
+  moderation_labels: ModerationLabel[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModerationResult {
+  image_id: string;
+  is_nsfw: boolean;
+  moderation_labels: ModerationLabel[];
+  confidence_score: number;
 }

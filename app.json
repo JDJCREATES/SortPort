@@ -19,7 +19,9 @@
       ],
       "package": "com.anonymous.snapsort"
     },
-    "web": {},
+    "web": {
+      "output": "server"
+    },
     "sdkVersion": "53.0.0",
     "plugins": [
       "expo-font",

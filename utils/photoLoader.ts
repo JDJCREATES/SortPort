@@ -434,4 +434,66 @@ export class PhotoLoader {
       throw error;
     }
   }
+
+  /**
+   * Load photos from a specific folder/album
+   */
+  static async loadPhotosFromFolder(folderId: string, limit?: number): Promise<ImageMeta[]> {
+    try {
+      if (Platform.OS === 'web') {
+        throw new Error('Photo folder access is not available on web.');
+      }
+
+      const permissionStatus = await this.requestPermissions();
+      if (permissionStatus !== 'granted') {
+        throw new Error('Photo library permission required to access folder photos.');
+      }
+
+      console.log(`📁 Loading photos from folder: ${folderId}`);
+
+      // Load photos from the specific album/folder
+      let allAssets: MediaLibrary.Asset[] = [];
+      let after: string | undefined;
+      const batchSize = 1000;
+      let totalLoaded = 0;
+
+      do {
+        const assets = await MediaLibrary.getAssetsAsync({
+          album: folderId,
+          mediaType: 'photo',
+          first: limit ? Math.min(batchSize, limit - totalLoaded) : batchSize,
+          after,
+          sortBy: ['creationTime'],
+        });
+
+        allAssets.push(...assets.assets);
+        after = assets.endCursor;
+        totalLoaded += assets.assets.length;
+
+        // Break if we've reached the limit or no more photos
+        if ((limit && totalLoaded >= limit) || !assets.hasNextPage) {
+          break;
+        }
+      } while (after);
+
+      console.log(`📁 Loaded ${allAssets.length} photos from folder ${folderId}`);
+
+      // Convert to ImageMeta format
+      const result = allAssets.map(asset => ({
+        id: asset.id,
+        uri: asset.uri,
+        thumbnailUri: asset.uri,
+        filename: asset.filename,
+        width: asset.width,
+        height: asset.height,
+        creationTime: asset.creationTime,
+        modificationTime: asset.modificationTime,
+      }));
+
+      return result;
+    } catch (error) {
+      console.error(`Error loading photos from folder ${folderId}:`, error);
+      throw error;
+    }
+  }
 }

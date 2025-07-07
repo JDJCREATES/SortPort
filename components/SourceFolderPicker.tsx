@@ -4,6 +4,8 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Platform } from 'react-native';
 import { PhotoLoader } from '../utils/photoLoader';
+import { NsfwModerationManager } from '../utils/nsfwModerationManager';
+import { useApp } from '../contexts/AppContext';
 import { lightTheme } from '../utils/theme';
 
 interface SourceFolder {
@@ -22,10 +24,13 @@ interface SourceFolderPickerProps {
 }
 
 export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders }: SourceFolderPickerProps) {
+  const { userProfile } = useApp();
   const [folders, setFolders] = useState<SourceFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [tempSelected, setTempSelected] = useState<string[]>(selectedFolders);
   const [error, setError] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, message: '' });
 
   useEffect(() => {
     if (visible) {
@@ -100,11 +105,63 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
   };
 
   const handleConfirm = () => {
+    if (isScanning) return; // Prevent multiple scans
+    
     const selectedFolderObjects = folders.filter(folder => 
       tempSelected.includes(folder.id)
     );
-    onSelect(selectedFolderObjects);
-    onClose();
+    
+    // Check if any new folders were selected that might need NSFW scanning
+    const newFolders = tempSelected.filter(id => !selectedFolders.includes(id));
+    
+    if (newFolders.length > 0 && userProfile) {
+      // Start NSFW scanning for new folders
+      handleNsfwScanning(newFolders, selectedFolderObjects);
+    } else {
+      // No new folders or no user, just update selection
+      onSelect(selectedFolderObjects);
+      onClose();
+    }
+  };
+
+  const handleNsfwScanning = async (
+    newFolderIds: string[], 
+    allSelectedFolders: SourceFolder[]
+  ) => {
+    if (!userProfile) return;
+    
+    setIsScanning(true);
+    setScanProgress({ current: 0, total: newFolderIds.length, message: 'Starting NSFW scan...' });
+    
+    try {
+      await NsfwModerationManager.checkAndModerateFolders(
+        newFolderIds,
+        userProfile.id,
+        (current, total, message) => {
+          setScanProgress({ current, total, message });
+        }
+      );
+      
+      // Scanning complete, update selection
+      onSelect(allSelectedFolders);
+      onClose();
+      
+    } catch (error) {
+      console.error('NSFW scanning failed:', error);
+      Alert.alert(
+        'Scanning Error',
+        'Failed to scan folders for content moderation. Your folder selection has been saved, but some content may not be properly filtered.',
+        [
+          { text: 'OK', onPress: () => {
+            onSelect(allSelectedFolders);
+            onClose();
+          }}
+        ]
+      );
+    } finally {
+      setIsScanning(false);
+      setScanProgress({ current: 0, total: 0, message: '' });
+    }
   };
 
   const handleSelectAll = () => {
@@ -206,16 +263,40 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
             <TouchableOpacity 
               style={[
                 styles.confirmButton,
-                (tempSelected.length === 0 || error) && styles.confirmButtonDisabled
+                (tempSelected.length === 0 || error || isScanning) && styles.confirmButtonDisabled
               ]}
               onPress={handleConfirm}
-              disabled={tempSelected.length === 0 || !!error}
+              disabled={tempSelected.length === 0 || !!error || isScanning}
             >
               <Text style={styles.confirmButtonText}>
-                Apply ({tempSelected.length})
+                {isScanning 
+                  ? `Scanning... ${scanProgress.current}/${scanProgress.total}`
+                  : `Apply (${tempSelected.length})`
+                }
               </Text>
             </TouchableOpacity>
           </View>
+          
+          {/* NSFW Scanning Progress */}
+          {isScanning && (
+            <View style={styles.scanningOverlay}>
+              <View style={styles.scanningContent}>
+                <Text style={styles.scanningTitle}>Content Moderation</Text>
+                <Text style={styles.scanningMessage}>{scanProgress.message}</Text>
+                <View style={styles.progressBar}>
+                  <View 
+                    style={[
+                      styles.progressFill, 
+                      { width: `${(scanProgress.current / Math.max(scanProgress.total, 1)) * 100}%` }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.scanningNote}>
+                  Scanning new folders for appropriate content. This may take a few minutes.
+                </Text>
+              </View>
+            </View>
+          )}
         </Animated.View>
       </View>
     </Modal>
@@ -421,5 +502,55 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     color: 'white',
+  },
+  scanningOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: lightTheme.spacing.xl,
+  },
+  scanningContent: {
+    backgroundColor: lightTheme.colors.background,
+    borderRadius: lightTheme.borderRadius.xl,
+    padding: lightTheme.spacing.xl,
+    alignItems: 'center',
+    minWidth: 280,
+  },
+  scanningTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-Bold',
+    color: lightTheme.colors.text,
+    marginBottom: lightTheme.spacing.md,
+  },
+  scanningMessage: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: lightTheme.spacing.lg,
+  },
+  progressBar: {
+    width: '100%',
+    height: 4,
+    backgroundColor: lightTheme.colors.border,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: lightTheme.spacing.md,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: lightTheme.colors.primary,
+  },
+  scanningNote: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 16,
   },
 });

@@ -12,6 +12,7 @@
     "start": "expo start --dev-client"
   },
   "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.840.0",
     "@expo-google-fonts/inter": "^0.2.3",
     "@expo/vector-icons": "^14.1.0",
     "@langchain/core": "^0.3.0",
