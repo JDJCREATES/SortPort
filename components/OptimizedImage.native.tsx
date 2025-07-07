@@ -26,7 +26,8 @@ interface OptimizedImageProps {
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
-export function OptimizedImage({
+// Memoized OptimizedImage component
+export const OptimizedImage = React.memo(function OptimizedImage({
   uri,
   thumbnailUri,
   style,
@@ -137,7 +138,20 @@ export function OptimizedImage({
       )}
     </TouchableOpacity>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for optimal memoization
+  return (
+    prevProps.uri === nextProps.uri &&
+    prevProps.thumbnailUri === nextProps.thumbnailUri &&
+    prevProps.priority === nextProps.priority &&
+    prevProps.resizeMode === nextProps.resizeMode &&
+    prevProps.showLoadingIndicator === nextProps.showLoadingIndicator &&
+    prevProps.placeholderColor === nextProps.placeholderColor &&
+    prevProps.testID === nextProps.testID &&
+    // Compare style objects (shallow comparison)
+    JSON.stringify(prevProps.style) === JSON.stringify(nextProps.style)
+  );
+});
 
 const styles = StyleSheet.create({
   container: {

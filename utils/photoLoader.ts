@@ -315,14 +315,19 @@ export class PhotoLoader {
       for (let i = 0; i < batchIds.length; i += PARALLEL_BATCH_SIZE) {
         const parallelBatch = batchIds.slice(i, i + PARALLEL_BATCH_SIZE);
         
-        const batchPromises = parallelBatch.map(async (photoId) => {
+        const batchPromises = parallelBatch.map(async (photoId): Promise<ImageMeta | null> => {
           try {
             const asset = await MediaLibrary.getAssetInfoAsync(photoId);
             successCount++;
+            
+            // Use the original URI - Expo Image will handle thumbnail generation automatically
+            // You can also create a thumbnail URI by appending resize parameters
+            const thumbnailUri = asset.uri; // Expo Image will cache and optimize this
+            
             return {
               id: asset.id,
               uri: asset.uri,
-              thumbnailUri: asset.uri,
+              thumbnailUri, // Same as uri, Expo Image handles the rest
               filename: asset.filename,
               width: asset.width,
               height: asset.height,
@@ -337,6 +342,7 @@ export class PhotoLoader {
         });
 
         const batchResults = await Promise.all(batchPromises);
+        // Fix the type predicate - filter out null values
         const validPhotos = batchResults.filter((photo): photo is ImageMeta => photo !== null);
         photos.push(...validPhotos);
       }

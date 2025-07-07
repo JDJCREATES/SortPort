@@ -39,8 +39,8 @@ import { useImagePreloader } from '../../hooks/useImagePreloader';
 import { lightTheme } from '../../utils/theme';
 
 const PHOTOS_PER_BATCH = 50; // Increased batch size for better initial loading
-const PRELOAD_THRESHOLD = 0.8; // Start loading when 80% scrolled
-const PRELOAD_LOOKAHEAD = 15; // Number of images to preload ahead
+const PRELOAD_THRESHOLD = 0.7; // Start loading when 80% scrolled
+const PRELOAD_LOOKAHEAD = 20; // Number of images to preload ahead
 
 interface AlbumScreenState {
   album: Album | null;
@@ -101,9 +101,9 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Auto-preload images based on scroll position
   useImagePreloader({
     images: state.photos,
-    currentIndex: Math.floor(state.photos.length * 0.7), // Estimate current visible index
+    currentIndex: Math.floor(state.photos.length * 0.5), // More conservative estimate
     lookahead: PRELOAD_LOOKAHEAD,
-    enabled: !state.loading && state.photos.length > 0,
+    enabled: !state.loading && state.photos.length > 0 && !state.isFetchingMore,
   });
 
   // Cleanup on unmount
@@ -114,6 +114,8 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
     };
   }, []);
+
+  
 
   // Memoized image viewer data
   const imageViewerData = useMemo<ImageViewerData[]>(() => 
@@ -262,13 +264,16 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   }, [albumId, state.loading]);
 
   const loadMorePhotos = useCallback(async () => {
-    if (!state.album || state.isFetchingMore || !state.hasMorePhotos || !state.nextPhotoCursor || state.loading) {
+    if (!state.album || 
+        state.isFetchingMore || 
+        !state.hasMorePhotos || 
+        !state.nextPhotoCursor || 
+        state.loading ||
+        state.photos.length === 0) {
       return;
     }
 
-    if (state.loading && state.photos.length === 0) {
-      return;
-    }
+    setState(prev => ({ ...prev, isFetchingMore: true }));
     
     try {
       const result = await PhotoLoader.loadPhotosByIds(
@@ -300,7 +305,7 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         setState(prev => ({ ...prev, isFetchingMore: false }));
       }
     }
-  }, [state.album, state.isFetchingMore, state.hasMorePhotos, state.nextPhotoCursor]);
+  }, [state.album, state.isFetchingMore, state.hasMorePhotos, state.nextPhotoCursor, state.loading, state.photos.length]);
 
   const handleImagePress = useCallback((index: number) => {
     setState(prev => ({
@@ -340,11 +345,16 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const renderPhotoItem = useCallback(({ item, index }: { item: ImageMeta; index: number }) => {
     return (
       <OptimizedImage
+        key={item.id}
         uri={item.uri}
         thumbnailUri={item.thumbnailUri}
         style={styles.gridPhoto}
+        resizeMode="cover"
+        priority="normal"
+        showLoadingIndicator={true}
         onPress={() => handleImagePress(index)}
         onLoad={() => {}}
+        onError={() => {}}
       />
     );
   }, [handleImagePress]);
@@ -414,13 +424,10 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     );
   }, [state.album, userFlags]);
 
-  const keyExtractor = useCallback((item: ImageMeta) => item.id, []);
+  const keyExtractor = useCallback((item: ImageMeta, index: number) => {
+    return `photo-${item.id}-${index}`;
+  }, []);
 
-  const getItemLayout = useCallback((data: any, index: number) => ({
-    length: 120, // Approximate item height
-    offset: 120 * index,
-    index,
-  }), []);
 
   if (state.loading && !state.album) {
     return (
@@ -498,9 +505,10 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
           removeClippedSubviews={true}
           maxToRenderPerBatch={15}
           windowSize={8}
-          initialNumToRender={12}
-          getItemLayout={getItemLayout}
+          initialNumToRender={15}
           updateCellsBatchingPeriod={100}
+          disableVirtualization={false}
+          legacyImplementation={false}
         />
       ) : !state.loading && !state.isFetchingMore ? (
         <Animated.View entering={FadeInUp.delay(300)} style={styles.emptyContainer}>
@@ -525,6 +533,7 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
       <ImageFullscreenViewer
         visible={state.showImageViewer}
+        onClose={() => setState(prev => ({ ...prev, showImageViewer: false }))}
         images={imageViewerData}
         initialIndex={state.selectedImageIndex}
         onImageChange={handleImageChange}
