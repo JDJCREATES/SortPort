@@ -141,7 +141,7 @@ export class PhotoLoader {
         allAssets = allAssets.slice(0, limit);
       }
 
-      return allAssets.map(asset => ({
+      const result = allAssets.map(asset => ({
         id: asset.id,
         uri: asset.uri,
         thumbnailUri: undefined, // Could be enhanced to generate thumbnails
@@ -354,6 +354,9 @@ export class PhotoLoader {
 
       console.log('📸 Final result: Found', photos.length, 'photos out of', batchIds.length, 'requested');
 
+       // Calculate next batch info
+      const actualNextIndex = startIndex + photos.length; // Use actual found photos, not requested
+
       // Preload next batch for smoother scrolling
       if (photos.length > 0) {
         const nextBatchStart = actualNextIndex;
@@ -364,8 +367,7 @@ export class PhotoLoader {
         }
       }
 
-      // Calculate next batch info
-      const actualNextIndex = startIndex + photos.length; // Use actual found photos, not requested
+     
       const hasMore = actualNextIndex < photoIds.length;
       const nextAfterId = hasMore && photos.length > 0 ? photoIds[actualNextIndex] : null;
 
