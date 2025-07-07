@@ -93,6 +93,7 @@ export function AnimatedAlbumCard({
         {album.thumbnail ? (
           <OptimizedImage
             uri={album.thumbnail}
+            thumbnailUri={album.thumbnail} // For album cards, thumbnail is already optimized
             style={[
               styles.thumbnail,
               isLargeMode && styles.largeThumbnail

@@ -18,6 +18,7 @@ export function AlbumCard({ album, onPress, showLocked = true }: AlbumCardProps)
         {album.thumbnail ? (
           <OptimizedImage
             uri={album.thumbnail}
+            thumbnailUri={album.thumbnail} // For album cards, thumbnail is already optimized
             style={styles.thumbnail}
             priority="normal"
             showLoadingIndicator={true}

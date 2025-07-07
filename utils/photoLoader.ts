@@ -156,7 +156,30 @@ export class PhotoLoader {
       const firstBatchUris = allAssets.slice(0, 10).map(asset => asset.uri);
       ImageCacheManager.preloadImages(firstBatchUris, 'high');
 
-      return result;
+      // Generate thumbnails for better performance
+      const resultWithThumbnails = await Promise.all(
+        result.map(async (imageMeta) => {
+          try {
+            if (Platform.OS !== 'web') {
+              const thumbnailInfo = await MediaLibrary.getThumbnailAsync(imageMeta.id, {
+                quality: 0.5,
+                width: 200,
+                height: 200,
+              });
+              return {
+                ...imageMeta,
+                thumbnailUri: thumbnailInfo.uri,
+              };
+            }
+            return imageMeta;
+          } catch (error) {
+            console.warn(`Failed to generate thumbnail for ${imageMeta.id}:`, error);
+            return imageMeta;
+          }
+        })
+      );
+
+      return resultWithThumbnails;
     } catch (error) {
       console.error('Error loading photos:', error);
       throw error; // Re-throw to let caller handle the error
@@ -354,25 +377,48 @@ export class PhotoLoader {
 
       console.log('📸 Final result: Found', photos.length, 'photos out of', batchIds.length, 'requested');
 
+      // Generate thumbnails for found photos
+      const photosWithThumbnails = await Promise.all(
+        photos.map(async (photo) => {
+          try {
+            if (Platform.OS !== 'web') {
+              const thumbnailInfo = await MediaLibrary.getThumbnailAsync(photo.id, {
+                quality: 0.5,
+                width: 200,
+                height: 200,
+              });
+              return {
+                ...photo,
+                thumbnailUri: thumbnailInfo.uri,
+              };
+            }
+            return photo;
+          } catch (error) {
+            console.warn(`Failed to generate thumbnail for ${photo.id}:`, error);
+            return photo;
+          }
+        })
+      );
+
        // Calculate next batch info
-      const actualNextIndex = startIndex + photos.length; // Use actual found photos, not requested
+      const actualNextIndex = startIndex + photosWithThumbnails.length; // Use actual found photos, not requested
 
       // Preload next batch for smoother scrolling
-      if (photos.length > 0) {
+      if (photosWithThumbnails.length > 0) {
         const nextBatchStart = actualNextIndex;
         const nextBatchIds = photoIds.slice(nextBatchStart, nextBatchStart + 10);
         if (nextBatchIds.length > 0) {
           // We don't have URIs for next batch yet, but we can prepare the cache
-          ImageCacheManager.preloadUpcomingImages(photos, 0, 5);
+          ImageCacheManager.preloadUpcomingImages(photosWithThumbnails, 0, 5);
         }
       }
 
      
       const hasMore = actualNextIndex < photoIds.length;
-      const nextAfterId = hasMore && photos.length > 0 ? photoIds[actualNextIndex] : null;
+      const nextAfterId = hasMore && photosWithThumbnails.length > 0 ? photoIds[actualNextIndex] : null;
 
       return {
-        photos,
+        photos: photosWithThumbnails,
         nextAfterId,
         hasMore,
       };
