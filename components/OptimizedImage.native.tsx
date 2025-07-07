@@ -127,13 +127,6 @@ export function OptimizedImage({
         />
       )}
 
-      {/* Loading indicator */}
-      {isLoading && showLoadingIndicator && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color={lightTheme.colors.primary} />
-        </View>
-      )}
-
       {/* Error state */}
       {hasError && (
         <View style={styles.errorContainer}>
@@ -150,12 +143,6 @@ const styles = StyleSheet.create({
   container: {
     position: 'relative',
     overflow: 'hidden',
-  },
-  loadingContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
   },
   errorContainer: {
     ...StyleSheet.absoluteFillObject,

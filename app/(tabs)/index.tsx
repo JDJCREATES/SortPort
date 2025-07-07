@@ -5,6 +5,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
 import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
+import { ResponsiveAlbumGrid } from '../../components/ResponsiveAlbumGrid';
 import { PictureHackBar } from '../../components/PictureHackBar';
 import { InfoIcon } from '../../components/InfoIcon';
 import { AutoSortManager } from '../../utils/autoSortManager';
@@ -136,16 +137,12 @@ export default function HomeScreen() {
               <Text style={styles.loadingText}>Loading albums...</Text>
             </Animated.View>
           ) : (
-            <View style={styles.albumGrid}>
-              {albums.slice(0, 6).map((album, index) => (
-                <AnimatedAlbumCard
-                  key={album.id}
-                  album={album}
-                  onPress={() => handleAlbumPress(album)}
-                  index={index}
-                />
-              ))}
-            </View>
+            <ResponsiveAlbumGrid
+              albums={albums.slice(0, 6)}
+              viewMode="grid-2"
+              onAlbumPress={handleAlbumPress}
+              showLocked={true}
+            />
           )}
         </View>
 
@@ -261,11 +258,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: lightTheme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
-  },
-  albumGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
   },
   activityCard: {
     flexDirection: 'row',

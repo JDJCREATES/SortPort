@@ -498,14 +498,14 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
           getItemLayout={getItemLayout}
           updateCellsBatchingPeriod={100}
         />
-      ) : (
+      ) : !state.loading && !state.isFetchingMore ? (
         <Animated.View entering={FadeInUp.delay(300)} style={styles.emptyContainer}>
           <Text style={styles.emptyTitle}>No Photos Available</Text>
           <Text style={styles.emptyText}>
             The photos from this album may have been moved or deleted from your device.
           </Text>
         </Animated.View>
-      )}
+      ) : null}
 
       <SubscriptionModal
         visible={state.showSubscriptionModal}
