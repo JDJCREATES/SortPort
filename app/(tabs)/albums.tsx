@@ -427,10 +427,8 @@ export default function AlbumsScreen() {
   // Render functions with performance optimizations
   const renderErrorState = useCallback(
     () => (
-      <Animated.View
-        entering={FadeInUp.delay(200)}
-        style={styles.errorContainer}
-      >
+      <View style={styles.errorContainer}>
+        <Animated.View entering={FadeInUp.delay(200)}>
         <Ionicons name="alert-circle" size={48} color={lightTheme.colors.error} />
         <Text style={styles.errorTitle}>Something went wrong</Text>
         <Text style={styles.errorText}>{state.errorMessage}</Text>
@@ -444,17 +442,17 @@ export default function AlbumsScreen() {
             </Text>
           )}
         </View>
-      </Animated.View>
+        </Animated.View>
+        </Animated.View>
+      </View>
     ),
     [state.errorMessage, state.retryCount, handleRetry]
   );
 
   const renderEmptyState = useCallback(
     () => (
-      <Animated.View
-        entering={FadeInUp.delay(200)}
-        style={styles.emptyContainer}
-      >
+      <View style={styles.emptyContainer}>
+        <Animated.View entering={FadeInUp.delay(200)}>
         <Ionicons name="grid" size={64} color={lightTheme.colors.textSecondary} />
         <Text style={styles.emptyTitle}>
           {state.searchQuery ? 'No matching albums' : 'No Albums Yet'}
@@ -473,17 +471,15 @@ export default function AlbumsScreen() {
             <Text style={styles.createButtonText}>Create Album</Text>
           </TouchableOpacity>
         )}
-      </Animated.View>
+      </View>
     ),
     [state.searchQuery, handleCreateAlbum]
   );
 
   const renderLoadingState = useCallback(
     () => (
-      <Animated.View
-        entering={FadeInUp.delay(200)}
-        style={styles.loadingContainer}
-      >
+      <View style={styles.loadingContainer}>
+        <Animated.View entering={FadeInUp.delay(200)}>
         <Text style={styles.loadingText}>
           {state.retryCount > 0
             ? `Retrying... (${state.retryCount}/${MAX_RETRY_ATTEMPTS})`
@@ -491,24 +487,24 @@ export default function AlbumsScreen() {
             ? 'Loading your albums...'
             : 'Refreshing albums...'}
         </Text>
-      </Animated.View>
+        </Animated.View>
+      </View>
     ),
     [state.retryCount, state.isInitialLoad]
   );
 
   const renderAlbumGrid = useCallback(
     () => (
-      <Animated.View
-        entering={FadeInUp.delay(200)}
-        style={contentAnimatedStyle}
-      >
+      <View style={contentAnimatedStyle}>
+        <Animated.View entering={FadeInUp.delay(200)}>
         <ResponsiveAlbumGrid
           albums={processedAlbums}
           viewMode={state.viewMode}
           onAlbumPress={handleAlbumPress}
           showLocked={state.showLocked}
         />
-      </Animated.View>
+        </Animated.View>
+      </View>
     ),
     [
       processedAlbums,
@@ -540,10 +536,8 @@ export default function AlbumsScreen() {
   };
 
   const renderHeader = () => (
-    <Animated.View
-      entering={FadeInUp.delay(100)}
-      style={[styles.header, headerAnimatedStyle]}
-    >
+    <View style={[styles.header, headerAnimatedStyle]}>
+      <Animated.View entering={FadeInUp.delay(100)}>
       <View style={styles.headerLeft}>
         <Ionicons name="grid" size={24} color={lightTheme.colors.primary} />
         <Text style={styles.title}>All Albums</Text>
@@ -597,27 +591,28 @@ export default function AlbumsScreen() {
           />
         </TouchableOpacity>
       </View>
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 
   const renderViewModeSelector = () => {
     if (!state.showViewModeSelector) return null;
 
     return (
-      <Animated.View
-        entering={FadeInDown.delay(100)}
-        style={styles.viewModeSelectorContainer}
-      >
+      <View style={styles.viewModeSelectorContainer}>
+        <Animated.View entering={FadeInDown.delay(100)}>
         <AlbumViewModeSelector
           currentMode={state.viewMode}
           onModeChange={handleViewModeChange}
         />
-      </Animated.View>
+        </Animated.View>
+      </View>
     );
   };
 
   const renderFooter = () => (
-    <Animated.View entering={FadeInDown.delay(300)} style={styles.footer}>
+    <View style={styles.footer}>
+      <Animated.View entering={FadeInDown.delay(300)}>
       <Text style={styles.footerText}>
         {state.showLocked
           ? `Showing ${processedAlbums.length} albums (including locked)`
@@ -634,7 +629,8 @@ export default function AlbumsScreen() {
           {albums.reduce((sum, album) => sum + (album.count || 0), 0)} photos
         </Text>
       )}
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 
   // Reset header opacity when screen comes back into focus

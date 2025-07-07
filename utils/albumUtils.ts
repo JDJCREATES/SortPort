@@ -20,20 +20,20 @@ export class AlbumUtils {
    */
   static async ensureAllPhotosAlbumExists(): Promise<void> {
     try {
-      console.log('🔄 Starting ensureAllPhotosAlbumExists...');
+      console.log('📁 ensureAllPhotosAlbumExists: Starting...');
       
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
-        console.log('👤 User not authenticated, skipping All Photos album creation');
+        console.log('📁 ensureAllPhotosAlbumExists: User not authenticated, skipping');
         return;
       }
       
-      console.log('👤 User authenticated:', user.id);
+      console.log('📁 ensureAllPhotosAlbumExists: User authenticated:', user.id);
 
       // Load current settings to get selected folders
       const settings = await MediaStorage.loadSettings();
       const selectedFolders = settings.selectedFolders || ['all_photos'];
-      console.log('📁 Selected folders from settings:', selectedFolders);
+      console.log('📁 ensureAllPhotosAlbumExists: Selected folders:', selectedFolders);
 
       // Load existing albums
       const { data: existingAlbums, error: loadError } = await supabase
@@ -44,13 +44,13 @@ export class AlbumUtils {
         .limit(1);
 
       if (loadError) {
-        console.error('❌ Error loading existing All Photos album:', loadError);
+        console.error('❌ ensureAllPhotosAlbumExists: Error loading existing album:', loadError);
         return;
       }
 
       // Load all photo IDs from the entire device
       const allPhotoIds = await PhotoLoader.loadAllPhotoIds(selectedFolders);
-      console.log('📸 Loaded photo IDs count:', allPhotoIds.length);
+      console.log('📁 ensureAllPhotosAlbumExists: Loaded', allPhotoIds.length, 'photo IDs');
       
       // Always create/update the album, even if empty
       const imageIds = allPhotoIds.map(photo => photo.id);
@@ -82,9 +82,9 @@ export class AlbumUtils {
             .eq('id', existingAlbum.id);
 
           if (updateError) {
-            console.error('❌ Error updating All Photos album:', updateError);
+            console.error('❌ ensureAllPhotosAlbumExists: Error updating album:', updateError);
           } else {
-            console.log(`✅ Updated All Photos album with ${imageIds.length} photos${imageIds.length === 0 ? ' (empty)' : ''}`);
+            console.log(`✅ ensureAllPhotosAlbumExists: Updated album with ${imageIds.length} photos`);
           }
         }
       } else {
@@ -108,13 +108,13 @@ export class AlbumUtils {
           .insert([newAlbum]);
 
         if (insertError) {
-          console.error('❌ Error creating All Photos album:', insertError);
+          console.error('❌ ensureAllPhotosAlbumExists: Error creating album:', insertError);
         } else {
-          console.log(`✅ Created All Photos album with ${imageIds.length} photos${imageIds.length === 0 ? ' (empty)' : ''}`);
+          console.log(`✅ ensureAllPhotosAlbumExists: Created album with ${imageIds.length} photos`);
         }
       }
     } catch (error) {
-      console.error('❌ Error ensuring All Photos album exists:', error);
+      console.error('❌ ensureAllPhotosAlbumExists: Error:', error);
     }
   }
 

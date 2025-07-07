@@ -185,26 +185,32 @@ export function AppProvider({ children }: AppProviderProps) {
 
   // Initialize app data
   useEffect(() => {
+    console.log('🚀 Starting app initialization...');
     initializeApp();
   }, []);
 
   // Set up auth state listener
   useEffect(() => {
+    console.log('🔐 Setting up auth state listener...');
     const { data: { subscription } } = SupabaseAuth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, !!session?.user);
+      console.log('🔐 Auth state changed:', event, !!session?.user, session?.user?.id || 'no-user');
       
       if (session?.user) {
         // User signed in
         try {
+          console.log('👤 Loading user profile after sign in...');
           const profile = await SupabaseAuth.getProfile();
+          console.log('👤 Profile loaded:', !!profile);
           dispatch({
             type: 'SET_AUTHENTICATED',
             payload: { isAuthenticated: true, userProfile: profile },
           });
           
           // Refresh user flags and albums when user signs in
+          console.log('🔄 Refreshing user data after sign in...');
           await refreshUserFlags();
           await refreshAlbums();
+          console.log('✅ User data refresh complete');
         } catch (error) {
           console.error('Error loading user profile after sign in:', error);
           dispatch({
@@ -214,6 +220,7 @@ export function AppProvider({ children }: AppProviderProps) {
         }
       } else {
         // User signed out
+        console.log('👤 User signed out, clearing state...');
         dispatch({
           type: 'SET_AUTHENTICATED',
           payload: { isAuthenticated: false, userProfile: null },
@@ -235,7 +242,7 @@ export function AppProvider({ children }: AppProviderProps) {
   }, []);
 
   const initializeApp = async () => {
-    console.log('Initializing app...');
+    console.log('🚀 initializeApp: Starting...');
     dispatch({ type: 'SET_INITIALIZING', payload: true });
 
     try {
@@ -243,18 +250,22 @@ export function AppProvider({ children }: AppProviderProps) {
       await refreshSettings();
       
       // Check authentication status
+      console.log('🔐 initializeApp: Checking auth status...');
       await checkAuthStatus();
       
       // Load user flags (works for both authenticated and non-authenticated users)
+      console.log('🏷️ initializeApp: Loading user flags...');
       await refreshUserFlags();
       
       // Load albums (works for both authenticated and non-authenticated users)
+      console.log('📁 initializeApp: Loading albums...');
       await refreshAlbums();
       
-      console.log('App initialization complete');
+      console.log('✅ initializeApp: Complete');
     } catch (error) {
-      console.error('Error during app initialization:', error);
+      console.error('❌ initializeApp: Error during initialization:', error);
     } finally {
+      console.log('🚀 initializeApp: Setting initialization complete');
       dispatch({ type: 'SET_INITIALIZING', payload: false });
     }
   };
@@ -262,22 +273,28 @@ export function AppProvider({ children }: AppProviderProps) {
   const checkAuthStatus = async () => {
     dispatch({ type: 'SET_AUTH_LOADING', payload: true });
     
+    console.log('🔐 checkAuthStatus: Starting...');
     try {
       const user = await SupabaseAuth.getCurrentUser();
       if (user) {
+        console.log('👤 checkAuthStatus: User found, loading profile...');
         const profile = await SupabaseAuth.getProfile();
+        console.log('👤 checkAuthStatus: Profile loaded:', !!profile);
         dispatch({
           type: 'SET_AUTHENTICATED',
           payload: { isAuthenticated: true, userProfile: profile },
         });
       } else {
+        console.log('👤 checkAuthStatus: No user found');
         dispatch({
           type: 'SET_AUTHENTICATED',
           payload: { isAuthenticated: false, userProfile: null },
         });
       }
+      console.log('✅ checkAuthStatus: Complete');
     } catch (error: any) {
-      console.error('Error checking auth status:', error);
+      console.error('❌ checkAuthStatus: Error:', error);
+      // Don't throw the error, just set unauthenticated state
       dispatch({
         type: 'SET_AUTHENTICATED',
         payload: { isAuthenticated: false, userProfile: null },
@@ -303,26 +320,30 @@ export function AppProvider({ children }: AppProviderProps) {
   const refreshUserProfile = async () => {
     if (!state.isAuthenticated) return;
     
+    console.log('👤 refreshUserProfile: Starting...');
     try {
       const profile = await SupabaseAuth.getProfile();
       dispatch({
         type: 'SET_AUTHENTICATED',
         payload: { isAuthenticated: true, userProfile: profile },
       });
+      console.log('✅ refreshUserProfile: Complete');
     } catch (error) {
-      console.error('Error refreshing user profile:', error);
+      console.error('❌ refreshUserProfile: Error:', error);
     }
   };
 
   const refreshUserFlags = async () => {
+    console.log('🏷️ refreshUserFlags: Starting...');
     dispatch({ type: 'SET_USER_FLAGS_LOADING', payload: true });
     
     try {
       const revenueCat = RevenueCatManager.getInstance();
       const flags = await revenueCat.getUserFlags();
       dispatch({ type: 'SET_USER_FLAGS', payload: flags });
+      console.log('✅ refreshUserFlags: Complete');
     } catch (error) {
-      console.error('Error loading user flags:', error);
+      console.error('❌ refreshUserFlags: Error:', error);
       dispatch({ type: 'SET_USER_FLAGS_LOADING', payload: false });
     }
   };
@@ -339,18 +360,21 @@ export function AppProvider({ children }: AppProviderProps) {
   };
 
   const refreshSettings = async () => {
+    console.log('⚙️ refreshSettings: Starting...');
     dispatch({ type: 'SET_SETTINGS_LOADING', payload: true });
     
     try {
       const settings = await MediaStorage.loadSettings();
       dispatch({ type: 'SET_SETTINGS', payload: settings });
+      console.log('✅ refreshSettings: Complete');
     } catch (error) {
-      console.error('Error loading settings:', error);
+      console.error('❌ refreshSettings: Error:', error);
       dispatch({ type: 'SET_SETTINGS_LOADING', payload: false });
     }
   };
 
   const refreshAlbums = async () => {
+    console.log('📁 refreshAlbums: Starting...');
     dispatch({ type: 'SET_ALBUMS_LOADING', payload: true });
     
     try {
@@ -358,18 +382,24 @@ export function AppProvider({ children }: AppProviderProps) {
       const permissionResult = await PhotoLoader.checkAndRequestPermissions();
       
       if (!permissionResult.granted) {
-        console.warn('⚠️ Photo permissions not granted:', permissionResult.message);
+        console.warn('⚠️ refreshAlbums: Photo permissions not granted:', permissionResult.message);
         // Still try to load albums from database, but they might be empty
+        dispatch({ type: 'SET_ALBUMS_ERROR', payload: permissionResult.message });
       }
       
       // Ensure All Photos album exists first
+      console.log('📁 refreshAlbums: Ensuring All Photos album exists...');
       await AlbumUtils.ensureAllPhotosAlbumExists();
       
       // Load all albums
+      console.log('📁 refreshAlbums: Loading albums from database...');
       const albums = await AlbumUtils.loadAlbums();
+      console.log('📁 refreshAlbums: Loaded', albums.length, 'albums');
       dispatch({ type: 'SET_ALBUMS', payload: albums });
+      console.log('✅ refreshAlbums: Complete');
     } catch (error) {
-      console.error('Error loading albums:', error);
+      console.error('❌ refreshAlbums: Error:', error);
+      dispatch({ type: 'SET_ALBUMS_ERROR', payload: error instanceof Error ? error.message : 'Failed to load albums' });
       dispatch({ type: 'SET_ALBUMS_LOADING', payload: false });
     }
   };
