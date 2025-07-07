@@ -9,25 +9,24 @@ import Animated, {
   runOnJS
 } from 'react-native-reanimated';
 import { lightTheme } from '../utils/theme';
+  interface OptimizedImageProps {
+    uri: string;
+    thumbnailUri?: string;
+    style?: ImageStyle | ImageStyle[];
+    resizeMode?: ResizeMode;
+    priority?: 'low' | 'normal' | 'high';
+    showLoadingIndicator?: boolean;
+    placeholderColor?: string;
+    onPress?: () => void;
+    onLoad?: () => void;
+    onError?: () => void;
+    testID?: string;
+  }
 
-interface OptimizedImageProps {
-  uri: string;
-  thumbnailUri?: string;
-  style?: ImageStyle | ImageStyle[];
-  resizeMode?: ResizeMode;
-  priority?: 'low' | 'normal' | 'high';
-  showLoadingIndicator?: boolean;
-  placeholderColor?: string;
-  onPress?: () => void;
-  onLoad?: () => void;
-  onError?: (error: any) => void;
-  testID?: string;
-}
+  const AnimatedFastImage = Animated.createAnimatedComponent(FastImage);
 
-const AnimatedFastImage = Animated.createAnimatedComponent(FastImage);
-
-export function OptimizedImage({
-  uri,
+  export function OptimizedImage({
+    uri,
   thumbnailUri,
   style,
   resizeMode = FastImage.resizeMode.cover,
@@ -60,10 +59,10 @@ export function OptimizedImage({
     onLoad?.();
   }, [opacity, thumbnailOpacity, thumbnailUri, showFullImage, onLoad]);
 
-  const handleError = useCallback((error: any) => {
+  const handleError = useCallback(() => {
     setIsLoading(false);
     setHasError(true);
-    onError?.(error);
+    onError?.();
   }, [onError]);
 
   const handleThumbnailLoad = useCallback(() => {
