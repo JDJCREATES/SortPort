@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet, Text, Alert, Platform } from 'react-native';
-import { Mic, Send, Sparkles, Square } from 'lucide-react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { 
   useAudioRecorder,
   AudioModule
@@ -166,7 +166,7 @@ export function PictureHackBar({
   return (
     <Animated.View style={[styles.container, containerAnimatedStyle]}>
       <View style={styles.header}>
-        <Sparkles size={16} color={lightTheme.colors.primary} />
+        <Ionicons name="sparkles" size={16} color={lightTheme.colors.primary} />
         <Text style={styles.headerText}>Picture Hack</Text>
         {isRecording && (
           <View style={styles.recordingIndicator}>
@@ -208,9 +208,13 @@ export function PictureHackBar({
             disabled={isVoiceDisabled}
           >
             {isRecording ? (
-              <Square size={20} color="white" />
+              <MaterialIcons name="stop" size={20} color="white" />
             ) : (
-              <Mic size={20} color={isVoiceDisabled ? lightTheme.colors.border : lightTheme.colors.textSecondary} />
+              <Ionicons 
+                name="mic" 
+                size={20} 
+                color={isVoiceDisabled ? lightTheme.colors.border : lightTheme.colors.textSecondary} 
+              />
             )}
           </AnimatedTouchableOpacity>
           <AnimatedTouchableOpacity
@@ -222,7 +226,7 @@ export function PictureHackBar({
             onPress={handleSubmit}
             disabled={isSubmitDisabled}
           >
-            <Send size={18} color="white" />
+            <Ionicons name="send" size={18} color="white" />
           </AnimatedTouchableOpacity>
         </View>
       </View>
