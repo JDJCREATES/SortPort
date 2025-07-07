@@ -139,18 +139,21 @@ export const OptimizedImage = React.memo(function OptimizedImage({
     </TouchableOpacity>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison function for optimal memoization
-  return (
-    prevProps.uri === nextProps.uri &&
-    prevProps.thumbnailUri === nextProps.thumbnailUri &&
-    prevProps.priority === nextProps.priority &&
-    prevProps.resizeMode === nextProps.resizeMode &&
-    prevProps.showLoadingIndicator === nextProps.showLoadingIndicator &&
-    prevProps.placeholderColor === nextProps.placeholderColor &&
-    prevProps.testID === nextProps.testID &&
-    // Compare style objects (shallow comparison)
-    JSON.stringify(prevProps.style) === JSON.stringify(nextProps.style)
-  );
+  // Only compare the props that actually matter for rendering
+  if (prevProps.uri !== nextProps.uri) return false;
+  if (prevProps.thumbnailUri !== nextProps.thumbnailUri) return false;
+  if (prevProps.priority !== nextProps.priority) return false;
+  
+  // Skip expensive style comparison if possible
+  const prevStyle = StyleSheet.flatten(prevProps.style);
+  const nextStyle = StyleSheet.flatten(nextProps.style);
+  
+  // Only compare essential style properties
+  if (prevStyle?.width !== nextStyle?.width) return false;
+  if (prevStyle?.height !== nextStyle?.height) return false;
+  if (prevStyle?.aspectRatio !== nextStyle?.aspectRatio) return false;
+  
+  return true;
 });
 
 const styles = StyleSheet.create({
