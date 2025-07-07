@@ -294,6 +294,8 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
           isFetchingMore: false,
         }));
       }
+    } catch (error) {
+      console.error('Error loading more photos:', error);
       if (isMountedRef.current) {
         setState(prev => ({ ...prev, isFetchingMore: false }));
       }
