@@ -141,10 +141,11 @@ export class PhotoLoader {
         allAssets = allAssets.slice(0, limit);
       }
 
+      // Convert to ImageMeta format
       const result = allAssets.map(asset => ({
         id: asset.id,
         uri: asset.uri,
-        thumbnailUri: undefined, // Could be enhanced to generate thumbnails
+        thumbnailUri: asset.uri, // ✅ Use original URI, let Expo Image handle optimization
         filename: asset.filename,
         width: asset.width,
         height: asset.height,
@@ -153,33 +154,10 @@ export class PhotoLoader {
       }));
 
       // Preload first batch of images for better performance
-      const firstBatchUris = allAssets.slice(0, 10).map(asset => asset.uri);
+      const firstBatchUris = result.slice(0, 10).map(photo => photo.uri);
       ImageCacheManager.preloadImages(firstBatchUris, 'high');
 
-      // Generate thumbnails for better performance
-      const resultWithThumbnails = await Promise.all(
-        result.map(async (imageMeta) => {
-          try {
-            if (Platform.OS !== 'web') {
-              const thumbnailInfo = await MediaLibrary.getThumbnailAsync(imageMeta.id, {
-                quality: 0.5,
-                width: 200,
-                height: 200,
-              });
-              return {
-                ...imageMeta,
-                thumbnailUri: thumbnailInfo.uri,
-              };
-            }
-            return imageMeta;
-          } catch (error) {
-            console.warn(`Failed to generate thumbnail for ${imageMeta.id}:`, error);
-            return imageMeta;
-          }
-        })
-      );
-
-      return resultWithThumbnails;
+      return result;
     } catch (error) {
       console.error('Error loading photos:', error);
       throw error; // Re-throw to let caller handle the error
@@ -327,17 +305,17 @@ export class PhotoLoader {
 
       console.log('📸 Looking for photos with IDs:', batchIds.slice(0, 5), '...');
 
-      // Load MORE assets to increase chance of finding our photos
+      // Load assets to find our photos
       const photos: ImageMeta[] = [];
       let after: string | undefined;
       let foundCount = 0;
       let attempts = 0;
-      const maxAttempts = 10; // Prevent infinite loop
+      const maxAttempts = 10;
 
       while (foundCount < batchIds.length && attempts < maxAttempts) {
         const assets = await MediaLibrary.getAssetsAsync({
           mediaType: 'photo',
-          first: 2000, // Increased from 1000
+          first: 2000,
           after,
           sortBy: ['creationTime'],
         });
@@ -352,7 +330,7 @@ export class PhotoLoader {
           photos.push({
             id: asset.id,
             uri: asset.uri,
-            thumbnailUri: undefined, // Could be enhanced to generate thumbnails
+            thumbnailUri: asset.uri, // ✅ Use original URI, let Expo Image handle optimization
             filename: asset.filename,
             width: asset.width,
             height: asset.height,
@@ -377,48 +355,18 @@ export class PhotoLoader {
 
       console.log('📸 Final result: Found', photos.length, 'photos out of', batchIds.length, 'requested');
 
-      // Generate thumbnails for found photos
-      const photosWithThumbnails = await Promise.all(
-        photos.map(async (photo) => {
-          try {
-            if (Platform.OS !== 'web') {
-              const thumbnailInfo = await MediaLibrary.getThumbnailAsync(photo.id, {
-                quality: 0.5,
-                width: 200,
-                height: 200,
-              });
-              return {
-                ...photo,
-                thumbnailUri: thumbnailInfo.uri,
-              };
-            }
-            return photo;
-          } catch (error) {
-            console.warn(`Failed to generate thumbnail for ${photo.id}:`, error);
-            return photo;
-          }
-        })
-      );
-
-       // Calculate next batch info
-      const actualNextIndex = startIndex + photosWithThumbnails.length; // Use actual found photos, not requested
-
-      // Preload next batch for smoother scrolling
-      if (photosWithThumbnails.length > 0) {
-        const nextBatchStart = actualNextIndex;
-        const nextBatchIds = photoIds.slice(nextBatchStart, nextBatchStart + 10);
-        if (nextBatchIds.length > 0) {
-          // We don't have URIs for next batch yet, but we can prepare the cache
-          ImageCacheManager.preloadUpcomingImages(photosWithThumbnails, 0, 5);
-        }
+      // Preload images for better performance
+      if (photos.length > 0) {
+        ImageCacheManager.preloadUpcomingImages(photos, 0, 5);
       }
 
-     
+      // Calculate next batch info
+      const actualNextIndex = startIndex + photos.length;
       const hasMore = actualNextIndex < photoIds.length;
-      const nextAfterId = hasMore && photosWithThumbnails.length > 0 ? photoIds[actualNextIndex] : null;
+      const nextAfterId = hasMore && photos.length > 0 ? photoIds[actualNextIndex] : null;
 
       return {
-        photos: photosWithThumbnails,
+        photos,
         nextAfterId,
         hasMore,
       };

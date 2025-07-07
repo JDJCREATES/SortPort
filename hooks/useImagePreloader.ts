@@ -19,7 +19,7 @@ export function useImagePreloader({
   enabled = true,
 }: UseImagePreloaderOptions) {
   const lastPreloadIndex = useRef(-1);
-  const preloadTimeoutRef = useRef<NodeJS.Timeout>();
+  const preloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // ✅ Even better: Use ReturnType
 
   useEffect(() => {
     if (!enabled || images.length === 0) return;

@@ -58,21 +58,7 @@ export class AlbumUtils {
       // Generate thumbnail for the first image if available
       let thumbnail: string | undefined;
       if (allPhotoIds.length > 0) {
-        try {
-          if (Platform.OS !== 'web') {
-            const thumbnailInfo = await MediaLibrary.getThumbnailAsync(allPhotoIds[0].id, {
-              quality: 0.7,
-              width: 300,
-              height: 300,
-            });
-            thumbnail = thumbnailInfo.uri;
-          } else {
-            thumbnail = allPhotoIds[0].uri;
-          }
-        } catch (error) {
-          console.warn('Failed to generate thumbnail for All Photos album:', error);
-          thumbnail = allPhotoIds[0].uri;
-        }
+        thumbnail = allPhotoIds[0].uri; // Simple and reliable approach
       }
 
       if (existingAlbums && existingAlbums.length > 0) {

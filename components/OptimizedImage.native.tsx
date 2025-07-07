@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator, Platform, TouchableOpacity } from 'react-native';
-import FastImage, { FastImageProps, ResizeMode } from 'react-native-fast-image';
+import { Image, ImageContentFit } from 'expo-image';
 import { ImageStyle } from 'react-native';
 import Animated, { 
   useSharedValue, 
@@ -9,27 +9,28 @@ import Animated, {
   runOnJS
 } from 'react-native-reanimated';
 import { lightTheme } from '../utils/theme';
-  interface OptimizedImageProps {
-    uri: string;
-    thumbnailUri?: string;
-    style?: ImageStyle | ImageStyle[];
-    resizeMode?: ResizeMode;
-    priority?: 'low' | 'normal' | 'high';
-    showLoadingIndicator?: boolean;
-    placeholderColor?: string;
-    onPress?: () => void;
-    onLoad?: () => void;
-    onError?: () => void;
-    testID?: string;
-  }
 
-  const AnimatedFastImage = Animated.createAnimatedComponent(FastImage);
+interface OptimizedImageProps {
+  uri: string;
+  thumbnailUri?: string;
+  style?: ImageStyle | ImageStyle[];
+  resizeMode?: ImageContentFit;
+  priority?: 'low' | 'normal' | 'high';
+  showLoadingIndicator?: boolean;
+  placeholderColor?: string;
+  onPress?: () => void;
+  onLoad?: () => void;
+  onError?: () => void;
+  testID?: string;
+}
 
-  export function OptimizedImage({
-    uri,
+const AnimatedImage = Animated.createAnimatedComponent(Image);
+
+export function OptimizedImage({
+  uri,
   thumbnailUri,
   style,
-  resizeMode = FastImage.resizeMode.cover,
+  resizeMode = 'cover',
   priority = 'normal',
   showLoadingIndicator = true,
   placeholderColor = lightTheme.colors.surface,
@@ -50,7 +51,6 @@ import { lightTheme } from '../utils/theme';
     opacity.value = withTiming(1, { duration: 300 });
     
     if (thumbnailUri && !showFullImage) {
-      // Hide thumbnail and show full image
       thumbnailOpacity.value = withTiming(0, { duration: 200 }, () => {
         runOnJS(setShowFullImage)(true);
       });
@@ -87,12 +87,8 @@ import { lightTheme } from '../utils/theme';
     ...flattenedStyle,
   };
 
-  // Determine FastImage priority
-  const fastImagePriority = priority === 'high' 
-    ? FastImage.priority.high 
-    : priority === 'low' 
-    ? FastImage.priority.low 
-    : FastImage.priority.normal;
+  // Expo Image priority mapping
+  const imagePriority = priority === 'high' ? 'high' : priority === 'low' ? 'low' : 'normal';
 
   return (
     <TouchableOpacity 
@@ -104,22 +100,30 @@ import { lightTheme } from '../utils/theme';
     >
       {/* Thumbnail layer */}
       {thumbnailUri && !showFullImage && (
-        <AnimatedFastImage
-          source={{ uri: thumbnailUri, priority: FastImage.priority.high }}
+        <AnimatedImage
+          source={{ uri: thumbnailUri }}
           style={[StyleSheet.absoluteFill, thumbnailAnimatedStyle]}
-          resizeMode={resizeMode}
+          contentFit={resizeMode}
+          priority="high" // Thumbnails always high priority
           onLoad={handleThumbnailLoad}
+          cachePolicy="memory-disk" // Best caching
+          recyclingKey={`thumb-${thumbnailUri}`} // Optimize memory usage
         />
       )}
 
       {/* Full image layer */}
       {(showFullImage || !thumbnailUri) && (
-        <AnimatedFastImage
-          source={{ uri, priority: fastImagePriority }}
+        <AnimatedImage
+          source={{ uri }}
           style={[StyleSheet.absoluteFill, animatedStyle]}
-          resizeMode={resizeMode}
+          contentFit={resizeMode}
+          priority={imagePriority}
           onLoad={handleLoad}
           onError={handleError}
+          cachePolicy="memory-disk" // Best caching
+          recyclingKey={`full-${uri}`} // Optimize memory usage
+          placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }} // Optional: add blur placeholder
+          transition={300} // Smooth transition
         />
       )}
 
