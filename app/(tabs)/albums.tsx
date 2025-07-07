@@ -429,20 +429,19 @@ export default function AlbumsScreen() {
     () => (
       <View style={styles.errorContainer}>
         <Animated.View entering={FadeInUp.delay(200)}>
-        <Ionicons name="alert-circle" size={48} color={lightTheme.colors.error} />
-        <Text style={styles.errorTitle}>Something went wrong</Text>
-        <Text style={styles.errorText}>{state.errorMessage}</Text>
-        <View style={styles.errorActions}>
-          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
-            <Text style={styles.retryButtonText}>Try Again</Text>
-          </TouchableOpacity>
-          {state.retryCount > 0 && (
-            <Text style={styles.retryCountText}>
-              Attempt {state.retryCount}/{MAX_RETRY_ATTEMPTS}
-            </Text>
-          )}
-        </View>
-        </Animated.View>
+          <Ionicons name="alert-circle" size={48} color={lightTheme.colors.error} />
+          <Text style={styles.errorTitle}>Something went wrong</Text>
+          <Text style={styles.errorText}>{state.errorMessage}</Text>
+          <View style={styles.errorActions}>
+            <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+            {state.retryCount > 0 && (
+              <Text style={styles.retryCountText}>
+                Attempt {state.retryCount}/{MAX_RETRY_ATTEMPTS}
+              </Text>
+            )}
+          </View>
         </Animated.View>
       </View>
     ),
@@ -453,24 +452,25 @@ export default function AlbumsScreen() {
     () => (
       <View style={styles.emptyContainer}>
         <Animated.View entering={FadeInUp.delay(200)}>
-        <Ionicons name="grid" size={64} color={lightTheme.colors.textSecondary} />
-        <Text style={styles.emptyTitle}>
-          {state.searchQuery ? 'No matching albums' : 'No Albums Yet'}
-        </Text>
-        <Text style={styles.emptyText}>
-          {state.searchQuery
-            ? `No albums match "${state.searchQuery}". Try a different search term.`
-            : 'Use the Picture Hack feature to create your first smart album!'}
-        </Text>
-        {!state.searchQuery && (
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={handleCreateAlbum}
-          >
-            <Ionicons name="add" size={20} color="white" />
-            <Text style={styles.createButtonText}>Create Album</Text>
-          </TouchableOpacity>
-        )}
+          <Ionicons name="grid" size={64} color={lightTheme.colors.textSecondary} />
+          <Text style={styles.emptyTitle}>
+            {state.searchQuery ? 'No matching albums' : 'No Albums Yet'}
+          </Text>
+          <Text style={styles.emptyText}>
+            {state.searchQuery
+              ? `No albums match "${state.searchQuery}". Try a different search term.`
+              : 'Use the Picture Hack feature to create your first smart album!'}
+          </Text>
+          {!state.searchQuery && (
+            <TouchableOpacity
+              style={styles.createButton}
+              onPress={handleCreateAlbum}
+            >
+              <Ionicons name="add" size={20} color="white" />
+              <Text style={styles.createButtonText}>Create Album</Text>
+            </TouchableOpacity>
+          )}
+        </Animated.View>
       </View>
     ),
     [state.searchQuery, handleCreateAlbum]
@@ -480,13 +480,13 @@ export default function AlbumsScreen() {
     () => (
       <View style={styles.loadingContainer}>
         <Animated.View entering={FadeInUp.delay(200)}>
-        <Text style={styles.loadingText}>
-          {state.retryCount > 0
-            ? `Retrying... (${state.retryCount}/${MAX_RETRY_ATTEMPTS})`
-            : state.isInitialLoad
-            ? 'Loading your albums...'
-            : 'Refreshing albums...'}
-        </Text>
+          <Text style={styles.loadingText}>
+            {state.retryCount > 0
+              ? `Retrying... (${state.retryCount}/${MAX_RETRY_ATTEMPTS})`
+              : state.isInitialLoad
+              ? 'Loading your albums...'
+              : 'Refreshing albums...'}
+          </Text>
         </Animated.View>
       </View>
     ),
@@ -497,12 +497,12 @@ export default function AlbumsScreen() {
     () => (
       <View style={contentAnimatedStyle}>
         <Animated.View entering={FadeInUp.delay(200)}>
-        <ResponsiveAlbumGrid
-          albums={processedAlbums}
-          viewMode={state.viewMode}
-          onAlbumPress={handleAlbumPress}
-          showLocked={state.showLocked}
-        />
+          <ResponsiveAlbumGrid
+            albums={processedAlbums}
+            viewMode={state.viewMode}
+            onAlbumPress={handleAlbumPress}
+            showLocked={state.showLocked}
+          />
         </Animated.View>
       </View>
     ),
@@ -538,59 +538,59 @@ export default function AlbumsScreen() {
   const renderHeader = () => (
     <View style={[styles.header, headerAnimatedStyle]}>
       <Animated.View entering={FadeInUp.delay(100)}>
-      <View style={styles.headerLeft}>
-        <Ionicons name="grid" size={24} color={lightTheme.colors.primary} />
-        <Text style={styles.title}>All Albums</Text>
-        {state.isRefreshing && (
-          <View style={styles.refreshIndicator}>
-            <Text style={styles.refreshText}>Updating...</Text>
-          </View>
-        )}
-      </View>
-      <View style={styles.headerActions}>
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            state.showViewModeSelector && styles.filterButtonActive,
-          ]}
-          onPress={toggleViewModeSelector}
-          disabled={state.isRefreshing}
-          accessibilityLabel="Change view mode"
-          accessibilityRole="button"
-        >
-          <MaterialIcons
-            name="view-module"
-            size={20}
-            color={
-              state.showViewModeSelector
-                ? lightTheme.colors.primary
-                : lightTheme.colors.textSecondary
+        <View style={styles.headerLeft}>
+          <Ionicons name="grid" size={24} color={lightTheme.colors.primary} />
+          <Text style={styles.title}>All Albums</Text>
+          {state.isRefreshing && (
+            <View style={styles.refreshIndicator}>
+              <Text style={styles.refreshText}>Updating...</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[
+              styles.filterButton,
+              state.showViewModeSelector && styles.filterButtonActive,
+            ]}
+            onPress={toggleViewModeSelector}
+            disabled={state.isRefreshing}
+            accessibilityLabel="Change view mode"
+            accessibilityRole="button"
+          >
+            <MaterialIcons
+              name="view-module"
+              size={20}
+              color={
+                state.showViewModeSelector
+                  ? lightTheme.colors.primary
+                  : lightTheme.colors.textSecondary
+              }
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.filterButton,
+              state.showLocked && styles.filterButtonActive,
+            ]}
+            onPress={handleToggleShowLocked}
+            disabled={state.isRefreshing}
+            accessibilityLabel={
+              state.showLocked ? 'Hide locked albums' : 'Show locked albums'
             }
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            state.showLocked && styles.filterButtonActive,
-          ]}
-          onPress={handleToggleShowLocked}
-          disabled={state.isRefreshing}
-          accessibilityLabel={
-            state.showLocked ? 'Hide locked albums' : 'Show locked albums'
-          }
-          accessibilityRole="button"
-        >
-          <Ionicons
-            name="filter"
-            size={20}
-            color={
-              state.showLocked
-                ? lightTheme.colors.primary
-                : lightTheme.colors.textSecondary
-            }
-          />
-        </TouchableOpacity>
-      </View>
+            accessibilityRole="button"
+          >
+            <Ionicons
+              name="filter"
+              size={20}
+              color={
+                state.showLocked
+                  ? lightTheme.colors.primary
+                  : lightTheme.colors.textSecondary
+              }
+            />
+          </TouchableOpacity>
+        </View>
       </Animated.View>
     </View>
   );
@@ -601,10 +601,10 @@ export default function AlbumsScreen() {
     return (
       <View style={styles.viewModeSelectorContainer}>
         <Animated.View entering={FadeInDown.delay(100)}>
-        <AlbumViewModeSelector
-          currentMode={state.viewMode}
-          onModeChange={handleViewModeChange}
-        />
+          <AlbumViewModeSelector
+            currentMode={state.viewMode}
+            onModeChange={handleViewModeChange}
+          />
         </Animated.View>
       </View>
     );
@@ -613,22 +613,22 @@ export default function AlbumsScreen() {
   const renderFooter = () => (
     <View style={styles.footer}>
       <Animated.View entering={FadeInDown.delay(300)}>
-      <Text style={styles.footerText}>
-        {state.showLocked
-          ? `Showing ${processedAlbums.length} albums (including locked)`
-          : `Showing ${processedAlbums.length} unlocked albums`}
-      </Text>
-      {state.searchQuery && (
-        <Text style={styles.footerSearchText}>
-          Search: "{state.searchQuery}"
+        <Text style={styles.footerText}>
+          {state.showLocked
+            ? `Showing ${processedAlbums.length} albums (including locked)`
+            : `Showing ${processedAlbums.length} unlocked albums`}
         </Text>
-      )}
-      {albums && albums.length > 0 && (
-        <Text style={styles.footerStatsText}>
-          Total: {albums.length} albums •{' '}
-          {albums.reduce((sum, album) => sum + (album.count || 0), 0)} photos
-        </Text>
-      )}
+        {state.searchQuery && (
+          <Text style={styles.footerSearchText}>
+            Search: "{state.searchQuery}"
+          </Text>
+        )}
+        {albums && albums.length > 0 && (
+          <Text style={styles.footerStatsText}>
+            Total: {albums.length} albums •{' '}
+            {albums.reduce((sum, album) => sum + (album.count || 0), 0)} photos
+          </Text>
+        )}
       </Animated.View>
     </View>
   );
