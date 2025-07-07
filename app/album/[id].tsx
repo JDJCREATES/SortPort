@@ -1,4 +1,4 @@
-Here's the fixed script with added missing closing brackets and parentheses:
+// Album screen component for displaying photos in a specific album
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
@@ -294,7 +294,6 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
           isFetchingMore: false,
         }));
       }
-    } catch (error) {
       if (isMountedRef.current) {
         setState(prev => ({ ...prev, isFetchingMore: false }));
       }
@@ -526,7 +525,6 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         visible={state.showImageViewer}
         images={imageViewerData}
         initialIndex={state.selectedImageIndex}
-        onClose={handleImageViewerClose}
         onImageChange={handleImageChange}
       />
 
