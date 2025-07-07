@@ -8,7 +8,7 @@ import Animated, {
   interpolate,
   runOnJS
 } from 'react-native-reanimated';
-import { Lock, Sparkles } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Album } from '../types';
 import { AlbumViewMode } from '../types/display';
 import { OptimizedImage } from './OptimizedImage';
@@ -106,7 +106,8 @@ export function AnimatedAlbumCard({
             styles.placeholderThumbnail,
             isLargeMode && styles.largePlaceholderThumbnail
           ]}>
-            <Sparkles 
+            <Ionicons 
+              name="sparkles" 
               size={isCompactMode ? 16 : isLargeMode ? 48 : 32} 
               color={lightTheme.colors.primary} 
             />
@@ -114,7 +115,7 @@ export function AnimatedAlbumCard({
         )}
         {album.isLocked && showLocked && (
           <View style={styles.lockOverlay}>
-            <Lock size={isCompactMode ? 12 : 16} color="white" />
+            <Ionicons name="lock-closed" size={isCompactMode ? 12 : 16} color="white" />
           </View>
         )}
         <View style={[

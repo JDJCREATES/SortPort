@@ -19,14 +19,7 @@ import {
   LayoutAnimation,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import {
-  Search,
-  Filter,
-  Grid2x2 as Grid,
-  Plus,
-  CircleAlert as AlertCircle,
-  LayoutGrid,
-} from 'lucide-react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, {
   FadeInUp,
   FadeInDown,
@@ -95,8 +88,8 @@ export default function AlbumsScreen() {
   // Performance refs
   const lastRefreshTime = useRef<number>(0);
   const lastDataFetchTime = useRef<number>(0);
-const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isMountedRef = useRef<boolean>(true);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
@@ -438,7 +431,7 @@ const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         entering={FadeInUp.delay(200)}
         style={styles.errorContainer}
       >
-        <AlertCircle size={48} color={lightTheme.colors.error} />
+        <Ionicons name="alert-circle" size={48} color={lightTheme.colors.error} />
         <Text style={styles.errorTitle}>Something went wrong</Text>
         <Text style={styles.errorText}>{state.errorMessage}</Text>
         <View style={styles.errorActions}>
@@ -462,7 +455,7 @@ const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         entering={FadeInUp.delay(200)}
         style={styles.emptyContainer}
       >
-        <Grid size={64} color={lightTheme.colors.textSecondary} />
+        <Ionicons name="grid" size={64} color={lightTheme.colors.textSecondary} />
         <Text style={styles.emptyTitle}>
           {state.searchQuery ? 'No matching albums' : 'No Albums Yet'}
         </Text>
@@ -476,7 +469,7 @@ const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
             style={styles.createButton}
             onPress={handleCreateAlbum}
           >
-            <Plus size={20} color="white" />
+            <Ionicons name="add" size={20} color="white" />
             <Text style={styles.createButtonText}>Create Album</Text>
           </TouchableOpacity>
         )}
@@ -552,7 +545,7 @@ const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
       style={[styles.header, headerAnimatedStyle]}
     >
       <View style={styles.headerLeft}>
-        <Grid size={24} color={lightTheme.colors.primary} />
+        <Ionicons name="grid" size={24} color={lightTheme.colors.primary} />
         <Text style={styles.title}>All Albums</Text>
         {state.isRefreshing && (
           <View style={styles.refreshIndicator}>
@@ -571,7 +564,8 @@ const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
           accessibilityLabel="Change view mode"
           accessibilityRole="button"
         >
-          <LayoutGrid
+          <MaterialIcons
+            name="view-module"
             size={20}
             color={
               state.showViewModeSelector
@@ -592,7 +586,8 @@ const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
           }
           accessibilityRole="button"
         >
-          <Filter
+          <Ionicons
+            name="filter"
             size={20}
             color={
               state.showLocked

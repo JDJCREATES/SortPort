@@ -9,13 +9,12 @@ import {
   BackHandler,
   StatusBar,
   Dimensions,
-
   Platform,
   RefreshControl
 } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Camera, Sparkles, Zap, ArrowRight, LogIn, ChevronLeft } from 'lucide-react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { 
   FadeInDown, 
   FadeInUp, 
@@ -57,28 +56,28 @@ export default function WelcomeScreen() {
   const slides: Slide[] = [
     {
       id: 'welcome',
-      icon: <Sparkles size={64} color={lightTheme.colors.primary} />,
+      icon: <Ionicons name="sparkles" size={64} color={lightTheme.colors.primary} />,
       title: 'Welcome to SnapSort',
       description: 'AI-powered photo organization that understands your pictures and creates smart albums automatically.',
       backgroundColor: `${lightTheme.colors.primary}05`,
     },
     {
       id: 'smart-albums',
-      icon: <Camera size={64} color={lightTheme.colors.secondary} />,
+      icon: <Ionicons name="camera" size={64} color={lightTheme.colors.secondary} />,
       title: 'Smart Albums',
       description: 'Automatically sort photos into meaningful albums using advanced AI. Find receipts, travel photos, and more instantly.',
       backgroundColor: `${lightTheme.colors.secondary}05`,
     },
     {
       id: 'picture-hack',
-      icon: <Zap size={64} color={lightTheme.colors.warning} />,
+      icon: <Ionicons name="flash" size={64} color={lightTheme.colors.warning} />,
       title: 'Picture Hack',
       description: 'Tell us what you want to find using natural language, and we\'ll sort your photos instantly with AI magic.',
       backgroundColor: `${lightTheme.colors.warning}05`,
     },
     {
       id: 'get-started',
-      icon: <LogIn size={64} color={lightTheme.colors.success} />,
+      icon: <Ionicons name="log-in" size={64} color={lightTheme.colors.success} />,
       title: 'Get Started',
       description: 'Sign in to sync your albums across devices and access premium features, or continue as a guest to try the app.',
       backgroundColor: `${lightTheme.colors.success}05`,
@@ -292,7 +291,7 @@ export default function WelcomeScreen() {
       <SafeAreaView style={styles.loadingContainer}>
         <StatusBar barStyle="dark-content" backgroundColor={lightTheme.colors.background} />
         <Animated.View entering={FadeInUp} style={styles.loadingContent}>
-          <Sparkles size={48} color={lightTheme.colors.primary} />
+          <Ionicons name="sparkles" size={48} color={lightTheme.colors.primary} />
           <Text style={styles.loadingText}>Loading SnapSort...</Text>
         </Animated.View>
       </SafeAreaView>
@@ -311,7 +310,7 @@ export default function WelcomeScreen() {
             onPress={previousSlide}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <ChevronLeft size={24} color={lightTheme.colors.text} />
+            <Ionicons name="chevron-back" size={24} color={lightTheme.colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
             {currentSlide + 1} of {slides.length}
@@ -361,7 +360,7 @@ export default function WelcomeScreen() {
               activeOpacity={0.8}
             >
               <Text style={styles.nextButtonText}>Next</Text>
-              <ArrowRight size={20} color={lightTheme.colors.primary} />
+              <Ionicons name="arrow-forward" size={20} color={lightTheme.colors.primary} />
             </TouchableOpacity>
           ) : (
             <>
@@ -370,7 +369,7 @@ export default function WelcomeScreen() {
                 onPress={() => setShowAuthModal(true)}
                 activeOpacity={0.8}
               >
-                <LogIn size={20} color="white" />
+                <Ionicons name="log-in" size={20} color="white" />
                 <Text style={styles.signInButtonText}>Sign In</Text>
               </TouchableOpacity>
               
@@ -428,17 +427,16 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    fontFamily: 'Inter-Medium',
+    color: lightTheme.colors.textSecondary,
   },
-    header: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: lightTheme.spacing.lg,
-    paddingTop: Platform.OS === 'android' ? lightTheme.spacing.md : 0,
+    paddingTop: lightTheme.spacing.md,
     paddingBottom: lightTheme.spacing.sm,
-    height: 56,
   },
   backButton: {
     padding: lightTheme.spacing.sm,
@@ -446,98 +444,110 @@ const styles = StyleSheet.create({
     backgroundColor: lightTheme.colors.surface,
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: lightTheme.colors.textSecondary,
   },
   headerSpacer: {
-    width: 40, // Same width as back button to center the title
+    width: 44, // Same width as back button for centering
   },
   content: {
     flex: 1,
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: lightTheme.spacing.xl,
-    borderTopLeftRadius: lightTheme.borderRadius.xl,
-    borderTopRightRadius: lightTheme.borderRadius.xl,
-    marginTop: lightTheme.spacing.sm,
+    paddingHorizontal: lightTheme.spacing.xl,
+    paddingVertical: lightTheme.spacing.lg,
+    justifyContent: 'center',
+    borderRadius: lightTheme.borderRadius.xl,
+    marginHorizontal: lightTheme.spacing.md,
+    marginBottom: lightTheme.spacing.md,
   },
   slideContainer: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: lightTheme.spacing.lg,
-    maxWidth: SCREEN_WIDTH - (lightTheme.spacing.xl * 2),
+    justifyContent: 'center',
+    flex: 1,
+    paddingVertical: lightTheme.spacing.xl,
   },
   iconContainer: {
-    marginBottom: lightTheme.spacing.xl * 1.5,
-    padding: lightTheme.spacing.xl * 1.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: lightTheme.borderRadius.xl * 2,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
+    marginBottom: lightTheme.spacing.xl,
+    padding: lightTheme.spacing.lg,
+    borderRadius: lightTheme.borderRadius.xl,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontFamily: 'Inter-Bold',
     color: lightTheme.colors.text,
     textAlign: 'center',
     marginBottom: lightTheme.spacing.lg,
     letterSpacing: -0.5,
-    lineHeight: 38,
   },
   description: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'Inter-Regular',
     color: lightTheme.colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 26,
-    paddingHorizontal: lightTheme.spacing.md,
-    maxWidth: SCREEN_WIDTH * 0.85,
+    lineHeight: 24,
+    maxWidth: 320,
+    marginBottom: lightTheme.spacing.xl,
   },
   pagination: {
     flexDirection: 'row',
-    marginBottom: lightTheme.spacing.xl,
+    justifyContent: 'center',
+    alignItems: 'center',
     gap: lightTheme.spacing.sm,
+    marginBottom: lightTheme.spacing.xl,
   },
   dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: lightTheme.colors.border,
-    opacity: 0.5
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: lightTheme.colors.border
   },
   activeDot: {
+    width: 24,
     backgroundColor: lightTheme.colors.primary,
-    width: 32,
-    opacity: 1,
   },
   buttonContainer: {
-    width: '100%',
     gap: lightTheme.spacing.md,
+    width: '100%',
+    maxWidth: 280,
+    alignSelf: 'center',
   },
   nextButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: lightTheme.colors.surface,
-    paddingVertical: lightTheme.spacing.lg,
-    borderRadius: lightTheme.borderRadius.lg,
     gap: lightTheme.spacing.sm,
+    paddingVertical: lightTheme.spacing.lg,
+    paddingHorizontal: lightTheme.spacing.xl,
+    borderRadius: lightTheme.borderRadius.lg,
+    backgroundColor: lightTheme.colors.surface,
     borderWidth: 2,
     borderColor: lightTheme.colors.primary,
-    elevation: 2,
-    shadowColor: lightTheme.colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    minHeight: 56,
+    ...Platform.select({
+      ios: {
+        shadowColor: lightTheme.colors.primary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   nextButtonText: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     color: lightTheme.colors.primary,
   },
@@ -545,64 +555,79 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: lightTheme.colors.primary,
-    paddingVertical: lightTheme.spacing.lg,
-    borderRadius: lightTheme.borderRadius.lg,
     gap: lightTheme.spacing.sm,
-    elevation: 6,
-    shadowColor: lightTheme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    minHeight: 56,
+    paddingVertical: lightTheme.spacing.lg,
+    paddingHorizontal: lightTheme.spacing.xl,
+    borderRadius: lightTheme.borderRadius.lg,
+    backgroundColor: lightTheme.colors.primary,
+    ...Platform.select({
+      ios: {
+        shadowColor: lightTheme.colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   signInButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
     color: 'white',
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
   },
   startButton: {
-    backgroundColor: lightTheme.colors.primary,
     paddingVertical: lightTheme.spacing.lg,
+    paddingHorizontal: lightTheme.spacing.xl,
     borderRadius: lightTheme.borderRadius.lg,
+    backgroundColor: lightTheme.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 6,
-    shadowColor: lightTheme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    minHeight: 56,
+    ...Platform.select({
+      ios: {
+        shadowColor: lightTheme.colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   startButtonSecondary: {
-    backgroundColor: lightTheme.colors.surface,
+    backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: lightTheme.colors.primary,
-    elevation: 2,
-    shadowOpacity: 0.1,
+    borderColor: lightTheme.colors.border,
+    ...Platform.select({
+      ios: {
+        shadowColor: 'transparent',
+        shadowOpacity: 0,
+      },
+      android: {
+        elevation: 0,
+      },
+    }),
   },
   startButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
     color: 'white',
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
   },
   startButtonTextSecondary: {
-    color: lightTheme.colors.primary,
+    color: lightTheme.colors.text,
   },
   authHint: {
     marginTop: lightTheme.spacing.lg,
-    paddingHorizontal: lightTheme.spacing.lg,
-    paddingVertical: lightTheme.spacing.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    borderRadius: lightTheme.borderRadius.lg,
-    borderWidth: 1,
-    borderColor: lightTheme.colors.border,
+    paddingHorizontal: lightTheme.spacing.md,
   },
   authHintText: {
     fontSize: 14,
+    fontFamily: 'Inter-Regular',
     color: lightTheme.colors.textSecondary,
     textAlign: 'center',
-    fontFamily: 'Inter-Regular',
     lineHeight: 20,
+    opacity: 0.8,
   },
 });
