@@ -36,7 +36,7 @@ import { ImageCacheManager } from '../../utils/imageCache';
 import { useImagePreloader } from '../../hooks/useImagePreloader';
 import { lightTheme } from '../../utils/theme';
 
-const PHOTOS_PER_BATCH = 20; // Optimized batch size for better performance
+const PHOTOS_PER_BATCH = 50; // Increased batch size for better initial loading
 const PRELOAD_THRESHOLD = 0.8; // Start loading when 80% scrolled
 const PRELOAD_LOOKAHEAD = 15; // Number of images to preload ahead
 
@@ -260,11 +260,11 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   }, [albumId, state.loading]);
 
   const loadMorePhotos = useCallback(async () => {
-    if (!state.album || state.isFetchingMore || !state.hasMorePhotos || !state.nextPhotoCursor) {
+    if (!state.album || state.isFetchingMore || !state.hasMorePhotos || !state.nextPhotoCursor || state.loading) {
       return;
     }
 
-    setState(prev => ({ ...prev, isFetchingMore: true }));
+    if (state.loading && state.photos.length === 0) {
     
     try {
       const result = await PhotoLoader.loadPhotosByIds(
@@ -291,7 +291,7 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         }));
       }
     } catch (error) {
-      console.error('Error loading more photos:', error);
+      !state.loading &&
       if (isMountedRef.current) {
         setState(prev => ({ ...prev, isFetchingMore: false }));
       }
@@ -502,7 +502,10 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         <Animated.View entering={FadeInUp.delay(300)} style={styles.emptyContainer}>
           <Text style={styles.emptyTitle}>No Photos Available</Text>
           <Text style={styles.emptyText}>
-            The photos from this album may have been moved or deleted from your device.
+            {state.album?.count === 0 
+              ? 'This album is empty.'
+              : 'The photos from this album may have been moved or deleted from your device.'
+            }
           </Text>
         </Animated.View>
       ) : null}
@@ -521,6 +524,7 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         images={imageViewerData}
         initialIndex={state.selectedImageIndex}
         onClose={handleImageViewerClose}
+        <ActivityIndicator size="large" color={lightTheme.colors.primary} />
         onImageChange={handleImageChange}
       />
 

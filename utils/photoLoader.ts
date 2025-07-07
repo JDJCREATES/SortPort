@@ -268,7 +268,7 @@ export class PhotoLoader {
 
   static async loadPhotosByIds(
     photoIds: string[], 
-    first: number = 20, 
+    first: number = 50, 
     afterId?: string
   ): Promise<{
     photos: ImageMeta[];
@@ -276,7 +276,7 @@ export class PhotoLoader {
     hasMore: boolean;
   }> {
     try {
-      console.log('📸 loadPhotosByIds called with:', photoIds.length, 'IDs, first:', first);
+      console.log('📸 loadPhotosByIds called with:', photoIds.length, 'IDs, first:', first, 'afterId:', afterId);
       
       if (Platform.OS === 'web') {
         throw new Error('Photo access is not available on web.');
@@ -303,67 +303,55 @@ export class PhotoLoader {
         return { photos: [], nextAfterId: null, hasMore: false };
       }
 
-      console.log('📸 Looking for photos with IDs:', batchIds.slice(0, 5), '...');
+      console.log('📸 Loading batch of', batchIds.length, 'photos starting from index', startIndex);
 
-      // Load assets to find our photos
+      // Load photos directly by ID using getAssetInfoAsync
       const photos: ImageMeta[] = [];
-      let after: string | undefined;
-      let foundCount = 0;
-      let attempts = 0;
-      const maxAttempts = 10;
+      let successCount = 0;
+      let failureCount = 0;
 
-      while (foundCount < batchIds.length && attempts < maxAttempts) {
-        const assets = await MediaLibrary.getAssetsAsync({
-          mediaType: 'photo',
-          first: 2000,
-          after,
-          sortBy: ['creationTime'],
+      // Process photos in parallel batches for better performance
+      const PARALLEL_BATCH_SIZE = 10;
+      for (let i = 0; i < batchIds.length; i += PARALLEL_BATCH_SIZE) {
+        const parallelBatch = batchIds.slice(i, i + PARALLEL_BATCH_SIZE);
+        
+        const batchPromises = parallelBatch.map(async (photoId) => {
+          try {
+            const asset = await MediaLibrary.getAssetInfoAsync(photoId);
+            successCount++;
+            return {
+              id: asset.id,
+              uri: asset.uri,
+              thumbnailUri: asset.uri,
+              filename: asset.filename,
+              width: asset.width,
+              height: asset.height,
+              creationTime: asset.creationTime,
+              modificationTime: asset.modificationTime,
+            };
+          } catch (error) {
+            failureCount++;
+            console.warn(`📸 Failed to load photo ${photoId}:`, error);
+            return null;
+          }
         });
 
-        // Find photos in this batch
-        const foundInBatch = assets.assets.filter(asset => 
-          batchIds.includes(asset.id)
-        );
-
-        // Add found photos
-        foundInBatch.forEach(asset => {
-          photos.push({
-            id: asset.id,
-            uri: asset.uri,
-            thumbnailUri: asset.uri, // ✅ Use original URI, let Expo Image handle optimization
-            filename: asset.filename,
-            width: asset.width,
-            height: asset.height,
-            creationTime: asset.creationTime,
-            modificationTime: asset.modificationTime,
-          });
-        });
-
-        foundCount = photos.length;
-        attempts++;
-
-        console.log(`📸 Attempt ${attempts}: Found ${foundInBatch.length} photos in this batch, total found: ${foundCount}/${batchIds.length}`);
-
-        // If no more pages, break
-        if (!assets.hasNextPage) {
-          console.log('📸 Reached end of photos');
-          break;
-        }
-
-        after = assets.endCursor;
+        const batchResults = await Promise.all(batchPromises);
+        const validPhotos = batchResults.filter((photo): photo is ImageMeta => photo !== null);
+        photos.push(...validPhotos);
       }
 
-      console.log('📸 Final result: Found', photos.length, 'photos out of', batchIds.length, 'requested');
+      console.log(`📸 Loaded ${successCount} photos successfully, ${failureCount} failed, total: ${photos.length}/${batchIds.length}`);
 
       // Preload images for better performance
       if (photos.length > 0) {
-        ImageCacheManager.preloadUpcomingImages(photos, 0, 5);
+        ImageCacheManager.preloadUpcomingImages(photos, 0, Math.min(10, photos.length));
       }
 
       // Calculate next batch info
-      const actualNextIndex = startIndex + photos.length;
+      const actualNextIndex = startIndex + batchIds.length; // Use requested batch size, not actual loaded count
       const hasMore = actualNextIndex < photoIds.length;
-      const nextAfterId = hasMore && photos.length > 0 ? photoIds[actualNextIndex] : null;
+      const nextAfterId = hasMore ? photoIds[actualNextIndex - 1] : null; // Use last ID from current batch
 
       return {
         photos,
