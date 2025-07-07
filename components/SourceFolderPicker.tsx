@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert } from 'react-native';
-import { Folder, Check, X, HardDrive, Smartphone, Camera, Download } from 'lucide-react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Platform } from 'react-native';
 import { PhotoLoader } from '../utils/photoLoader';
@@ -57,18 +57,18 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
       }
       
       const folderData: SourceFolder[] = availableFolders.map((folder) => {
-        let icon = <Folder size={20} color={lightTheme.colors.primary} />;
+        let icon = <Ionicons name="folder" size={20} color={lightTheme.colors.primary} />;
         let description = `${folder.count} photos`;
 
         // Assign specific icons based on folder name
         if (folder.name.toLowerCase().includes('camera')) {
-          icon = <Camera size={20} color={lightTheme.colors.secondary} />;
+          icon = <Ionicons name="camera" size={20} color={lightTheme.colors.secondary} />;
           description = 'Photos taken with camera';
         } else if (folder.name.toLowerCase().includes('download')) {
-          icon = <Download size={20} color={lightTheme.colors.warning} />;
+          icon = <Ionicons name="download" size={20} color={lightTheme.colors.warning} />;
           description = 'Downloaded images';
         } else if (folder.name.toLowerCase().includes('screenshot')) {
-          icon = <HardDrive size={20} color={lightTheme.colors.success} />;
+          icon = <Ionicons name="phone-portrait" size={20} color={lightTheme.colors.success} />;
           description = 'Screen captures';
         }
 
@@ -126,7 +126,7 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
           <View style={styles.header}>
             <Text style={styles.title}>Select Photo Sources</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={lightTheme.colors.textSecondary} />
+             <Ionicons name="close" size={24} color={lightTheme.colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -190,7 +190,7 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
                     </View>
                     {tempSelected.includes(folder.id) && (
                       <View style={styles.checkmark}>
-                        <Check size={20} color="white" />
+                      <Ionicons name="checkmark" size={20} color="white" />
                       </View>
                     )}
                   </TouchableOpacity>

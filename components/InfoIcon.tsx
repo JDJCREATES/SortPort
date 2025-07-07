@@ -1,6 +1,6 @@
 import React from 'react';
 import { TouchableOpacity, Alert, StyleSheet } from 'react-native';
-import { Info } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { lightTheme } from '../utils/theme';
 
 interface InfoIconProps {
@@ -22,7 +22,7 @@ export function InfoIcon({
 
   return (
     <TouchableOpacity style={styles.container} onPress={handlePress}>
-      <Info size={size} color={color} />
+      <Ionicons name="information-circle" size={size} color={color} />
     </TouchableOpacity>
   );
 }

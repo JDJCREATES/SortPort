@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { router, useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Wand as Wand2, Save, CircleAlert as AlertCircle } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { PictureHackBar } from '../components/PictureHackBar';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { AlbumCard } from '../components/AlbumCard';
@@ -211,7 +211,7 @@ export default function NewSortScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
-          <ArrowLeft size={24} color={lightTheme.colors.text} />
+         <Ionicons name="arrow-back" size={24} color={lightTheme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>New Sort</Text>
         <View style={styles.headerSpacer} />
@@ -220,7 +220,7 @@ export default function NewSortScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.promptSection}>
           <View style={styles.promptHeader}>
-            <Wand2 size={20} color={lightTheme.colors.primary} />
+            <Ionicons name="sparkles" size={20} color={lightTheme.colors.primary} />
             <Text style={styles.promptTitle}>AI Photo Sorting</Text>
           </View>
           <Text style={styles.promptDescription}>
@@ -250,7 +250,7 @@ export default function NewSortScreen() {
         {error && (
           <View style={styles.errorSection}>
             <View style={styles.errorContainer}>
-              <AlertCircle size={20} color={lightTheme.colors.error} />
+              <Ionicons name="alert-circle" size={20} color={lightTheme.colors.error} />
               <Text style={styles.errorText}>{error}</Text>
             </View>
             {(permissionStatus !== 'granted' || photos.length === 0) && (
@@ -268,7 +268,7 @@ export default function NewSortScreen() {
             <View style={styles.resultsHeader}>
               <Text style={styles.resultsTitle}>Sort Results</Text>
               <TouchableOpacity style={styles.saveButton} onPress={handleSaveAlbums}>
-                <Save size={16} color="white" />
+            <Ionicons name="save" size={16} color="white" />
                 <Text style={styles.saveButtonText}>Save All</Text>
               </TouchableOpacity>
             </View>

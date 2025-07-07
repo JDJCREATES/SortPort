@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Folder } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { lightTheme } from '../../utils/theme';
 
@@ -27,7 +27,7 @@ export function SourceManagementSection({
             Choose which folders to include in AI sorting ({selectedFolders.length} selected)
           </Text>
         </View>
-        <Folder size={20} color={lightTheme.colors.primary} />
+        <Ionicons name="folder" size={20} color={lightTheme.colors.primary} />
       </TouchableOpacity>
     </Animated.View>
   );

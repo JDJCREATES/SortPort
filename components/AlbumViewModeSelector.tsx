@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Pressable } from 'react-native';
-import { Grid2x2, Grid3x3, MoveHorizontal as MoreHorizontal, Maximize2 } from 'lucide-react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { AlbumViewMode } from '../types/display';
 import { lightTheme } from '../utils/theme';
@@ -20,32 +20,32 @@ const VIEW_MODE_OPTIONS: Array<{
 }> = [
   {
     mode: 'large',
-    icon: <Maximize2 size={16} />,
+    icon: <MaterialIcons name="fullscreen" size={16} />,
     label: 'Large',
   },
   {
     mode: 'grid-2',
-    icon: <Grid2x2 size={16} />,
+    icon: <Ionicons name="grid" size={16} />,
     label: '2×2',
   },
   {
     mode: 'grid-3',
-    icon: <Grid3x3 size={16} />,
+    icon: <Ionicons name="grid" size={16} />,
     label: '3×3',
   },
   {
     mode: 'grid-4',
-    icon: <MoreHorizontal size={16} />,
+    icon: <Ionicons name="apps" size={16} />,
     label: '4×4',
   },
   {
     mode: 'grid-6',
-    icon: <MoreHorizontal size={16} />,
+    icon: <Ionicons name="apps" size={16} />,
     label: '6×6',
   },
   {
     mode: 'grid-8',
-    icon: <MoreHorizontal size={16} />,
+    icon: <Ionicons name="apps" size={16} />,
     label: '8×8',
   },
 ];
@@ -64,6 +64,7 @@ export function AlbumViewModeSelector({ currentMode, onModeChange }: AlbumViewMo
       >
         {VIEW_MODE_OPTIONS.map((option) => {
           const isSelected = currentMode === option.mode;
+          const iconColor = isSelected ? 'white' : lightTheme.colors.textSecondary;
           
           const animatedStyle = useAnimatedStyle(() => ({
             transform: [
@@ -86,14 +87,9 @@ export function AlbumViewModeSelector({ currentMode, onModeChange }: AlbumViewMo
               ]}
               onPress={() => handleModePress(option.mode)}
             >
-              <View
-                style={[
-                  styles.iconContainer,
-                  { color: isSelected ? 'white' : lightTheme.colors.textSecondary },
-                ]}
-              >
-                {React.cloneElement(option.icon as React.ReactElement, {
-                  color: isSelected ? 'white' : lightTheme.colors.textSecondary,
+              <View style={styles.iconContainer}>
+                {React.cloneElement(option.icon as React.ReactElement<any>, {
+                  color: iconColor,
                 })}
               </View>
             </AnimatedPressable>

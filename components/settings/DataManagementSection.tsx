@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Trash2 } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { lightTheme } from '../../utils/theme';
 
@@ -14,7 +14,7 @@ export function DataManagementSection({ handleClearData }: DataManagementSection
       <Text style={styles.sectionTitle}>Data Management</Text>
       
       <TouchableOpacity style={styles.dangerButton} onPress={handleClearData}>
-        <Trash2 size={20} color={lightTheme.colors.error} />
+        <Ionicons name="trash" size={20} color={lightTheme.colors.error} />
         <Text style={styles.dangerButtonText}>Clear All Data</Text>
       </TouchableOpacity>
     </Animated.View>

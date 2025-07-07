@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert } from 'react-native';
-import { Settings as SettingsIcon } from 'lucide-react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
 import { SubscriptionModal } from '../../components/SubscriptionModal';
@@ -119,7 +119,7 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.container}>
       <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
         <View style={styles.headerLeft}>
-          <SettingsIcon size={24} color={lightTheme.colors.primary} />
+          <Ionicons name="settings" size={24} color={lightTheme.colors.primary} />
           <Text style={styles.title}>Settings</Text>
         </View>
       </Animated.View>

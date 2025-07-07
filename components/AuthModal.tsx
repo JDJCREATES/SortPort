@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import { X, Mail, Lock, User, Eye, EyeOff } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../contexts/AppContext';
 import { lightTheme } from '../utils/theme';
@@ -74,14 +74,14 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
               {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
             </Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={lightTheme.colors.textSecondary} />
+              <Ionicons name="close" size={24} color={lightTheme.colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           <Animated.View entering={FadeInDown.delay(200)} style={styles.form}>
             {mode === 'signup' && (
               <View style={styles.inputContainer}>
-                <User size={20} color={lightTheme.colors.textSecondary} style={styles.inputIcon} />
+                <Ionicons name="person" size={20} color={lightTheme.colors.textSecondary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Full Name"
@@ -94,7 +94,7 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
             )}
 
             <View style={styles.inputContainer}>
-              <Mail size={20} color={lightTheme.colors.textSecondary} style={styles.inputIcon} />
+              <Ionicons name="mail" size={20} color={lightTheme.colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Email"
@@ -107,7 +107,7 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
             </View>
 
             <View style={styles.inputContainer}>
-              <Lock size={20} color={lightTheme.colors.textSecondary} style={styles.inputIcon} />
+              <Ionicons name="lock-closed" size={20} color={lightTheme.colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Password"
@@ -121,9 +121,9 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
                 style={styles.eyeButton}
               >
                 {showPassword ? (
-                  <EyeOff size={20} color={lightTheme.colors.textSecondary} />
+                  <Ionicons name="eye-off" size={20} color={lightTheme.colors.textSecondary} />
                 ) : (
-                  <Eye size={20} color={lightTheme.colors.textSecondary} />
+                  <Ionicons name="eye" size={20} color={lightTheme.colors.textSecondary} />
                 )}
               </TouchableOpacity>
             </View>

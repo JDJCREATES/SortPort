@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Crown, Clock as Unlock, RefreshCw } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { UserFlags } from '../../types';
 import { lightTheme } from '../../utils/theme';
@@ -25,7 +25,7 @@ export function PremiumFeaturesSection({
         onPress={() => setShowSubscriptionModal(true)}
       >
         <View style={styles.premiumHeader}>
-          <Crown size={24} color={lightTheme.colors.warning} />
+          <Ionicons name="diamond" size={24} color={lightTheme.colors.warning} />
           <View style={styles.premiumInfo}>
             <Text style={styles.premiumTitle}>SnapSort Pro</Text>
             <Text style={styles.premiumStatus}>
@@ -45,7 +45,7 @@ export function PremiumFeaturesSection({
         onPress={() => setShowSubscriptionModal(true)}
       >
         <View style={styles.premiumHeader}>
-          <Unlock size={24} color={lightTheme.colors.primary} />
+          <Ionicons name="lock-open" size={24} color={lightTheme.colors.primary} />
           <View style={styles.premiumInfo}>
             <Text style={styles.premiumTitle}>Unlock Pack</Text>
             <Text style={styles.premiumStatus}>
@@ -61,7 +61,7 @@ export function PremiumFeaturesSection({
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.restoreButton} onPress={handleRestorePurchases}>
-        <RefreshCw size={16} color={lightTheme.colors.primary} />
+        <Ionicons name="refresh" size={16} color={lightTheme.colors.primary} />
         <Text style={styles.restoreButtonText}>Restore Purchases</Text>
       </TouchableOpacity>
     </Animated.View>

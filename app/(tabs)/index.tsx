@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { Plus, Wand as Wand2, TrendingUp, Zap, Clock } from 'lucide-react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
 import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
@@ -103,9 +103,9 @@ export default function HomeScreen() {
           <Animated.View entering={FadeInUp.delay(250)} style={styles.autoSortStatus}>
             <View style={styles.autoSortContainer}>
               {autoSortStatus === 'running' ? (
-                <Zap size={16} color={lightTheme.colors.primary} />
+                <Ionicons name="flash" size={16} color={lightTheme.colors.primary} />
               ) : (
-                <Clock size={16} color={lightTheme.colors.success} />
+                <Ionicons name="time" size={16} color={lightTheme.colors.success} />
               )}
               <Text style={styles.autoSortText}>{getAutoSortStatusText()}</Text>
             </View>
@@ -115,7 +115,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <Animated.View entering={FadeInUp.delay(300)} style={styles.sectionHeader}>
             <View style={styles.sectionTitleContainer}>
-              <TrendingUp size={20} color={lightTheme.colors.primary} />
+              <Ionicons name="trending-up" size={20} color={lightTheme.colors.primary} />
               <Text style={styles.sectionTitle}>Smart Albums</Text>
               {userFlags.isSubscribed && settings.autoSort && (
                 <InfoIcon 
@@ -126,7 +126,7 @@ export default function HomeScreen() {
               )}
             </View>
             <TouchableOpacity style={styles.newSortButton} onPress={handleNewSort}>
-              <Plus size={16} color="white" />
+              <Ionicons name="add" size={16} color="white" />
               <Text style={styles.newSortButtonText}>New Sort</Text>
             </TouchableOpacity>
           </Animated.View>
@@ -158,7 +158,7 @@ export default function HomeScreen() {
             />
           </View>
           <View style={styles.activityCard}>
-            <Wand2 size={20} color={lightTheme.colors.primary} />
+            <MaterialIcons name="auto-fix-high" size={20} color={lightTheme.colors.primary} />
             <Text style={styles.activityText}>
               {userFlags.isSubscribed 
                 ? 'Auto-sort is keeping your photos organized in the background!'

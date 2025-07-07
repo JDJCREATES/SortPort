@@ -1,7 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert } from 'react-native';
-import { X, Crown, Clock as Unlock, Check, Sparkles, Zap, Shield, Cloud } from 'lucide-react-native';
-import Animated, { FadeInDown, FadeInUp, SlideInRight } from 'react-native-reanimated';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ScrollView,
+  Alert,
+} from 'react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import Animated, {
+  FadeInDown,
+  FadeInUp,
+  SlideInRight,
+} from 'react-native-reanimated';
 import { RevenueCatManager } from '../utils/revenuecat';
 import { lightTheme } from '../utils/theme';
 
@@ -11,42 +23,116 @@ interface SubscriptionModalProps {
   onSuccess: () => void;
 }
 
-const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+const AnimatedTouchableOpacity =
+  Animated.createAnimatedComponent(TouchableOpacity);
 
-export function SubscriptionModal({ visible, onClose, onSuccess }: SubscriptionModalProps) {
-  const [selectedPlan, setSelectedPlan] = useState<'subscription' | 'unlock'>('subscription');
+export function SubscriptionModal({
+  visible,
+  onClose,
+  onSuccess,
+}: SubscriptionModalProps) {
+  const [selectedPlan, setSelectedPlan] = useState<'subscription' | 'unlock'>(
+    'subscription'
+  );
   const [loading, setLoading] = useState(false);
 
   const subscriptionFeatures = [
-    { icon: <Zap size={20} color={lightTheme.colors.warning} />, text: 'Unlimited AI photo sorting' },
-    { icon: <Cloud size={20} color={lightTheme.colors.primary} />, text: 'Cloud backup & sync' },
-    { icon: <Sparkles size={20} color={lightTheme.colors.secondary} />, text: 'Advanced AI categorization' },
-    { icon: <Shield size={20} color={lightTheme.colors.success} />, text: 'Priority customer support' },
+    {
+      icon: (
+        <Ionicons name="flash" size={20} color={lightTheme.colors.warning} />
+      ),
+      text: 'Unlimited AI photo sorting',
+    },
+    {
+      icon: (
+        <Ionicons name="cloud" size={20} color={lightTheme.colors.primary} />
+      ),
+      text: 'Cloud backup & sync',
+    },
+    {
+      icon: (
+        <Ionicons
+          name="sparkles"
+          size={20}
+          color={lightTheme.colors.secondary}
+        />
+      ),
+      text: 'Advanced AI categorization',
+    },
+    {
+      icon: (
+        <Ionicons
+          name="shield-checkmark"
+          size={20}
+          color={lightTheme.colors.success}
+        />
+      ),
+      text: 'Priority customer support',
+    },
   ];
 
   const unlockFeatures = [
-    { icon: <Unlock size={20} color={lightTheme.colors.primary} />, text: 'Access private/NSFW folders' },
-    { icon: <Cloud size={20} color={lightTheme.colors.secondary} />, text: 'Album export features' },
-    { icon: <Shield size={20} color={lightTheme.colors.success} />, text: 'Advanced privacy controls' },
-    { icon: <Sparkles size={20} color={lightTheme.colors.warning} />, text: 'Custom color themes' },
+    {
+      icon: (
+        <Ionicons
+          name="lock-open"
+          size={20}
+          color={lightTheme.colors.primary}
+        />
+      ),
+      text: 'Access private/NSFW folders',
+    },
+    {
+      icon: (
+        <Ionicons
+          name="cloud-download"
+          size={20}
+          color={lightTheme.colors.secondary}
+        />
+      ),
+      text: 'Album export features',
+    },
+    {
+      icon: (
+        <Ionicons
+          name="shield-checkmark"
+          size={20}
+          color={lightTheme.colors.success}
+        />
+      ),
+      text: 'Advanced privacy controls',
+    },
+    {
+      icon: (
+        <Ionicons
+          name="color-palette"
+          size={20}
+          color={lightTheme.colors.warning}
+        />
+      ),
+      text: 'Custom color themes',
+    },
   ];
 
   const handlePurchase = async () => {
     setLoading(true);
     try {
       const revenueCat = RevenueCatManager.getInstance();
-      const productId = selectedPlan === 'subscription' ? 'snapsort_pro_monthly' : 'unlock_pack';
-      
+      const productId =
+        selectedPlan === 'subscription'
+          ? 'snapsort_pro_monthly'
+          : 'unlock_pack';
+
       // Mock purchase for demo
       revenueCat.mockPurchase(selectedPlan);
-      
+
       onSuccess();
       onClose();
-      
+
       Alert.alert(
         'Purchase Successful!',
-        selectedPlan === 'subscription' 
-          ? 'Welcome to SnapSort Pro! Your subscription is now active.' 
+        selectedPlan === 'subscription'
+          ? 'Welcome to SnapSort Pro! Your subscription is now active.'
           : 'Unlock Pack activated! You now have access to all premium features.'
       );
     } catch (error) {
@@ -74,43 +160,65 @@ export function SubscriptionModal({ visible, onClose, onSuccess }: SubscriptionM
         <Animated.View entering={FadeInUp.delay(100)} style={styles.container}>
           <View style={styles.header}>
             <View style={styles.headerContent}>
-              <Crown size={24} color={lightTheme.colors.warning} />
+              <Ionicons
+                name="diamond"
+                size={24}
+                color={lightTheme.colors.warning}
+              />
               <Text style={styles.title}>Upgrade SnapSort</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={lightTheme.colors.textSecondary} />
+              <Ionicons
+                name="close"
+                size={24}
+                color={lightTheme.colors.textSecondary}
+              />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            <Animated.Text entering={FadeInDown.delay(200)} style={styles.subtitle}>
+          <ScrollView
+            style={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
+            <Animated.Text
+              entering={FadeInDown.delay(200)}
+              style={styles.subtitle}
+            >
               Choose the perfect plan for your photo organization needs
             </Animated.Text>
 
             {/* Plan Selection */}
-            <Animated.View entering={FadeInDown.delay(300)} style={styles.planSelector}>
+            <Animated.View
+              entering={FadeInDown.delay(300)}
+              style={styles.planSelector}
+            >
               <AnimatedTouchableOpacity
                 entering={SlideInRight.delay(400)}
                 style={[
                   styles.planOption,
-                  selectedPlan === 'subscription' && styles.planOptionSelected
+                  selectedPlan === 'subscription' && styles.planOptionSelected,
                 ]}
                 onPress={() => setSelectedPlan('subscription')}
               >
                 <View style={styles.planHeader}>
-                  <Crown size={24} color={lightTheme.colors.warning} />
+                  <Ionicons
+                    name="diamond"
+                    size={24}
+                    color={lightTheme.colors.warning}
+                  />
                   <View style={styles.planInfo}>
                     <Text style={styles.planName}>SnapSort Pro</Text>
                     <Text style={styles.planPrice}>$2.99/month</Text>
                   </View>
                   {selectedPlan === 'subscription' && (
                     <View style={styles.selectedIndicator}>
-                      <Check size={16} color="white" />
+                      <Ionicons name="checkmark" size={16} color="white" />
                     </View>
                   )}
                 </View>
                 <Text style={styles.planDescription}>
-                  Perfect for power users who want unlimited AI sorting and cloud features
+                  Perfect for power users who want unlimited AI sorting and
+                  cloud features
                 </Text>
                 <View style={styles.featuresContainer}>
                   {subscriptionFeatures.map((feature, index) => (
@@ -126,24 +234,29 @@ export function SubscriptionModal({ visible, onClose, onSuccess }: SubscriptionM
                 entering={SlideInRight.delay(500)}
                 style={[
                   styles.planOption,
-                  selectedPlan === 'unlock' && styles.planOptionSelected
+                  selectedPlan === 'unlock' && styles.planOptionSelected,
                 ]}
                 onPress={() => setSelectedPlan('unlock')}
               >
                 <View style={styles.planHeader}>
-                  <Unlock size={24} color={lightTheme.colors.primary} />
+                  <Ionicons
+                    name="lock-open"
+                    size={24}
+                    color={lightTheme.colors.primary}
+                  />
                   <View style={styles.planInfo}>
                     <Text style={styles.planName}>Unlock Pack</Text>
-                    <Text style={styles.planPrice}>$9.99 one-time</Text>
+                    <Text style={styles.planPrice}>$19.99 one-time</Text>
                   </View>
                   {selectedPlan === 'unlock' && (
                     <View style={styles.selectedIndicator}>
-                      <Check size={16} color="white" />
+                      <Ionicons name="checkmark" size={16} color="white" />
                     </View>
                   )}
                 </View>
                 <Text style={styles.planDescription}>
-                  One-time purchase for privacy features and advanced customization
+                  One-time purchase for privacy features and advanced
+                  customization
                 </Text>
                 <View style={styles.featuresContainer}>
                   {unlockFeatures.map((feature, index) => (
@@ -157,45 +270,77 @@ export function SubscriptionModal({ visible, onClose, onSuccess }: SubscriptionM
             </Animated.View>
 
             {/* Benefits Section */}
-            <Animated.View entering={FadeInDown.delay(600)} style={styles.benefitsSection}>
+            <Animated.View
+              entering={FadeInDown.delay(600)}
+              style={styles.benefitsSection}
+            >
               <Text style={styles.benefitsTitle}>Why upgrade?</Text>
               <View style={styles.benefitsList}>
                 <View style={styles.benefitItem}>
-                  <Sparkles size={16} color={lightTheme.colors.primary} />
-                  <Text style={styles.benefitText}>AI gets smarter with more photos</Text>
+                  <Ionicons
+                    name="sparkles"
+                    size={16}
+                    color={lightTheme.colors.primary}
+                  />
+                  <Text style={styles.benefitText}>
+                    AI gets smarter with more photos
+                  </Text>
                 </View>
                 <View style={styles.benefitItem}>
-                  <Shield size={16} color={lightTheme.colors.success} />
-                  <Text style={styles.benefitText}>Your photos stay private on your device</Text>
+                  <Ionicons
+                    name="shield-checkmark"
+                    size={16}
+                    color={lightTheme.colors.success}
+                  />
+                  <Text style={styles.benefitText}>
+                    Your photos stay private on your device
+                  </Text>
                 </View>
                 <View style={styles.benefitItem}>
-                  <Zap size={16} color={lightTheme.colors.warning} />
-                  <Text style={styles.benefitText}>Save hours of manual organization</Text>
+                  <Ionicons
+                    name="flash"
+                    size={16}
+                    color={lightTheme.colors.warning}
+                  />
+                  <Text style={styles.benefitText}>
+                    Save hours of manual organization
+                  </Text>
                 </View>
               </View>
             </Animated.View>
           </ScrollView>
 
           <Animated.View entering={FadeInDown.delay(700)} style={styles.footer}>
-            <TouchableOpacity 
-              style={[styles.purchaseButton, loading && styles.purchaseButtonDisabled]}
+            <TouchableOpacity
+              style={[
+                styles.purchaseButton,
+                loading && styles.purchaseButtonDisabled,
+              ]}
               onPress={handlePurchase}
               disabled={loading}
             >
               <Text style={styles.purchaseButtonText}>
-                {loading ? 'Processing...' : `Get ${selectedPlan === 'subscription' ? 'SnapSort Pro' : 'Unlock Pack'}`}
+                {loading
+                  ? 'Processing...'
+                  : `Get ${
+                      selectedPlan === 'subscription'
+                        ? 'SnapSort Pro'
+                        : 'Unlock Pack'
+                    }`}
               </Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.restoreButton} onPress={handleRestorePurchases}>
+
+            <TouchableOpacity
+              style={styles.restoreButton}
+              onPress={handleRestorePurchases}
+            >
               <Text style={styles.restoreButtonText}>Restore Purchases</Text>
             </TouchableOpacity>
-            
+
             <Text style={styles.disclaimer}>
-              {selectedPlan === 'subscription' 
+              {selectedPlan === 'subscription'
                 ? 'Subscription automatically renews. Cancel anytime in your account settings.'
-                : 'One-time purchase. No recurring charges.'
-              }
+                : 'One-time purchase. No recurring charges.'}
             </Text>
           </Animated.View>
         </Animated.View>

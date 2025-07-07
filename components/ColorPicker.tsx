@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView } from 'react-native';
-import { X, Check } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { lightTheme } from '../utils/theme';
 
 interface ColorPickerProps {
@@ -49,7 +49,7 @@ export function ColorPicker({ visible, onClose, onColorSelect, currentColor, tit
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={lightTheme.colors.textSecondary} />
+              <Ionicons name="close" size={24} color={lightTheme.colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -66,7 +66,7 @@ export function ColorPicker({ visible, onClose, onColorSelect, currentColor, tit
                   onPress={() => handleColorSelect(color)}
                 >
                   {selectedColor === color && (
-                    <Check size={20} color="white" />
+                    <Ionicons name="checkmark" size={20} color="white" />
                   )}
                 </TouchableOpacity>
               ))}

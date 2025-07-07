@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Home, FolderOpen, Settings } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { lightTheme } from '../../utils/theme';
 
 export default function TabLayout() {
@@ -19,7 +19,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ size, color }) => (
-            <Home size={size} color={color} />
+            <Ionicons name="home" size={size} color={color} />
           ),
         }}
       />
@@ -28,7 +28,7 @@ export default function TabLayout() {
         options={{
           title: 'Albums',
           tabBarIcon: ({ size, color }) => (
-            <FolderOpen size={size} color={color} />
+            <Ionicons name="folder-open" size={size} color={color} />
           ),
         }}
       />
@@ -37,7 +37,7 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ size, color }) => (
-            <Settings size={size} color={color} />
+            <Ionicons name="settings" size={size} color={color} />
           ),
         }}
       />

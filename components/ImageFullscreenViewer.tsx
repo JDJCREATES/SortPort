@@ -26,17 +26,7 @@ import Animated, {
   clamp,
   useAnimatedGestureHandler,
 } from 'react-native-reanimated';
-import { 
-  X, 
-  ChevronLeft, 
-  ChevronRight, 
-  Share as ShareIcon, 
-  Download, 
-  Info, 
-  Heart, 
-  MoveVertical as MoreVertical,
-  Crop
-} from 'lucide-react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { ImageViewerData } from '../types/display';
 import { lightTheme } from '../utils/theme';
 
@@ -77,7 +67,7 @@ export function ImageFullscreenViewer({
   const controlsOpacity = useSharedValue(1);
 
   // Auto-hide controls timer
-  const hideControlsTimer = React.useRef<NodeJS.Timeout>();
+  const hideControlsTimer = React.useRef<NodeJS.Timeout | null>(null);
 
   const currentImage = useMemo(() => {
     return images[currentIndex] || null;
@@ -382,40 +372,41 @@ export function ImageFullscreenViewer({
           {/* Header Controls */}
           <Animated.View style={[styles.header, controlsAnimatedStyle]}>
             <Pressable style={styles.headerButton} onPress={onClose}>
-              <X size={24} color="white" />
+              <Ionicons name="close" size={24} color="white" />
             </Pressable>
             <Text style={styles.headerTitle} numberOfLines={1}>
               {currentImage.filename}
             </Text>
             <View style={styles.headerActions}>
               <Pressable style={styles.headerButton} onPress={cycleResizeMode}>
-                <Crop size={20} color="white" />
+                <MaterialIcons name="crop" size={20} color="white" />
               </Pressable>
               <Pressable style={styles.headerButton} onPress={handleShare}>
-                <ShareIcon size={20} color="white" />
+                <Ionicons name="share" size={20} color="white" />
               </Pressable>
               <Pressable style={styles.headerButton} onPress={handleDownload}>
-                <Download size={20} color="white" />
+                <Ionicons name="download" size={20} color="white" />
               </Pressable>
               <Pressable style={styles.headerButton} onPress={toggleInfoPanel}>
-                <Info size={20} color="white" />
+                <Ionicons name="information-circle" size={20} color="white" />
               </Pressable>
             </View>
           </Animated.View>
 
-          {/* Navigation Controls */}
-          <Animated.View style={[styles.navigationContainer, controlsAnimatedStyle]}>
-            {currentIndex > 0 && (
-              <Pressable style={[styles.navButton, styles.navButtonLeft]} onPress={goToPrevious}>
-                <ChevronLeft size={32} color="white" />
-              </Pressable>
-            )}
-            {currentIndex < images.length - 1 && (
-              <Pressable style={[styles.navButton, styles.navButtonRight]} onPress={goToNext}>
-                <ChevronRight size={32} color="white" />
-              </Pressable>
-            )}
-          </Animated.View>
+      {/* Navigation Controls */}
+<Animated.View style={[styles.navigationContainer, controlsAnimatedStyle]}>
+  {currentIndex > 0 && (
+    <Pressable style={[styles.navButton, styles.navButtonLeft]} onPress={goToPrevious}>
+      <Ionicons name="chevron-back" size={32} color="white" />
+    </Pressable>
+  )}
+  {currentIndex < images.length - 1 && (
+    <Pressable style={[styles.navButton, styles.navButtonRight]} onPress={goToNext}>
+      <Ionicons name="chevron-forward" size={32} color="white" />
+    </Pressable>
+  )}
+</Animated.View>
+
 
           {/* Image Counter */}
           <Animated.View style={[styles.counter, controlsAnimatedStyle]}>
@@ -476,22 +467,22 @@ export function ImageFullscreenViewer({
               
               <View style={styles.infoActions}>
                 <Pressable style={styles.infoActionButton} onPress={handleShare}>
-                  <ShareIcon size={20} color={lightTheme.colors.primary} />
+                  <Ionicons name="share" size={20} color={lightTheme.colors.primary} />
                   <Text style={styles.infoActionText}>Share</Text>
                 </Pressable>
                 
                 <Pressable style={styles.infoActionButton} onPress={handleDownload}>
-                  <Download size={20} color={lightTheme.colors.primary} />
+                  <Ionicons name="download" size={20} color={lightTheme.colors.primary} />
                   <Text style={styles.infoActionText}>Download</Text>
                 </Pressable>
                 
                 <Pressable style={styles.infoActionButton}>
-                  <Heart size={20} color={lightTheme.colors.primary} />
+                  <Ionicons name="heart" size={20} color={lightTheme.colors.primary} />
                   <Text style={styles.infoActionText}>Favorite</Text>
                 </Pressable>
                 
                 <Pressable style={styles.infoActionButton}>
-                  <MoreVertical size={20} color={lightTheme.colors.primary} />
+                  <Ionicons name="ellipsis-vertical" size={20} color={lightTheme.colors.primary} />
                   <Text style={styles.infoActionText}>More</Text>
                 </Pressable>
               </View>

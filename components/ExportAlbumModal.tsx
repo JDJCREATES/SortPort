@@ -12,7 +12,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { X, Download, TriangleAlert as AlertTriangle, FolderPlus } from 'lucide-react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { ImageMeta } from '../types';
 import { MediaStorage } from '../utils/mediaStorage';
@@ -107,7 +107,7 @@ export function ExportAlbumModal({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <FolderPlus size={24} color={lightTheme.colors.primary} />
+              <Ionicons name="folder" size={24} color={lightTheme.colors.primary} />
               <Text style={styles.title}>Export Album</Text>
             </View>
             <TouchableOpacity 
@@ -115,7 +115,7 @@ export function ExportAlbumModal({
               style={styles.closeButton}
               disabled={isExporting}
             >
-              <X size={24} color={lightTheme.colors.textSecondary} />
+              <Ionicons name="close" size={24} color={lightTheme.colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -128,7 +128,7 @@ export function ExportAlbumModal({
 
             {/* Warning */}
             <Animated.View entering={FadeInDown.delay(300)} style={styles.warningContainer}>
-              <AlertTriangle size={20} color={lightTheme.colors.warning} />
+              <Ionicons name="warning" size={20} color={lightTheme.colors.warning} />
               <Text style={styles.warningText}>
                 Warning: Exporting this album will create new copies of these photos in a new album on your device. This will increase storage usage.
               </Text>
@@ -199,7 +199,7 @@ export function ExportAlbumModal({
                 </View>
               ) : (
                 <View style={styles.buttonContent}>
-                  <Download size={20} color="white" />
+                  <Ionicons name="download" size={20} color="white" />
                   <Text style={styles.exportButtonText}>Export Album</Text>
                 </View>
               )}

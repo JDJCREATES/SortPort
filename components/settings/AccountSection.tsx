@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { User, LogOut, LogIn } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { SupabaseAuth, UserProfile } from '../../utils/supabase';
@@ -45,7 +45,7 @@ export function AccountSection({
       ) : userProfile ? (
         <View style={styles.profileCard}>
           <View style={styles.profileHeader}>
-            <User size={24} color={lightTheme.colors.primary} />
+            <Ionicons name="person-circle" size={24} color={lightTheme.colors.primary} />
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>
                 {userProfile.full_name || 'User'}
@@ -53,7 +53,7 @@ export function AccountSection({
               <Text style={styles.profileEmail}>{userProfile.email}</Text>
             </View>
             <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-              <LogOut size={16} color={lightTheme.colors.error} />
+              <Ionicons name="log-out" size={16} color={lightTheme.colors.error} />
             </TouchableOpacity>
           </View>
         </View>
@@ -62,7 +62,7 @@ export function AccountSection({
           style={styles.signInCard}
           onPress={() => setShowAuthModal(true)}
         >
-          <LogIn size={24} color={lightTheme.colors.primary} />
+          <Ionicons name="log-in" size={24} color={lightTheme.colors.primary} />
           <View style={styles.signInInfo}>
             <Text style={styles.signInTitle}>Sign In to SnapSort</Text>
             <Text style={styles.signInDescription}>

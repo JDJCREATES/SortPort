@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Lock } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Album } from '../types';
 import { OptimizedImage } from './OptimizedImage';
 import { lightTheme } from '../utils/theme';
@@ -30,7 +30,7 @@ export function AlbumCard({ album, onPress, showLocked = true }: AlbumCardProps)
         )}
         {album.isLocked && showLocked && (
           <View style={styles.lockOverlay}>
-            <Lock size={20} color="white" />
+            <Ionicons name="lock-closed" size={20} color="white" />
           </View>
         )}
         <View style={styles.countBadge}>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Palette } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { UserFlags, AppSettings } from '../../types';
 import { lightTheme } from '../../utils/theme';
@@ -35,7 +35,7 @@ export function CustomizationSection({
           style={[styles.colorPreview, { backgroundColor: settings.customColors?.primary || lightTheme.colors.primary }]}
           onPress={() => canUseColorPicker ? setShowColorPicker('primary') : setShowSubscriptionModal(true)}
         >
-          <Palette size={16} color="white" />
+          <Ionicons name="color-palette" size={16} color="white" />
         </TouchableOpacity>
       </View>
 
@@ -50,7 +50,7 @@ export function CustomizationSection({
           style={[styles.colorPreview, { backgroundColor: settings.customColors?.secondary || lightTheme.colors.secondary }]}
           onPress={() => canUseColorPicker ? setShowColorPicker('secondary') : setShowSubscriptionModal(true)}
         >
-          <Palette size={16} color="white" />
+          <Ionicons name="color-palette" size={16} color="white" />
         </TouchableOpacity>
       </View>
     </Animated.View>
