@@ -202,6 +202,7 @@ export class AlbumUtils {
         thumbnail: album.thumbnail || '',
         count: album.count || 0,
         isAllPhotosAlbum: album.is_all_photos_album || false,
+        isModeratedAlbum: album.is_moderated_album || false,
       }));
     } catch (error) {
       console.error('Error loading albums from Supabase:', error);
@@ -229,6 +230,8 @@ export class AlbumUtils {
         count: album.count,
         is_locked: album.isLocked || false,
         is_all_photos_album: album.isAllPhotosAlbum || false,
+        is_moderated_album: album.isModeratedAlbum || false,
+        is_moderated_album: album.isModeratedAlbum || false,
         created_at: new Date(album.createdAt).toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -291,6 +294,7 @@ export class AlbumUtils {
       if (updates.thumbnail !== undefined) updateData.thumbnail = updates.thumbnail;
       if (updates.count !== undefined) updateData.count = updates.count;
       if (updates.isLocked !== undefined) updateData.is_locked = updates.isLocked;
+      if (updates.isModeratedAlbum !== undefined) updateData.is_moderated_album = updates.isModeratedAlbum;
 
       const { error } = await supabase
         .from('albums')

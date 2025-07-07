@@ -64,6 +64,7 @@ const initialState: AppState = {
     notifications: true,
     selectedFolders: ['all_photos'],
     lastAutoSortTimestamp: 0,
+    showModeratedContent: false,
   },
   isLoadingSettings: true,
   albums: [],
@@ -393,7 +394,13 @@ export function AppProvider({ children }: AppProviderProps) {
       
       // Load all albums
       console.log('📁 refreshAlbums: Loading albums from database...');
-      const albums = await AlbumUtils.loadAlbums();
+      let albums = await AlbumUtils.loadAlbums();
+      
+      // Filter out moderated albums if NSFW filter is enabled
+      if (state.settings.nsfwFilter && !state.settings.showModeratedContent) {
+        albums = albums.filter(album => !album.isModeratedAlbum);
+      }
+      
       console.log('📁 refreshAlbums: Loaded', albums.length, 'albums');
       dispatch({ type: 'SET_ALBUMS', payload: albums });
       console.log('✅ refreshAlbums: Complete');

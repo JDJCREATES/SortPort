@@ -57,19 +57,41 @@ export function AppSettingsSection({
 
       <TouchableOpacity 
         style={styles.settingItem}
-        onPress={() => !userFlags.hasUnlockPack && setShowSubscriptionModal(true)}
+        onPress={() => !userFlags.isSubscribed && setShowSubscriptionModal(true)}
       >
         <View style={styles.settingInfo}>
-          <Text style={styles.settingLabel}>NSFW Filter</Text>
+          <Text style={styles.settingLabel}>Content Filter</Text>
           <Text style={styles.settingDescription}>
-            {userFlags.hasUnlockPack ? 'Show/hide NSFW content' : 'Unlock Pack required'}
+            {userFlags.isSubscribed ? 'Filter inappropriate content' : 'Premium feature - upgrade to enable'}
           </Text>
         </View>
         <Switch
-          value={!settings.nsfwFilter && userFlags.hasUnlockPack}
+          value={settings.nsfwFilter}
+          onValueChange={(value) => {
+            if (userFlags.isSubscribed) {
+              updateSetting('nsfwFilter', value);
+            }
+          }}
+          disabled={!userFlags.isSubscribed}
+          trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
+        />
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.settingItem}
+        onPress={() => !userFlags.hasUnlockPack && setShowSubscriptionModal(true)}
+      >
+        <View style={styles.settingInfo}>
+          <Text style={styles.settingLabel}>Show Moderated Content</Text>
+          <Text style={styles.settingDescription}>
+            {userFlags.hasUnlockPack ? 'Access to filtered content albums' : 'Unlock Pack required'}
+          </Text>
+        </View>
+        <Switch
+          value={settings.showModeratedContent && userFlags.hasUnlockPack}
           onValueChange={(value) => {
             if (userFlags.hasUnlockPack) {
-              updateSetting('nsfwFilter', !value);
+              updateSetting('showModeratedContent', value);
             }
           }}
           disabled={!userFlags.hasUnlockPack}

@@ -26,6 +26,7 @@ export class MediaStorage {
         customColors: undefined,
         selectedFolders: ['all_photos'],
         lastAutoSortTimestamp: 0,
+        showModeratedContent: false,
       };
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -37,6 +38,7 @@ export class MediaStorage {
         customColors: undefined,
         selectedFolders: ['all_photos'],
         lastAutoSortTimestamp: 0,
+        showModeratedContent: false,
       };
     }
   }
