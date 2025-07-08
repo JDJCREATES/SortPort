@@ -4,9 +4,9 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Platform } from 'react-native';
 import { PhotoLoader } from '../utils/photoLoader';
-import { NsfwModerationManager } from '../utils/nsfwModerationManager';
 import { useApp } from '../contexts/AppContext';
 import { lightTheme } from '../utils/theme';
+import { supabase } from '../utils/supabase';
 
 interface SourceFolder {
   id: string;
@@ -128,44 +128,92 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
     newlySelectedFolderIds: string[], 
     allSelectedFolders: SourceFolder[]
   ) => {
-    if (!userProfile) return;
+    if (!userProfile || Platform.OS === 'web') {
+      onSelect(allSelectedFolders);
+      onClose();
+      return;
+    }
     
     setIsScanning(true);
-    setScanProgress({ current: 0, total: newlySelectedFolderIds.length, message: 'Starting NSFW scan...' });
+    setScanProgress({ current: 0, total: 0, message: 'Preparing content scan...' });
     
     try {
-      console.log('🔍 Starting NSFW scanning for newly selected folders:', newlySelectedFolderIds);
+      const allPhotos = await PhotoLoader.loadAllPhotoIds(newlySelectedFolderIds);
       
-      await NsfwModerationManager.checkAndModerateFolders(
-        newlySelectedFolderIds,
-        userProfile.id,
-        (current, total, message) => {
-          setScanProgress({ current, total, message });
+      if (allPhotos.length === 0) {
+        onSelect(allSelectedFolders);
+        onClose();
+        return;
+      }
+
+      const photosToModerate = allPhotos.slice(0, 50);
+      setScanProgress({ 
+        current: 0, 
+        total: photosToModerate.length, 
+        message: `Scanning ${photosToModerate.length} photos...` 
+      });
+
+      let processedCount = 0;
+      let flaggedCount = 0;
+
+      // Process in batches of 5
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < photosToModerate.length; i += BATCH_SIZE) {
+        const batch = photosToModerate.slice(i, i + BATCH_SIZE);
+        
+        const batchPromises = batch.map(async (photo) => {
+          try {
+            const base64 = await PhotoLoader.getPhotoBase64(photo.uri);
+            
+            // ✅ Call Supabase Edge Function instead of NsfwModerationManager
+            const { data, error } = await supabase.functions.invoke('rekognition-moderation', {
+              body: {
+                image_base64: base64,
+                image_id: photo.id,
+              }
+            });
+
+            if (error) {
+              console.warn(`Moderation failed for photo ${photo.id}:`, error);
+              return { photo_id: photo.id, is_nsfw: false };
+            }
+
+            if (data?.is_nsfw) {
+              flaggedCount++;
+            }
+
+            return {
+              photo_id: photo.id,
+              is_nsfw: data?.is_nsfw || false,
+              confidence: data?.confidence_score || 0
+            };
+          } catch (error) {
+            console.warn(`Error processing photo ${photo.id}:`, error);
+            return { photo_id: photo.id, is_nsfw: false };
+          }
+        });
+
+        await Promise.all(batchPromises);
+        processedCount += batch.length;
+
+        setScanProgress({
+          current: processedCount,
+          total: photosToModerate.length,
+          message: `Processed ${processedCount}/${photosToModerate.length} photos...`
+        });
+
+        if (i + BATCH_SIZE < photosToModerate.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
-      );
+      }
       
-      // Scanning complete, update selection
       onSelect(allSelectedFolders);
       onClose();
       
-      Alert.alert(
-        'Scanning Complete',
-        `Successfully scanned ${newlySelectedFolderIds.length} new folders for content moderation.`,
-        [{ text: 'OK' }]
-      );
-      
     } catch (error) {
-      console.error('NSFW scanning failed:', error);
-      Alert.alert(
-        'Scanning Error',
-        `Failed to scan some folders for content moderation. Your folder selection has been saved, but some content may not be properly filtered.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        [
-          { text: 'OK', onPress: () => {
-            onSelect(allSelectedFolders);
-            onClose();
-          }}
-        ]
-      );
+      console.error('Content moderation failed:', error);
+      onSelect(allSelectedFolders);
+      onClose();
     } finally {
       setIsScanning(false);
       setScanProgress({ current: 0, total: 0, message: '' });

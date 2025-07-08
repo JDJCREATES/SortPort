@@ -90,8 +90,10 @@ if (process.env.EXPO_PLATFORM === 'web') {
   config.resolver.alias = {
     ...config.resolver.alias,
     'react-native$': 'react-native-web',
-    'react-native/Libraries/EventEmitter/NativeEventEmitter$': 'react-native-web/dist/exports/NativeEventEmitter',
-    'react-native/Libraries/Animated/NativeAnimatedHelper$': 'react-native-web/dist/exports/Animated/NativeAnimatedHelper',
+    'crypto': 'crypto-browserify',
+    'stream': 'stream-browserify',
+    'buffer': 'buffer',
+    'uuid': require.resolve('./utils/uuid-web-polyfill.js'),
   };
 }
 
