@@ -13,7 +13,7 @@ import {
   LayoutAnimation,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, {
   FadeInUp,
   FadeInDown,
@@ -223,10 +223,12 @@ export default function NsfwAlbumsScreen() {
     }, [handleRefresh, state.isRefreshing, state.isInitialLoad])
   );
 
+  const hasAccess = (userFlags.isSubscribed || userFlags.hasUnlockPack) && settings.showModeratedContent;
+
   const handleAlbumPress = useCallback(
     (album: Album) => {
       try {
-        if (album.isLocked && !userFlags.hasUnlockPack) {
+        if (album.isLocked && !userFlags.isSubscribed && !userFlags.hasUnlockPack) {
           Alert.alert(
             'Premium Feature',
             'This album is locked. Upgrade to access all albums.',
@@ -245,7 +247,7 @@ export default function NsfwAlbumsScreen() {
         Alert.alert('Error', 'Failed to open album. Please try again.');
       }
     },
-    [headerOpacity, userFlags.hasUnlockPack]
+    [headerOpacity, userFlags.isSubscribed, userFlags.hasUnlockPack]
   );
 
   const handleAcceptWarning = useCallback(() => {
@@ -280,20 +282,28 @@ export default function NsfwAlbumsScreen() {
   }));
 
   // Check if user has access
-  if (!userFlags.hasUnlockPack) {
+  if (!hasAccess) {
     return (
       <SafeAreaView style={styles.container}>
         <Animated.View entering={FadeInUp} style={styles.noAccessContainer}>
           <Ionicons name="lock-closed" size={64} color={lightTheme.colors.textSecondary} />
-          <Text style={styles.noAccessTitle}>Premium Feature</Text>
+          <Text style={styles.noAccessTitle}>
+            {!(userFlags.isSubscribed || userFlags.hasUnlockPack) 
+              ? 'Premium Feature' 
+              : 'Content Hidden'}
+          </Text>
           <Text style={styles.noAccessText}>
-            Access to moderated content requires the Unlock Pack. Upgrade to view these albums.
+            {!(userFlags.isSubscribed || userFlags.hasUnlockPack)
+              ? 'Access to moderated content requires premium access. Upgrade to view these albums.'
+              : 'Moderated content is currently hidden. Enable "Show Moderated Content" in Settings to view these albums.'}
           </Text>
           <TouchableOpacity
             style={styles.upgradeButton}
             onPress={() => router.push('/settings')}
           >
-            <Text style={styles.upgradeButtonText}>Upgrade Now</Text>
+            <Text style={styles.upgradeButtonText}>
+              {!(userFlags.isSubscribed || userFlags.hasUnlockPack) ? 'Upgrade Now' : 'Go to Settings'}
+            </Text>
           </TouchableOpacity>
         </Animated.View>
       </SafeAreaView>
@@ -435,8 +445,8 @@ export default function NsfwAlbumsScreen() {
     <Animated.View style={[styles.header, headerAnimatedStyle]}>
       <Animated.View entering={FadeInUp.delay(100)}>
         <View style={styles.headerLeft}>
-          <Ionicons name="warning" size={24} color={lightTheme.colors.warning} />
-          <Text style={styles.title}>NSFW Albums</Text>
+          <MaterialCommunityIcons name="emoticon-devil" size={24} color={lightTheme.colors.warning} />
+          <Text style={styles.title}>NSFW</Text>
           {state.isRefreshing && (
             <View style={styles.refreshIndicator}>
               <Text style={styles.refreshText}>Updating...</Text>

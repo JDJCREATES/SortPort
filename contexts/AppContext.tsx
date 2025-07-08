@@ -53,8 +53,7 @@ const initialState: AppState = {
   isLoadingAuth: true,
   userFlags: {
     isSubscribed: false,
-    hasUnlockPack: false,
-    isProUser: false,
+    hasUnlockPack: false
   },
   isLoadingUserFlags: true,
   settings: {
@@ -233,7 +232,6 @@ export function AppProvider({ children }: AppProviderProps) {
           payload: {
             isSubscribed: false,
             hasUnlockPack: false,
-            isProUser: false,
           },
         });
       }
@@ -315,7 +313,14 @@ export function AppProvider({ children }: AppProviderProps) {
 
   const signOut = async () => {
     await SupabaseAuth.signOut();
-    // Auth state change listener will handle the rest
+    // Reset user flags when signed out
+    dispatch({
+      type: 'SET_USER_FLAGS',
+      payload: {
+        isSubscribed: false,
+        hasUnlockPack: false,
+      },
+    });
   };
 
   const refreshUserProfile = async () => {

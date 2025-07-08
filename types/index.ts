@@ -12,7 +12,6 @@ export interface ImageMeta {
 export interface UserFlags {
   isSubscribed: boolean;
   hasUnlockPack: boolean;
-  isProUser: boolean;
 }
 
 export interface LangChainResult {
@@ -39,7 +38,6 @@ export interface Album {
   thumbnail?: string;
   count: number;
   isAllPhotosAlbum?: boolean;
-  isModeratedAlbum?: boolean;
   isModeratedAlbum?: boolean;
 }
 

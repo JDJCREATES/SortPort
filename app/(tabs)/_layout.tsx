@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { lightTheme } from '../../utils/theme';
 import { useApp } from '../../contexts/AppContext';
 
@@ -43,9 +43,11 @@ export default function TabLayout() {
           name="nsfw-albums"
           options={{
             title: 'NSFW',
-            tabBarIcon: ({ size, color }) => (
-              <Ionicons name="warning" size={size} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <MaterialCommunityIcons name="emoticon-devil" size={24} color={color} />
             ),
+            // Fix the conditional check
+            href: (userFlags.isSubscribed || userFlags.hasUnlockPack) && settings.showModeratedContent ? '/nsfw-albums' : null,
           }}
         />
       )}
@@ -53,8 +55,8 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ size, color }) => (
-            <Ionicons name="settings" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={24} color={color} />
           ),
         }}
       />

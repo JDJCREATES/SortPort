@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert } from 'react-native';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
 import { SubscriptionModal } from '../../components/SubscriptionModal';
@@ -26,6 +26,7 @@ export default function SettingsScreen() {
     updateSetting,
     refreshUserFlags,
     refreshUserProfile,
+    refreshAlbums,
     signOut,
     ensureAllPhotosAlbum
   } = useApp();
@@ -44,6 +45,14 @@ export default function SettingsScreen() {
       updateThemeColors(settings.customColors, settings.darkMode);
     }
   }, [settings]);
+
+  // Add useEffect to sync settings changes with context
+  React.useEffect(() => {
+    // Refresh albums when showModeratedContent changes to update tab visibility
+    if (settings.showModeratedContent !== undefined) {
+      refreshAlbums();
+    }
+  }, [settings.showModeratedContent, refreshAlbums]);
 
   const handleColorChange = async (colorType: 'primary' | 'secondary', color: string) => {
     if (!userFlags.isSubscribed && !userFlags.hasUnlockPack) {
@@ -247,5 +256,44 @@ const styles = StyleSheet.create({
     marginTop: lightTheme.spacing.xs,
     paddingHorizontal: lightTheme.spacing.lg,
     lineHeight: 16,
+  },
+  section: {
+    marginBottom: lightTheme.spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.text,
+    marginBottom: lightTheme.spacing.md,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: lightTheme.spacing.md,
+    paddingHorizontal: lightTheme.spacing.lg,
+    backgroundColor: lightTheme.colors.surface,
+    borderRadius: lightTheme.borderRadius.md,
+  },
+  settingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: lightTheme.spacing.sm,
+  },
+  settingText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.text,
+  },
+  button: {
+    backgroundColor: lightTheme.colors.primary,
+    paddingHorizontal: lightTheme.spacing.md,
+    paddingVertical: lightTheme.spacing.sm,
+    borderRadius: lightTheme.borderRadius.sm,
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
   },
 });
