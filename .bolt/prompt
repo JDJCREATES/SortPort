@@ -1,3 +1,5 @@
 We are building SnapSort, a mobile react native application for ai sorting images on your phone using natural language. we are using typescript, react native expo, supabase for db/backend and revenuecat make sure everything is working for SDK 53!!! Use vector-icons instead of lucide so we'll have web support. 
 
 We will be using LangChain to orchestrate sending picture atlases our app creates of user images to different ai models for sorting purposes.
+
+IGNORE ANY PREVIOUS MENTION OF SDK 52 OR OLDER EXPO ROUTER
