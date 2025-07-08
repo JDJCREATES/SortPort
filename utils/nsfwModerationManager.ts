@@ -41,6 +41,7 @@ export class NsfwModerationManager {
       for (const folderId of folderIds) {
         onProgress?.(processedFolders, totalFolders, `Checking folder ${folderId}...`);
         
+        // Only scan folders that haven't been scanned before or need re-scanning
         const needsScanning = await this.checkIfFolderNeedsScanning(folderId, userId);
         
         if (needsScanning) {
@@ -87,6 +88,7 @@ export class NsfwModerationManager {
       }
 
       if (!folder) {
+        console.log(`📁 Folder ${folderId} has never been scanned - needs scanning`);
         return true; // New folder, needs scanning
       }
 
@@ -95,8 +97,16 @@ export class NsfwModerationManager {
       const now = Date.now();
       const timeSinceLastScan = now - lastScanned;
 
-      // Rescan if it's been too long or if previous scan failed
-      return timeSinceLastScan > RESCAN_THRESHOLD || folder.status === 'error';
+      // Only rescan if previous scan failed or if it's been too long
+      const needsRescan = timeSinceLastScan > RESCAN_THRESHOLD || folder.status === 'error';
+      
+      if (needsRescan) {
+        console.log(`📁 Folder ${folderId} needs re-scanning - last scan: ${new Date(lastScanned).toISOString()}, status: ${folder.status}`);
+      } else {
+        console.log(`📁 Folder ${folderId} was scanned recently (${Math.round(timeSinceLastScan / (1000 * 60 * 60))} hours ago) - skipping`);
+      }
+      
+      return needsRescan;
       
     } catch (error) {
       console.error('Error checking folder scan status:', error);
@@ -207,10 +217,19 @@ export class NsfwModerationManager {
     
     while (retries < MAX_RETRIES) {
       try {
-        const response = await fetch('/api/rekognition', {
+        // Get Supabase URL from environment
+        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+        if (!supabaseUrl) {
+          throw new Error('Supabase URL not configured');
+        }
+        
+        const functionUrl = `${supabaseUrl}/functions/v1/rekognition-moderation`;
+        
+        const response = await fetch(functionUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
           },
           body: JSON.stringify({
             image_base64: base64,

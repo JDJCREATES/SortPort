@@ -1,10 +1,11 @@
 /**
- * AWS Rekognition API route for NSFW content detection
+ * Supabase Edge Function for AWS Rekognition NSFW Content Detection
  * Handles image moderation using Amazon Rekognition's DetectModerationLabels API
  * Images are processed in-memory only - no storage to S3 or database
  */
 
-import { RekognitionClient, DetectModerationLabelsCommand } from '@aws-sdk/client-rekognition';
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { RekognitionClient, DetectModerationLabelsCommand } from "npm:@aws-sdk/client-rekognition@^3.840.0"
 
 interface ModerationRequest {
   image_base64: string;
@@ -39,10 +40,26 @@ const NSFW_CATEGORIES = [
   'Hate Symbols'
 ];
 
-export async function POST(request: Request): Promise<Response> {
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+serve(async (req: Request): Promise<Response> => {
+  // Handle CORS preflight requests
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 200,
+      headers: corsHeaders,
+    });
+  }
+
   try {
     // Validate environment variables
-    const { AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION } = process.env;
+    const AWS_ACCESS_KEY_ID = Deno.env.get('AWS_ACCESS_KEY_ID');
+    const AWS_SECRET_ACCESS_KEY = Deno.env.get('AWS_SECRET_ACCESS_KEY');
+    const AWS_REGION = Deno.env.get('AWS_REGION');
     
     if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !AWS_REGION) {
       console.error('❌ Missing AWS credentials in environment variables');
@@ -53,7 +70,7 @@ export async function POST(request: Request): Promise<Response> {
         }),
         { 
           status: 500,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -61,7 +78,7 @@ export async function POST(request: Request): Promise<Response> {
     // Parse request body
     let body: ModerationRequest;
     try {
-      body = await request.json();
+      body = await req.json();
     } catch (error) {
       return new Response(
         JSON.stringify({ 
@@ -70,7 +87,7 @@ export async function POST(request: Request): Promise<Response> {
         }),
         { 
           status: 400,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -86,7 +103,7 @@ export async function POST(request: Request): Promise<Response> {
         }),
         { 
           status: 400,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -100,15 +117,20 @@ export async function POST(request: Request): Promise<Response> {
         }),
         { 
           status: 400,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
 
     // Convert base64 to buffer and check size (5MB limit for Rekognition)
-    let imageBuffer: Buffer;
+    let imageBuffer: Uint8Array;
     try {
-      imageBuffer = Buffer.from(image_base64, 'base64');
+      // Decode base64 string to bytes
+      const binaryString = atob(image_base64);
+      imageBuffer = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        imageBuffer[i] = binaryString.charCodeAt(i);
+      }
     } catch (error) {
       return new Response(
         JSON.stringify({ 
@@ -117,7 +139,7 @@ export async function POST(request: Request): Promise<Response> {
         }),
         { 
           status: 400,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -131,7 +153,7 @@ export async function POST(request: Request): Promise<Response> {
         }),
         { 
           status: 400,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
     }
@@ -200,7 +222,7 @@ export async function POST(request: Request): Promise<Response> {
       JSON.stringify(moderationResponse),
       { 
         status: 200,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
 
@@ -217,7 +239,7 @@ export async function POST(request: Request): Promise<Response> {
           }),
           { 
             status: 400,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           }
         );
       }
@@ -230,7 +252,7 @@ export async function POST(request: Request): Promise<Response> {
           }),
           { 
             status: 400,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           }
         );
       }
@@ -243,7 +265,7 @@ export async function POST(request: Request): Promise<Response> {
           }),
           { 
             status: 400,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           }
         );
       }
@@ -256,8 +278,8 @@ export async function POST(request: Request): Promise<Response> {
       }),
       { 
         status: 500,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
   }
-}
+});

@@ -111,12 +111,12 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
       tempSelected.includes(folder.id)
     );
     
-    // Check if any new folders were selected that might need NSFW scanning
-    const newFolders = tempSelected.filter(id => !selectedFolders.includes(id));
+    // Only scan newly selected folders that haven't been scanned before
+    const newlySelectedFolders = tempSelected.filter(id => !selectedFolders.includes(id));
     
-    if (newFolders.length > 0 && userProfile) {
+    if (newlySelectedFolders.length > 0 && userProfile) {
       // Start NSFW scanning for new folders
-      handleNsfwScanning(newFolders, selectedFolderObjects);
+      handleNsfwScanning(newlySelectedFolders, selectedFolderObjects);
     } else {
       // No new folders or no user, just update selection
       onSelect(selectedFolderObjects);
@@ -125,17 +125,19 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
   };
 
   const handleNsfwScanning = async (
-    newFolderIds: string[], 
+    newlySelectedFolderIds: string[], 
     allSelectedFolders: SourceFolder[]
   ) => {
     if (!userProfile) return;
     
     setIsScanning(true);
-    setScanProgress({ current: 0, total: newFolderIds.length, message: 'Starting NSFW scan...' });
+    setScanProgress({ current: 0, total: newlySelectedFolderIds.length, message: 'Starting NSFW scan...' });
     
     try {
+      console.log('🔍 Starting NSFW scanning for newly selected folders:', newlySelectedFolderIds);
+      
       await NsfwModerationManager.checkAndModerateFolders(
-        newFolderIds,
+        newlySelectedFolderIds,
         userProfile.id,
         (current, total, message) => {
           setScanProgress({ current, total, message });
@@ -146,11 +148,17 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
       onSelect(allSelectedFolders);
       onClose();
       
+      Alert.alert(
+        'Scanning Complete',
+        `Successfully scanned ${newlySelectedFolderIds.length} new folders for content moderation.`,
+        [{ text: 'OK' }]
+      );
+      
     } catch (error) {
       console.error('NSFW scanning failed:', error);
       Alert.alert(
         'Scanning Error',
-        'Failed to scan folders for content moderation. Your folder selection has been saved, but some content may not be properly filtered.',
+        `Failed to scan some folders for content moderation. Your folder selection has been saved, but some content may not be properly filtered.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
         [
           { text: 'OK', onPress: () => {
             onSelect(allSelectedFolders);
