@@ -5,6 +5,7 @@
  */
 
 import { supabase } from './supabase';
+import { supabaseUrl, supabaseAnonKey } from './supabase';
 import { PhotoLoader } from './photoLoader';
 import { AlbumUtils } from './albumUtils';
 import { 
@@ -217,8 +218,6 @@ export class NsfwModerationManager {
     
     while (retries < MAX_RETRIES) {
       try {
-        // Get Supabase URL from environment
-        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
         if (!supabaseUrl) {
           throw new Error('Supabase URL not configured');
         }
@@ -229,7 +228,7 @@ export class NsfwModerationManager {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+            'Authorization': `Bearer ${supabaseAnonKey}`,
           },
           body: JSON.stringify({
             image_base64: base64,
