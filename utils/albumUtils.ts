@@ -231,7 +231,6 @@ export class AlbumUtils {
         is_locked: album.isLocked || false,
         is_all_photos_album: album.isAllPhotosAlbum || false,
         is_moderated_album: album.isModeratedAlbum || false,
-        is_moderated_album: album.isModeratedAlbum || false,
         created_at: new Date(album.createdAt).toISOString(),
         updated_at: new Date().toISOString(),
       };
