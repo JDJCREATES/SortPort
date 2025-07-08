@@ -1,9 +1,11 @@
-const { getDefaultConfig } = require('expo/metro-config');
+import { Platform } from 'react-native';
 
-const config = getDefaultConfig(__dirname);
+let OptimizedImageComponent;
 
-// Remove any react-native-svg specific configurations
-// Keep only standard Expo configuration
-config.resolver.platforms = ['native', 'web', 'ios', 'android'];
+if (Platform.OS === 'web') {
+  OptimizedImageComponent = require('../OptimizedImage.web').OptimizedImage;
+} else {
+  OptimizedImageComponent = require('../OptimizedImage.native').OptimizedImage;
+}
 
-module.exports = config;
+export const OptimizedImage = OptimizedImageComponent;
