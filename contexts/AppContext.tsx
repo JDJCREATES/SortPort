@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import { SupabaseAuth, UserProfile } from '../utils/supabase';
+import { supabaseUrl, supabaseAnonKey } from '../utils/supabase';
 import { RevenueCatManager } from '../utils/revenuecat';
 import { MediaStorage } from '../utils/mediaStorage';
 import { AlbumUtils } from '../utils/albumUtils';
@@ -187,6 +188,12 @@ export function AppProvider({ children }: AppProviderProps) {
   // Initialize app data
   useEffect(() => {
     console.log('🚀 Starting app initialization...');
+    
+    // Check if Supabase is properly configured
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.warn('⚠️ Supabase not configured - running in offline mode');
+    }
+    
     initializeApp();
   }, []);
 
@@ -276,6 +283,16 @@ export function AppProvider({ children }: AppProviderProps) {
     
     console.log('🔐 checkAuthStatus: Starting...');
     try {
+      // Skip auth check if Supabase is not configured
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.log('🔐 checkAuthStatus: Supabase not configured, skipping auth');
+        dispatch({
+          type: 'SET_AUTHENTICATED',
+          payload: { isAuthenticated: false, userProfile: null },
+        });
+        return;
+      }
+      
       const user = await SupabaseAuth.getCurrentUser();
       if (user) {
         console.log('👤 checkAuthStatus: User found, loading profile...');

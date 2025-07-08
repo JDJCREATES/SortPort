@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '../hooks/useFrameworkReady';
 import { useFonts } from 'expo-font';
 import { AppProvider } from '../contexts/AppContext';
+import { supabaseUrl, supabaseAnonKey } from '../utils/supabase';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -19,6 +20,13 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   useFrameworkReady();
+
+  // Check environment configuration on startup
+  useEffect(() => {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.warn('⚠️ Supabase environment variables not configured. Some features may not work.');
+    }
+  }, []);
 
   const [fontsLoaded, fontError] = useFonts({
     'Inter-Regular': Inter_400Regular,

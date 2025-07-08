@@ -214,14 +214,14 @@ export class NsfwModerationManager {
     imageId: string, 
     base64: string
   ): Promise<ModerationResult> {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Supabase configuration missing. Please check your environment variables.');
+    }
+    
     let retries = 0;
     
     while (retries < MAX_RETRIES) {
       try {
-        if (!supabaseUrl) {
-          throw new Error('Supabase URL not configured');
-        }
-        
         const functionUrl = `${supabaseUrl}/functions/v1/rekognition-moderation`;
         
         const response = await fetch(functionUrl, {
