@@ -89,7 +89,6 @@ export class PhotoLoader {
 
   static async loadRecentPhotos(limit: number = 100): Promise<ImageMeta[]> {
     try {
-
       if (Platform.OS === 'web' || !MediaLibrary) {
         throw new Error('Photo access is not available on web. Please use the mobile app to access your photos.');
       }
