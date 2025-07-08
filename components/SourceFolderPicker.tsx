@@ -7,6 +7,7 @@ import { PhotoLoader } from '../utils/photoLoader';
 import { useApp } from '../contexts/AppContext';
 import { lightTheme } from '../utils/theme';
 import { supabase } from '../utils/supabase';
+import { AlbumUtils } from '../utils/albumUtils';
 
 interface SourceFolder {
   id: string;
@@ -155,7 +156,14 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
 
       let processedCount = 0;
       let flaggedCount = 0;
-      const nsfwImages: any[] = []; // Store NSFW image metadata
+      const nsfwImages: any[] = [];
+      const moderationResults: { [imageId: string]: any } = {};
+
+      // Create folder name mapping
+      const folderNameMap: { [folderId: string]: string } = {};
+      allSelectedFolders.forEach(folder => {
+        folderNameMap[folder.id] = folder.name;
+      });
 
       // Process in batches of 5
       const BATCH_SIZE = 5;
@@ -166,7 +174,7 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
           try {
             const base64 = await PhotoLoader.getPhotoBase64(photo.uri);
             
-            // ✅ Call Supabase Edge Function instead of NsfwModerationManager
+            // ✅ Call Supabase Edge Function
             const { data, error } = await supabase.functions.invoke('rekognition-moderation', {
               body: {
                 image_base64: base64,
@@ -179,14 +187,18 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
               return { photo_id: photo.id, is_nsfw: false };
             }
 
+            // Store moderation results
+            moderationResults[photo.id] = data;
+
             if (data?.is_nsfw) {
               flaggedCount++;
-              // Add to NSFW images collection with full metadata
+              // Add to NSFW images collection with folder info
               nsfwImages.push({
                 id: photo.id,
                 uri: photo.uri,
                 filename: `nsfw_${photo.id}`,
-                width: 0, // We don't have dimensions from loadAllPhotoIds
+                folderId: photo.folderId || 'unknown', // Make sure PhotoLoader provides this
+                width: 0,
                 height: 0,
                 creationTime: Date.now(),
                 modificationTime: Date.now(),
@@ -218,11 +230,21 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
         }
       }
       
-      // Create or update moderated content album if NSFW images were found
+      // Create categorized moderated albums with intelligent naming
       if (nsfwImages.length > 0) {
-        console.log(`🔒 Found ${nsfwImages.length} NSFW images, creating/updating moderated album...`);
-        await AlbumUtils.ensureModeratedContentAlbumExists(nsfwImages);
+        console.log(`🔒 Found ${nsfwImages.length} NSFW images, creating categorized albums...`);
+        console.log(`📊 Moderation summary:`, {
+          totalScanned: photosToModerate.length,
+          flaggedCount: nsfwImages.length,
+          flaggedPercentage: ((nsfwImages.length / photosToModerate.length) * 100).toFixed(1) + '%'
+        });
+        
+        // Use the new categorized album creation instead of the generic one
+        await AlbumUtils.createCategorizedModeratedAlbums(nsfwImages, moderationResults);
       }
+
+      // Update moderated_folders table
+      await AlbumUtils.updateModeratedFolders(newlySelectedFolderIds, folderNameMap);
       
       onSelect(allSelectedFolders);
       onClose();

@@ -164,7 +164,7 @@ export class PhotoLoader {
     }
   }
 
-  static async loadAllPhotoIds(selectedFolders: string[] = ['all_photos']): Promise<Array<{id: string, uri: string}>> {
+  static async loadAllPhotoIds(selectedFolders: string[] = ['all_photos']): Promise<Array<{id: string, uri: string, folderId?: string}>> {
     try {
       console.log('📁 loadAllPhotoIds called with selectedFolders:', selectedFolders);
       
@@ -177,7 +177,7 @@ export class PhotoLoader {
         throw new Error('Photo library permission not granted');
       }
 
-      let allPhotoIds: Array<{id: string, uri: string}> = [];
+      let allPhotoIds: Array<{id: string, uri: string, folderId?: string}> = [];
 
       if (selectedFolders.length === 0 || selectedFolders.includes('all_photos')) {
         console.log('📸 Loading all photos from device...');
@@ -196,6 +196,7 @@ export class PhotoLoader {
           const photoIds = assets.assets.map(asset => ({
             id: asset.id,
             uri: asset.uri,
+            folderId: 'all_photos', // Default folder ID
           }));
 
           allPhotoIds.push(...photoIds);
@@ -237,6 +238,7 @@ export class PhotoLoader {
             const photoIds = assets.assets.map(asset => ({
               id: asset.id,
               uri: asset.uri,
+              folderId: album.id, // Use the actual album/folder ID
             }));
 
             allPhotoIds.push(...photoIds);

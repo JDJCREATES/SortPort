@@ -29,6 +29,7 @@ import { AlbumViewModeSelector } from '../../components/AlbumViewModeSelector';
 import { lightTheme } from '../../utils/theme';
 import { Album } from '../../types';
 import { AlbumViewMode } from '../../types/display';
+import { NsfwAlbumNaming } from '../../utils/moderation/nsfwAlbumNaming';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -116,12 +117,27 @@ export default function NsfwAlbumsScreen() {
       return state.sortOrder === 'asc' ? comparison : -comparison;
     });
 
-    return sorted;
+    // Enhance with category information
+    return sorted.map(album => {
+      const categoryTag = album.tags?.find(tag => 
+        NsfwAlbumNaming.getAllCategories().some(cat => cat.id === tag)
+      );
+      
+      const categoryInfo = categoryTag ? 
+        NsfwAlbumNaming.getCategoryById(categoryTag) : null;
+
+      return {
+        ...album,
+        categoryInfo,
+        displayIcon: categoryInfo?.icon || '🚫',
+      };
+    });
   }, [albums, state.searchQuery, state.sortBy, state.sortOrder]);
 
   // Enhanced refresh function
   const handleRefresh = useCallback(async (force: boolean = false) => {
     if (refreshPromiseRef.current && !force) {
+      console.log('🚫 Refresh blocked - another refresh in progress');
       return refreshPromiseRef.current;
     }
 
@@ -347,8 +363,23 @@ export default function NsfwAlbumsScreen() {
           <Text style={styles.emptyText}>
             {state.searchQuery
               ? `No moderated albums match "${state.searchQuery}".`
-              : 'No content has been flagged for moderation yet. This is where albums containing sensitive content would appear.'}
+              : 'No content has been flagged for moderation yet. When content is scanned, it will be automatically categorized into intelligent albums based on the type of content detected.'}
           </Text>
+          
+          {/* Show available categories */}
+          {!state.searchQuery && (
+            <View style={styles.categoriesPreview}>
+              <Text style={styles.categoriesTitle}>Content will be organized into categories like:</Text>
+              <View style={styles.categoriesGrid}>
+                {NsfwAlbumNaming.getAllCategories().slice(0, 6).map(category => (
+                  <View key={category.id} style={styles.categoryPreview}>
+                    <Text style={styles.categoryIcon}>{category.icon || '🚫'}</Text>
+                    <Text style={styles.categoryName}>{category.displayName || 'Unknown'}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
         </Animated.View>
       </View>
     ),
@@ -464,8 +495,28 @@ export default function NsfwAlbumsScreen() {
             Search: "{state.searchQuery}"
           </Text>
         )}
+        
+        {/* Show category breakdown */}
+        {moderatedAlbums.length > 0 && (
+          <View style={styles.categoryBreakdown}>
+            <Text style={styles.categoryBreakdownTitle}>Categories:</Text>
+            <View style={styles.categoryTags}>
+              {moderatedAlbums
+                .map(album => album.categoryInfo)
+                .filter((category): category is NonNullable<typeof category> => Boolean(category))
+                .map((category, index) => (
+                  <View key={index} style={styles.categoryTag}>
+                    <Text style={styles.categoryTagIcon}>{category.icon || '🚫'}</Text>
+                    <Text style={styles.categoryTagText}>{category.displayName || 'Unknown'}</Text>
+                  </View>
+                ))
+              }
+            </View>
+          </View>
+        )}
+        
         <Text style={styles.footerWarningText}>
-          ⚠️ This content has been flagged as potentially sensitive
+          ⚠️ Content automatically categorized by AI moderation
         </Text>
       </Animated.View>
     </View>
@@ -798,5 +849,71 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: lightTheme.spacing.xs,
     opacity: 0.8,
+  },
+  categoriesPreview: {
+    marginTop: lightTheme.spacing.xl,
+    alignItems: 'center',
+  },
+  categoriesTitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.text,
+    marginBottom: lightTheme.spacing.md,
+  },
+  categoriesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: lightTheme.spacing.sm,
+  },
+  categoryPreview: {
+    alignItems: 'center',
+    padding: lightTheme.spacing.sm,
+    backgroundColor: lightTheme.colors.surface,
+    borderRadius: lightTheme.borderRadius.md,
+    minWidth: 80,
+  },
+  categoryIcon: {
+    fontSize: 20,
+    marginBottom: lightTheme.spacing.xs,
+  },
+  categoryName: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: lightTheme.colors.textSecondary,
+    textAlign: 'center',
+  },
+  categoryBreakdown: {
+    marginTop: lightTheme.spacing.md,
+    alignItems: 'center',
+  },
+  categoryBreakdownTitle: {
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.textSecondary,
+    marginBottom: lightTheme.spacing.xs,
+  },
+  categoryTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: lightTheme.spacing.xs,
+  },
+  categoryTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightTheme.colors.surface,
+    paddingHorizontal: lightTheme.spacing.sm,
+    paddingVertical: lightTheme.spacing.xs,
+    borderRadius: lightTheme.borderRadius.sm,
+    gap: lightTheme.spacing.xs,
+  },
+  categoryTagIcon: {
+    fontSize: 12,
+  },
+  categoryTagText: {
+    fontSize: 10,
+    fontFamily: 'Inter-Medium',
+    color: lightTheme.colors.textSecondary,
   },
 });

@@ -2,6 +2,7 @@
  * Production-Ready Supabase Edge Function for AWS Rekognition Content Moderation
  * Handles batch image moderation using Amazon Rekognition's DetectModerationLabels API
  * Features: Batch processing, comprehensive error handling, performance monitoring, rate limiting
+ * This is the initial NSFW check before images are sent to GPT-Vision or other llm models
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
@@ -248,8 +249,28 @@ function validateEnvironment(): { client: RekognitionClient; region: string } {
   return { client, region: AWS_REGION };
 }
 
+function logImageDetails(imageBuffer: Uint8Array, imageId: string): void {
+  const size = imageBuffer.length;
+  const sizeMB = (size / (1024 * 1024)).toFixed(2);
+  
+  // Check image format
+  let format = 'unknown';
+  if (imageBuffer[0] === 0xFF && imageBuffer[1] === 0xD8) {
+    format = 'JPEG';
+  } else if (imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 && imageBuffer[2] === 0x4E && imageBuffer[3] === 0x47) {
+    format = 'PNG';
+  } else if (imageBuffer[8] === 0x57 && imageBuffer[9] === 0x45 && imageBuffer[10] === 0x42 && imageBuffer[11] === 0x50) {
+    format = 'WebP';
+  }
+  
+  console.log(`📸 Image ${imageId}: ${format}, ${sizeMB}MB, ${size} bytes, header: [${Array.from(imageBuffer.slice(0, 12)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}]`);
+}
+
 function validateImageData(image_base64: string, image_id: string): Uint8Array {
+  console.log(`🔍 [${image_id}] Starting validation...`);
+  
   if (!image_base64 || typeof image_base64 !== 'string') {
+    console.error(`❌ [${image_id}] Invalid image_base64: ${typeof image_base64}, length: ${image_base64?.length || 0}`);
     throw new ValidationError(
       'Invalid image_base64',
       'image_base64 must be a non-empty string'
@@ -257,14 +278,19 @@ function validateImageData(image_base64: string, image_id: string): Uint8Array {
   }
   
   if (!image_id || typeof image_id !== 'string') {
+    console.error(`❌ [${image_id}] Invalid image_id: ${typeof image_id}`);
     throw new ValidationError(
       'Invalid image_id',
       'image_id must be a non-empty string'
     );
   }
   
-  // Validate base64 format
-  if (!image_base64.match(/^[A-Za-z0-9+/]*={0,2}$/)) {
+  console.log(`📝 [${image_id}] Base64 length: ${image_base64.length} characters`);
+  
+  // Validate base64 format - be more lenient
+  const base64Pattern = /^[A-Za-z0-9+/]*={0,2}$/;
+  if (!base64Pattern.test(image_base64)) {
+    console.error(`❌ [${image_id}] Invalid base64 format. First 100 chars: ${image_base64.substring(0, 100)}`);
     throw new ValidationError(
       'Invalid base64 encoding',
       'image_base64 contains invalid characters'
@@ -273,26 +299,35 @@ function validateImageData(image_base64: string, image_id: string): Uint8Array {
   
   let imageBuffer: Uint8Array;
   try {
+    console.log(`🔄 [${image_id}] Decoding base64...`);
     const binaryString = atob(image_base64);
     imageBuffer = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       imageBuffer[i] = binaryString.charCodeAt(i);
     }
+    console.log(`✅ [${image_id}] Base64 decoded successfully`);
   } catch (error) {
+    console.error(`❌ [${image_id}] Base64 decode failed:`, error);
     throw new ValidationError(
       'Invalid base64 encoding',
-      'Failed to decode base64 string'
+      `Failed to decode base64 string: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
   
   // Check image size
   const imageSizeMB = imageBuffer.length / (1024 * 1024);
+  console.log(`📏 [${image_id}] Image size: ${imageSizeMB.toFixed(2)}MB`);
+  
   if (imageSizeMB > CONFIG.MAX_IMAGE_SIZE_MB) {
+    console.error(`❌ [${image_id}] Image too large: ${imageSizeMB.toFixed(2)}MB > ${CONFIG.MAX_IMAGE_SIZE_MB}MB`);
     throw new ValidationError(
       'Image too large',
       `Image size (${imageSizeMB.toFixed(2)}MB) exceeds ${CONFIG.MAX_IMAGE_SIZE_MB}MB limit`
     );
   }
+  
+  // Log image details
+  logImageDetails(imageBuffer, image_id);
   
   // Basic image format validation (check for common image headers)
   const isValidImage = (
@@ -301,16 +336,25 @@ function validateImageData(image_base64: string, image_id: string): Uint8Array {
     // PNG
     (imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 && imageBuffer[2] === 0x4E && imageBuffer[3] === 0x47) ||
     // WebP
-    (imageBuffer[8] === 0x57 && imageBuffer[9] === 0x45 && imageBuffer[10] === 0x42 && imageBuffer[11] === 0x50)
+    (imageBuffer[8] === 0x57 && imageBuffer[9] === 0x45 && imageBuffer[10] === 0x42 && imageBuffer[11] === 0x50) ||
+    // GIF
+    (imageBuffer[0] === 0x47 && imageBuffer[1] === 0x49 && imageBuffer[2] === 0x46) ||
+    // BMP
+    (imageBuffer[0] === 0x42 && imageBuffer[1] === 0x4D)
   );
   
   if (!isValidImage) {
+    const headerHex = Array.from(imageBuffer.slice(0, 12))
+      .map(b => '0x' + b.toString(16).padStart(2, '0'))
+      .join(', ');
+    console.error(`❌ [${image_id}] Invalid image format. Header bytes: [${headerHex}]`);
     throw new ValidationError(
       'Invalid image format',
-      'Image must be in JPEG, PNG, or WebP format'
+      `Image must be in JPEG, PNG, WebP, GIF, or BMP format. Got header: [${headerHex}]`
     );
   }
   
+  console.log(`✅ [${image_id}] Validation completed successfully`);
   return imageBuffer;
 }
 
@@ -447,14 +491,20 @@ async function processImageWithRetry(
 ): Promise<ModerationResult> {
   const monitor = new PerformanceMonitor();
   
+  console.log(`🚀 [${imageId}] Starting Rekognition analysis (attempt ${retryCount + 1}/${CONFIG.MAX_RETRIES + 1})`);
+  
   try {
     const command = new DetectModerationLabelsCommand({
       Image: { Bytes: imageBuffer },
       MinConfidence: CONFIG.MIN_CONFIDENCE_FOR_API,
     });
     
+    console.log(`📡 [${imageId}] Sending request to AWS Rekognition...`);
     const response = await client.send(command);
+    console.log(`✅ [${imageId}] Rekognition response received`);
+    
     const moderationLabels = response.ModerationLabels || [];
+    console.log(`🏷️ [${imageId}] Found ${moderationLabels.length} moderation labels`);
     
     // Process results
     const confidenceThreshold = settings.confidence_threshold || CONFIG.DEFAULT_CONFIDENCE_THRESHOLD;
@@ -467,6 +517,8 @@ async function processImageWithRetry(
       const confidence = label.Confidence || 0;
       maxConfidence = Math.max(maxConfidence, confidence);
       
+      console.log(`🔍 [${imageId}] Label: ${label.Name}, Confidence: ${confidence.toFixed(2)}%, Parent: ${label.ParentName || 'none'}`);
+      
       if (confidence >= confidenceThreshold) {
         const labelName = label.Name || '';
         const parentName = label.ParentName || '';
@@ -475,19 +527,20 @@ async function processImageWithRetry(
           labelName.includes(category) || parentName.includes(category)
         )) {
           isNsfw = true;
+          console.log(`🚨 [${imageId}] NSFW detected: ${labelName} (${confidence.toFixed(2)}%)`);
           break;
         }
       }
     }
     
-    return {
+    const result = {
       image_id: imageId,
       is_nsfw: isNsfw,
-      moderation_labels: moderationLabels.map((label: AWSModerationLabel) => ({
+      moderation_labels: moderationLabels.map((label: any) => ({
         Name: label.Name || '',
         Confidence: label.Confidence || 0,
-        ParentName: label.ParentName,
-        Instances: label.Instances?.map((instance: AWSInstance) => ({
+        ParentName: label.ParentName || undefined,
+        Instances: label.Instances?.map((instance: any) => ({
           BoundingBox: instance.BoundingBox ? {
             Width: instance.BoundingBox.Width || 0,
             Height: instance.BoundingBox.Height || 0,
@@ -495,22 +548,32 @@ async function processImageWithRetry(
             Top: instance.BoundingBox.Top || 0,
           } : undefined,
           Confidence: instance.Confidence || 0,
-        })),
+        })) || undefined,
       })),
       confidence_score: maxConfidence,
       processing_time_ms: monitor.getElapsedMs(),
     };
     
+    console.log(`✅ [${imageId}] Analysis complete: ${isNsfw ? 'NSFW' : 'Safe'}, max confidence: ${maxConfidence.toFixed(2)}%, time: ${monitor.getElapsedMs()}ms`);
+    return result;
+    
   } catch (error) {
+    console.error(`❌ [${imageId}] Rekognition error (attempt ${retryCount + 1}):`, {
+      name: error instanceof Error ? error.name : 'Unknown',
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    
     // Handle retryable errors
     if (retryCount < CONFIG.MAX_RETRIES && isRetryableError(error)) {
-      console.warn(`⚠️ Retrying image ${imageId} (attempt ${retryCount + 1}/${CONFIG.MAX_RETRIES}):`, error);
-      await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY_MS * Math.pow(2, retryCount)));
+      const delayMs = CONFIG.RETRY_DELAY_MS * Math.pow(2, retryCount);
+      console.warn(`⏳ [${imageId}] Retrying in ${delayMs}ms (attempt ${retryCount + 1}/${CONFIG.MAX_RETRIES})`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
       return processImageWithRetry(client, imageBuffer, imageId, settings, retryCount + 1);
     }
     
     // Non-retryable error or max retries exceeded
-    console.error(`❌ Failed to process image ${imageId}:`, error);
+    console.error(`💀 [${imageId}] Final failure after ${retryCount + 1} attempts`);
     return {
       image_id: imageId,
       is_nsfw: false,
@@ -622,10 +685,11 @@ serve(async (req: Request): Promise<Response> => {
   const requestId = req.headers.get('X-Request-ID') || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const requestMonitor = new PerformanceMonitor();
   
-  console.log(`🚀 [${requestId}] ${req.method} ${req.url}`);
+  console.log(`🚀 [${requestId}] ${req.method} ${req.url} - User-Agent: ${req.headers.get('User-Agent') || 'unknown'}`);
   
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
+    console.log(`✅ [${requestId}] CORS preflight handled`);
     return new Response(null, {
       status: 200,
       headers: CORS_HEADERS,
@@ -634,6 +698,7 @@ serve(async (req: Request): Promise<Response> => {
   
   // Only allow POST requests
   if (req.method !== "POST") {
+    console.error(`❌ [${requestId}] Method not allowed: ${req.method}`);
     return new Response(
       JSON.stringify({
         error: 'Method not allowed',
@@ -649,14 +714,20 @@ serve(async (req: Request): Promise<Response> => {
   
   try {
     // Validate environment and initialize client
+    console.log(`🔧 [${requestId}] Validating AWS environment...`);
     const { client, region } = validateEnvironment();
-    console.log(`🔧 [${requestId}] AWS client initialized for region: ${region}`);
+    console.log(`✅ [${requestId}] AWS client initialized for region: ${region}`);
     
     // Parse and validate request
     let body: any;
     try {
-      body = await req.json();
+      console.log(`📝 [${requestId}] Parsing request body...`);
+      const rawBody = await req.text();
+      console.log(`📏 [${requestId}] Raw body length: ${rawBody.length} characters`);
+      body = JSON.parse(rawBody);
+      console.log(`✅ [${requestId}] Request body parsed successfully`);
     } catch (error) {
+      console.error(`❌ [${requestId}] JSON parse error:`, error);
       throw new ValidationError('Invalid JSON in request body', 'Request must contain valid JSON');
     }
     
@@ -665,6 +736,7 @@ serve(async (req: Request): Promise<Response> => {
     
     // Check rate limits
     if (!globalRateLimiter.canMakeRequest()) {
+      console.warn(`⚠️ [${requestId}] Rate limit exceeded`);
       return new Response(
         JSON.stringify({
           error: 'Rate limit exceeded',
@@ -687,6 +759,7 @@ serve(async (req: Request): Promise<Response> => {
     }
     
     // Process the batch
+    console.log(`🔄 [${requestId}] Starting batch processing...`);
     const result = await Promise.race([
       processBatch(client, request, globalRateLimiter),
       new Promise<never>((_, reject) => 
