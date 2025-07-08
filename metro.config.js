@@ -1,11 +1,5 @@
-import { Platform } from 'react-native';
+const { getDefaultConfig } = require('expo/metro-config');
 
-let OptimizedImageComponent;
+const config = getDefaultConfig(__dirname);
 
-if (Platform.OS === 'web') {
-  OptimizedImageComponent = require('../OptimizedImage.web').OptimizedImage;
-} else {
-  OptimizedImageComponent = require('../OptimizedImage.native').OptimizedImage;
-}
-
-export const OptimizedImage = OptimizedImageComponent;
+module.exports = config;
