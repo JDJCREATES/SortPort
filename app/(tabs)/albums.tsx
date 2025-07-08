@@ -610,8 +610,8 @@ export default function AlbumsScreen() {
     );
   };
 
-  const renderFooter = () => (
-    <View style={styles.footer}>
+          ? `Showing ${processedAlbums.length} albums${state.showModeratedAlbumsHere ? ' (including NSFW)' : ''}${state.showLocked ? ' (including locked)' : ''}`
+          : `Showing ${processedAlbums.length} albums${state.showModeratedAlbumsHere ? ' (including NSFW)' : ''}`
       <Animated.View entering={FadeInDown.delay(300)}>
         <Text style={styles.footerText}>
           {state.showLocked

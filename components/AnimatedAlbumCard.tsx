@@ -214,6 +214,14 @@ const styles = StyleSheet.create({
     borderRadius: lightTheme.borderRadius.sm,
     padding: lightTheme.spacing.xs,
   },
+  moderatedOverlay: {
+    position: 'absolute',
+    top: lightTheme.spacing.sm,
+    left: lightTheme.spacing.sm,
+    backgroundColor: 'rgba(255, 152, 0, 0.9)', // Orange warning color
+    borderRadius: lightTheme.borderRadius.sm,
+    padding: lightTheme.spacing.xs,
+  },
   countBadge: {
     position: 'absolute',
     bottom: lightTheme.spacing.sm,

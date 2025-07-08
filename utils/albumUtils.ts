@@ -294,6 +294,7 @@ export class AlbumUtils {
       if (updates.count !== undefined) updateData.count = updates.count;
       if (updates.isLocked !== undefined) updateData.is_locked = updates.isLocked;
       if (updates.isModeratedAlbum !== undefined) updateData.is_moderated_album = updates.isModeratedAlbum;
+      if (updates.isModeratedAlbum !== undefined) updateData.is_moderated_album = updates.isModeratedAlbum;
 
       const { error } = await supabase
         .from('albums')

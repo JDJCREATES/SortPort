@@ -40,6 +40,7 @@ export interface Album {
   count: number;
   isAllPhotosAlbum?: boolean;
   isModeratedAlbum?: boolean;
+  isModeratedAlbum?: boolean;
 }
 
 export interface SortSession {

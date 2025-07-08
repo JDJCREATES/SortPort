@@ -1,8 +1,14 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { lightTheme } from '../../utils/theme';
+import { useApp } from '../../contexts/AppContext';
 
 export default function TabLayout() {
+  const { userFlags, settings } = useApp();
+  
+  // Determine if NSFW tab should be shown
+  const showNsfwTab = userFlags.hasUnlockPack && settings.showModeratedContent;
+
   return (
     <Tabs
       screenOptions={{
@@ -32,6 +38,17 @@ export default function TabLayout() {
           ),
         }}
       />
+      {showNsfwTab && (
+        <Tabs.Screen
+          name="nsfw-albums"
+          options={{
+            title: 'NSFW',
+            tabBarIcon: ({ size, color }) => (
+              <Ionicons name="warning" size={size} color={color} />
+            ),
+          }}
+        />
+      )}
       <Tabs.Screen
         name="settings"
         options={{

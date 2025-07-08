@@ -155,6 +155,7 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
 
       let processedCount = 0;
       let flaggedCount = 0;
+      const nsfwImages: any[] = []; // Store NSFW image metadata
 
       // Process in batches of 5
       const BATCH_SIZE = 5;
@@ -180,6 +181,16 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
 
             if (data?.is_nsfw) {
               flaggedCount++;
+              // Add to NSFW images collection with full metadata
+              nsfwImages.push({
+                id: photo.id,
+                uri: photo.uri,
+                filename: `nsfw_${photo.id}`,
+                width: 0, // We don't have dimensions from loadAllPhotoIds
+                height: 0,
+                creationTime: Date.now(),
+                modificationTime: Date.now(),
+              });
             }
 
             return {
@@ -205,6 +216,12 @@ export function SourceFolderPicker({ visible, onClose, onSelect, selectedFolders
         if (i + BATCH_SIZE < photosToModerate.length) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
+      }
+      
+      // Create or update moderated content album if NSFW images were found
+      if (nsfwImages.length > 0) {
+        console.log(`🔒 Found ${nsfwImages.length} NSFW images, creating/updating moderated album...`);
+        await AlbumUtils.ensureModeratedContentAlbumExists(nsfwImages);
       }
       
       onSelect(allSelectedFolders);
