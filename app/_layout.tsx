@@ -4,7 +4,6 @@ import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '../hooks/useFrameworkReady';
 import { useFonts } from 'expo-font';
 import { AppProvider } from '../contexts/AppContext';
-import { supabaseUrl, supabaseAnonKey } from '../utils/supabase';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -13,21 +12,13 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SupabaseAuth } from '../utils/supabase'
-import { useFrameworkReady } from '@/hooks/useFrameworkReady';
+import { SupabaseAuth } from '../utils/supabase';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   useFrameworkReady();
-
-  // Check environment configuration on startup
-  useEffect(() => {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.warn('⚠️ Supabase environment variables not configured. Some features may not work.');
-    }
-  }, []);
 
   const [fontsLoaded, fontError] = useFonts({
     'Inter-Regular': Inter_400Regular,

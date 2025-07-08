@@ -1,7 +1,6 @@
 import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
-import { supabaseUrl, supabaseAnonKey } from './supabase';
 import { Album, SortSession } from '../types';
 import { PhotoLoader } from './photoLoader';
 import { MediaStorage } from './mediaStorage';
@@ -22,12 +21,6 @@ export class AlbumUtils {
   static async ensureAllPhotosAlbumExists(): Promise<void> {
     try {
       console.log('📁 ensureAllPhotosAlbumExists: Starting...');
-      
-      // Skip if Supabase is not configured
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.log('📁 ensureAllPhotosAlbumExists: Supabase not configured, skipping');
-        return;
-      }
       
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
@@ -130,12 +123,6 @@ export class AlbumUtils {
    */
   static async saveAlbums(albums: Album[]): Promise<void> {
     try {
-      // Skip if Supabase is not configured
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.log('📁 saveAlbums: Supabase not configured, skipping');
-        return;
-      }
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         throw new Error('User not authenticated');
@@ -189,12 +176,6 @@ export class AlbumUtils {
    */
   static async loadAlbums(): Promise<Album[]> {
     try {
-      // Skip if Supabase is not configured
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.log('📁 loadAlbums: Supabase not configured, returning empty array');
-        return [];
-      }
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         console.log('User not authenticated, returning empty albums');
@@ -234,12 +215,6 @@ export class AlbumUtils {
    */
   static async addAlbum(album: Album): Promise<void> {
     try {
-      // Skip if Supabase is not configured
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.log('📁 addAlbum: Supabase not configured, skipping');
-        return;
-      }
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         throw new Error('User not authenticated');
@@ -278,12 +253,6 @@ export class AlbumUtils {
    */
   static async removeAlbum(albumId: string): Promise<void> {
     try {
-      // Skip if Supabase is not configured
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.log('📁 removeAlbum: Supabase not configured, skipping');
-        return;
-      }
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         throw new Error('User not authenticated');
@@ -309,12 +278,6 @@ export class AlbumUtils {
    */
   static async updateAlbum(albumId: string, updates: Partial<Album>): Promise<void> {
     try {
-      // Skip if Supabase is not configured
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.log('📁 updateAlbum: Supabase not configured, skipping');
-        return;
-      }
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         throw new Error('User not authenticated');
@@ -352,12 +315,6 @@ export class AlbumUtils {
    */
   static async saveSortSession(session: SortSession): Promise<void> {
     try {
-      // Skip if Supabase is not configured
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.log('📁 saveSortSession: Supabase not configured, skipping');
-        return;
-      }
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         throw new Error('User not authenticated');
@@ -415,12 +372,6 @@ export class AlbumUtils {
    */
   static async loadSortSessions(): Promise<SortSession[]> {
     try {
-      // Skip if Supabase is not configured
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.log('📁 loadSortSessions: Supabase not configured, returning empty array');
-        return [];
-      }
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         console.log('User not authenticated, returning empty sessions');
@@ -456,12 +407,6 @@ export class AlbumUtils {
    */
   static async getSmartAlbums(): Promise<Album[]> {
     try {
-      // Skip if Supabase is not configured
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.log('📁 getSmartAlbums: Supabase not configured, returning empty array');
-        return [];
-      }
-      
       const albums = await this.loadAlbums();
       
       // If user has albums, return them
