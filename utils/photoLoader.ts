@@ -164,8 +164,20 @@ export class PhotoLoader {
     }
   }
 
+  private static photoIdsCache: Map<string, { data: Array<{id: string, uri: string, folderId?: string}>; timestamp: number }> = new Map();
+  private static CACHE_DURATION_MS = 30000; // 30 seconds
+
   static async loadAllPhotoIds(selectedFolders: string[] = ['all_photos']): Promise<Array<{id: string, uri: string, folderId?: string}>> {
     try {
+      const cacheKey = JSON.stringify(selectedFolders.sort());
+      const cached = this.photoIdsCache.get(cacheKey);
+      
+      // Return cached data if it's still fresh
+      if (cached && (Date.now() - cached.timestamp) < this.CACHE_DURATION_MS) {
+        console.log('📸 loadAllPhotoIds: Using cached data, count:', cached.data.length);
+        return cached.data;
+      }
+
       console.log('📁 loadAllPhotoIds called with selectedFolders:', selectedFolders);
       
       if (Platform.OS === 'web') {
@@ -261,6 +273,13 @@ export class PhotoLoader {
       }
 
       console.log('📸 Final allPhotoIds count:', allPhotoIds.length);
+      
+      // Cache the result
+      this.photoIdsCache.set(cacheKey, {
+        data: allPhotoIds,
+        timestamp: Date.now()
+      });
+
       return allPhotoIds;
     } catch (error) {
       console.error('Error loading all photo IDs:', error);

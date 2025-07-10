@@ -244,13 +244,7 @@ export function PictureHackBar({
           </AnimatedTouchableOpacity>
         </View>
         
-        {/* Credit cost indicator */}
-        <View style={styles.creditIndicator}>
-          <Ionicons name="diamond" size={12} color={lightTheme.colors.primary} />
-          <Text style={styles.creditCost}>
-            {CREDIT_COSTS.NATURAL_LANGUAGE_QUERY} credits per query
-          </Text>
-        </View>
+     
       </View>
     </Animated.View>
   );

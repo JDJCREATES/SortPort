@@ -1,10 +1,11 @@
 import { Tabs } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Platform } from 'react-native';
 import { lightTheme } from '../../utils/theme';
 import { useApp } from '../../contexts/AppContext';
 
 export default function TabLayout() {
-  const { userFlags, settings } = useApp();
+  const { settings } = useApp();
   
   return (
     <Tabs
@@ -15,14 +16,45 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: lightTheme.colors.background,
           borderTopColor: lightTheme.colors.border,
+          // Add subtle shadow/elevation
+          ...Platform.select({
+            ios: {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -1 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+            },
+            android: {
+              elevation: 8,
+            },
+          }),
         },
+        // Valid tab bar styling options
+        tabBarItemStyle: {
+          paddingVertical: 4,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontFamily: 'Inter-Medium',
+          marginTop: 2,
+        },
+        // Valid animation options
+        animation: 'shift',
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ size, color }) => (
-            <Ionicons name="home" size={size} color={color} />
+          tabBarIcon: ({ size, color, focused }) => (
+            <Ionicons 
+              name={focused ? "home" : "home-outline"} 
+              size={size} 
+              color={color}
+              style={{
+                transform: [{ scale: focused ? 1.05 : 1 }],
+                opacity: focused ? 1 : 0.8,
+              }}
+            />
           ),
         }}
       />
@@ -30,8 +62,16 @@ export default function TabLayout() {
         name="albums"
         options={{
           title: 'Albums',
-          tabBarIcon: ({ size, color }) => (
-            <Ionicons name="folder-open" size={size} color={color} />
+          tabBarIcon: ({ size, color, focused }) => (
+            <Ionicons 
+              name={focused ? "folder-open" : "folder-open-outline"} 
+              size={size} 
+              color={color}
+              style={{
+                transform: [{ scale: focused ? 1.05 : 1 }],
+                opacity: focused ? 1 : 0.8,
+              }}
+            />
           ),
         }}
       />
@@ -39,10 +79,19 @@ export default function TabLayout() {
         name="nsfw-albums"
         options={{
           title: 'NSFW',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="emoticon-devil" size={24} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <MaterialCommunityIcons 
+              name="emoticon-devil" 
+              size={24} 
+              color={color}
+              style={{
+                transform: [{ scale: focused ? 1.05 : 1 }],
+                opacity: focused ? 1 : 0.8,
+              }}
+            />
           ),
-          href: '/nsfw-albums',
+          // Hide the tab completely when showModeratedContent is false
+          href: settings.showModeratedContent ? '/nsfw-albums' : null,
         }}
       />
       <Tabs.Screen
@@ -50,7 +99,15 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={24} color={color} />
+            <Ionicons 
+              name={focused ? 'settings' : 'settings-outline'} 
+              size={24} 
+              color={color}
+              style={{
+                transform: [{ scale: focused ? 1.05 : 1 }],
+                opacity: focused ? 1 : 0.8,
+              }}
+            />
           ),
         }}
       />

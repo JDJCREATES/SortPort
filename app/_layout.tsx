@@ -12,7 +12,6 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SupabaseAuth } from '../utils/supabase';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();

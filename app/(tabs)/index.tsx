@@ -63,12 +63,6 @@ export default function HomeScreen() {
   };
 
   const handleAlbumPress = (album: Album) => {
-    if (album.isLocked) {
-      // Show premium prompt
-      router.push('/settings');
-      return;
-    }
-    
     router.push(`/album/${album.id}`);
   };
 
@@ -92,7 +86,7 @@ export default function HomeScreen() {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
           <Text style={styles.title}>SnapSort</Text>
-          <Text style={styles.subtitle}>AI-powered photo organization</Text>
+          <Text style={styles.subtitle}>Your AI-powered photo organization companion</Text>
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(200)}>
@@ -100,7 +94,7 @@ export default function HomeScreen() {
         </Animated.View>
 
         {/* Auto-Sort Status */}
-        {userFlags.isSubscribed && settings.autoSort && autoSortStatus !== 'idle' && (
+        {userFlags.hasPurchasedCredits && settings.autoSort && autoSortStatus !== 'idle' && (
           <Animated.View entering={FadeInUp.delay(250)} style={styles.autoSortStatus}>
             <View style={styles.autoSortContainer}>
               {autoSortStatus === 'running' ? (
@@ -138,10 +132,17 @@ export default function HomeScreen() {
             </Animated.View>
           ) : (
             <ResponsiveAlbumGrid
-              albums={albums.slice(0, 6)}
+              albums={albums.slice(0, 6).filter(album => {
+                // Hide moderated albums unless both toggles are enabled
+                if (album.isModeratedAlbum) {
+                  return settings.showModeratedContent && settings.showModeratedInMainAlbums;
+                }
+                // Always show non-moderated albums
+                return true;
+              })}
               viewMode="grid-2"
               onAlbumPress={handleAlbumPress}
-              showLocked={true}
+              showLocked={false}
             />
           )}
         </View>

@@ -94,8 +94,8 @@ export default function AlbumsScreen() {
     
     let filtered = [...albums];
 
-    // Filter out moderated albums unless explicitly showing NSFW content
-    if (!settings.showModeratedContent) {
+    // Filter out moderated albums based on settings
+    if (!settings.showModeratedInMainAlbums) {
       filtered = filtered.filter(album => !album.isModeratedAlbum);
     }
 
@@ -109,11 +109,7 @@ export default function AlbumsScreen() {
       );
     }
 
-    // Filter locked albums if needed
-    if (!state.showLocked) {
-      filtered = filtered.filter(album => !album.isLocked);
-    }
-
+    // Remove the showLocked filter logic - no more locked albums
     // Apply sorting
     const sorted = [...filtered].sort((a, b) => {
       let comparison = 0;
@@ -136,7 +132,7 @@ export default function AlbumsScreen() {
     });
 
     return sorted;
-  }, [albums, state.searchQuery, state.sortBy, state.sortOrder, state.showLocked, settings.showModeratedContent]);
+  }, [albums, state.searchQuery, state.sortBy, state.sortOrder, settings.showModeratedInMainAlbums]);
 
   // Enhanced refresh function
   const handleRefresh = useCallback(async (force: boolean = false) => {
@@ -229,18 +225,6 @@ export default function AlbumsScreen() {
   const handleAlbumPress = useCallback(
     (album: Album) => {
       try {
-        if (album.isLocked && !userFlags.hasPurchasedCredits) {
-          Alert.alert(
-            'Premium Feature',
-            'This album is locked. Purchase credits to access premium features.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Buy Credits', onPress: () => router.push('/settings') },
-            ]
-          );
-          return;
-        }
-
         headerOpacity.value = withTiming(0.5, { duration: 200 });
         router.push(`/album/${album.id}`);
       } catch (error) {
@@ -248,7 +232,7 @@ export default function AlbumsScreen() {
         Alert.alert('Error', 'Failed to open album. Please try again.');
       }
     },
-    [headerOpacity, userFlags.hasPurchasedCredits]
+    [headerOpacity]
   );
 
   const handleRetry = useCallback(() => {

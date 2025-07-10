@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { SupabaseAuth, UserProfile } from '../utils/supabase';
 import { CreditPurchaseManager } from '../utils/creditPurchaseManager';
 import { MediaStorage } from '../utils/mediaStorage';
@@ -65,6 +65,7 @@ const initialState: AppState = {
     selectedFolders: ['all_photos'],
     lastAutoSortTimestamp: 0,
     showModeratedContent: false,
+    showModeratedInMainAlbums: false,
   },
   isLoadingSettings: true,
   albums: [],
@@ -193,12 +194,15 @@ interface AppProviderProps {
 export function AppProvider({ children }: AppProviderProps) {
   const [state, dispatch] = useReducer(appReducer, initialState);
   
-  // Add these refs to prevent race conditions
+  // Add the missing initializationPromise ref
   const initializationPromise = useRef<Promise<void> | null>(null);
+  
+  // Add these refs to prevent race conditions
   const refreshPromises = useRef<{
     userFlags: Promise<void> | null;
     albums: Promise<void> | null;
-  }>({ userFlags: null, albums: null });
+    allPhotosAlbum: Promise<void> | null;
+  }>({ userFlags: null, albums: null, allPhotosAlbum: null });
 
   // Initialize app data - prevent multiple concurrent calls
   useEffect(() => {
@@ -441,13 +445,22 @@ export function AppProvider({ children }: AppProviderProps) {
   };
 
   const updateSetting = async (key: keyof AppSettings, value: any) => {
-    const newSettings = { ...state.settings, [key]: value };
+    const currentSettings = await MediaStorage.loadSettings();
+    const newSettings = { ...currentSettings, [key]: value };
     dispatch({ type: 'SET_SETTINGS', payload: newSettings });
     await MediaStorage.saveSettings(newSettings);
     
     // If folder selection changed, update All Photos album
     if (key === 'selectedFolders') {
       await ensureAllPhotosAlbum();
+    }
+    
+    // If showModeratedContent changed, refresh albums to apply filter
+    if (key === 'showModeratedContent') {
+      // Use a timeout to prevent immediate re-render issues
+      setTimeout(() => {
+        refreshAlbums();
+      }, 100);
     }
   };
 
@@ -465,9 +478,13 @@ export function AppProvider({ children }: AppProviderProps) {
     }
   };
 
-  const refreshAlbums = async () => {
+  const refreshAlbums = useCallback(async () => {
+    // Add stack trace to debug what's calling this
+    console.log('📁 refreshAlbums called from:', new Error().stack?.split('\n')[2]?.trim());
+    
     // Prevent concurrent executions
     if (refreshPromises.current.albums) {
+      console.log('📁 refreshAlbums: Already running, waiting for completion...');
       return refreshPromises.current.albums;
     }
 
@@ -476,24 +493,28 @@ export function AppProvider({ children }: AppProviderProps) {
     
     const promise = (async () => {
       try {
-        // Check permissions before loading albums
         const permissionResult = await PhotoLoader.checkAndRequestPermissions();
         
         if (!permissionResult.granted) {
           console.warn('⚠️ refreshAlbums: Photo permissions not granted:', permissionResult.message);
           dispatch({ type: 'SET_ALBUMS_ERROR', payload: permissionResult.message });
+          return; // Don't try to load albums without permissions
         }
         
-        // Ensure All Photos album exists first
-        console.log('📁 refreshAlbums: Ensuring All Photos album exists...');
-        await AlbumUtils.ensureAllPhotosAlbumExists();
+        // Only ensure All Photos album exists if we're not already doing it
+        if (!refreshPromises.current.allPhotosAlbum) {
+          console.log('📁 refreshAlbums: Ensuring All Photos album exists...');
+          refreshPromises.current.allPhotosAlbum = AlbumUtils.ensureAllPhotosAlbumExists();
+          await refreshPromises.current.allPhotosAlbum;
+          refreshPromises.current.allPhotosAlbum = null;
+        }
         
-        // Load all albums
         console.log('📁 refreshAlbums: Loading albums from database...');
         let albums = await AlbumUtils.loadAlbums();
         
-        // Filter out moderated albums if NSFW filter is enabled
-        if (state.settings.nsfwFilter && !state.settings.showModeratedContent) {
+        // Use current state instead of stale closure
+        const currentSettings = await MediaStorage.loadSettings();
+        if (currentSettings.nsfwFilter && !currentSettings.showModeratedContent) {
           albums = albums.filter(album => !album.isModeratedAlbum);
         }
         
@@ -503,15 +524,15 @@ export function AppProvider({ children }: AppProviderProps) {
       } catch (error) {
         console.error('❌ refreshAlbums: Error:', error);
         dispatch({ type: 'SET_ALBUMS_ERROR', payload: error instanceof Error ? error.message : 'Failed to load albums' });
-        dispatch({ type: 'SET_ALBUMS_LOADING', payload: false });
       } finally {
+        dispatch({ type: 'SET_ALBUMS_LOADING', payload: false });
         refreshPromises.current.albums = null;
       }
     })();
 
     refreshPromises.current.albums = promise;
     return promise;
-  };
+  }, []);
 
   const addAlbum = async (album: Album) => {
     await AlbumUtils.addAlbum(album);
@@ -528,15 +549,28 @@ export function AppProvider({ children }: AppProviderProps) {
     dispatch({ type: 'REMOVE_ALBUM', payload: id });
   };
 
-  const ensureAllPhotosAlbum = async () => {
+  const ensureAllPhotosAlbum = useCallback(async () => {
+    // Prevent concurrent executions
+    if (refreshPromises.current.allPhotosAlbum) {
+      console.log('📁 ensureAllPhotosAlbum: Already running, waiting for completion...');
+      return refreshPromises.current.allPhotosAlbum;
+    }
+
     try {
-      await AlbumUtils.ensureAllPhotosAlbumExists();
-      // Refresh albums to get the updated All Photos album
-      await refreshAlbums();
+      console.log('📁 ensureAllPhotosAlbum: Starting...');
+      refreshPromises.current.allPhotosAlbum = AlbumUtils.ensureAllPhotosAlbumExists();
+      await refreshPromises.current.allPhotosAlbum;
+      
+      // Only refresh albums if we're not already refreshing them
+      if (!refreshPromises.current.albums) {
+        await refreshAlbums();
+      }
     } catch (error) {
       console.error('Error ensuring All Photos album:', error);
+    } finally {
+      refreshPromises.current.allPhotosAlbum = null;
     }
-  };
+  }, [refreshAlbums]);
 
   const contextValue: AppContextType = {
     ...state,

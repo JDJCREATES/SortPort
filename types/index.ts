@@ -96,9 +96,11 @@ export interface AppSettings {
   nsfwFilter: boolean;
   notifications: boolean;
   customColors?: CustomThemeColors;
-  selectedFolders?: string[];
-  lastAutoSortTimestamp?: number;
-  showModeratedContent?: boolean;
+  selectedFolders: string[];
+  lastAutoSortTimestamp: number;
+  showModeratedContent: boolean;
+  // Add this new toggle
+  showModeratedInMainAlbums: boolean;
 }
 
 export interface CreditPack {

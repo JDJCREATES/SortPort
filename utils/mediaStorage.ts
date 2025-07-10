@@ -27,6 +27,7 @@ export class MediaStorage {
         selectedFolders: ['all_photos'],
         lastAutoSortTimestamp: 0,
         showModeratedContent: false,
+        showModeratedInMainAlbums: false,
       };
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -39,6 +40,7 @@ export class MediaStorage {
         selectedFolders: ['all_photos'],
         lastAutoSortTimestamp: 0,
         showModeratedContent: false,
+        showModeratedInMainAlbums: false,
       };
     }
   }

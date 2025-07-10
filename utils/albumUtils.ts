@@ -16,18 +16,51 @@ function generateUUID(): string {
 }
 
 export class AlbumUtils {
+  private static isEnsuring = false;
+  private static lastEnsureTime = 0;
+  private static ENSURE_DEBOUNCE_MS = 5000; // 5 seconds
+  private static callCount = 0;
+  private static resetTime = 0;
+  private static MAX_CALLS_PER_MINUTE = 10;
+
   /**
    * Ensure the "All Photos" album exists and is up to date
    */
   static async ensureAllPhotosAlbumExists(): Promise<void> {
+    // Circuit breaker - prevent too many calls
+    const now = Date.now();
+    if (now - this.resetTime > 60000) { // Reset every minute
+      this.callCount = 0;
+      this.resetTime = now;
+    }
+    
+    this.callCount++;
+    if (this.callCount > this.MAX_CALLS_PER_MINUTE) {
+      console.warn('🚨 ensureAllPhotosAlbumExists: Too many calls, circuit breaker activated');
+      return;
+    }
+
+    // Prevent concurrent executions
+    if (this.isEnsuring) {
+      console.log('📁 ensureAllPhotosAlbumExists: Already running, skipping...');
+      return;
+    }
+
+    // Debounce rapid calls
+    if (now - this.lastEnsureTime < this.ENSURE_DEBOUNCE_MS) {
+      console.log('📁 ensureAllPhotosAlbumExists: Called too recently, skipping...');
+      return;
+    }
+
+    this.isEnsuring = true;
+    this.lastEnsureTime = now;
+
     try {
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         console.log('📁 ensureAllPhotosAlbumExists: User not authenticated, skipping');
         return;
       }
-      
 
       // Load current settings to get selected folders
       const settings = await MediaStorage.loadSettings();
@@ -57,7 +90,7 @@ export class AlbumUtils {
       // Generate thumbnail for the first image if available
       let thumbnail: string | undefined;
       if (allPhotoIds.length > 0) {
-        thumbnail = allPhotoIds[0].uri; // Simple and reliable approach
+        thumbnail = allPhotoIds[0].uri;
       }
 
       if (existingAlbums && existingAlbums.length > 0) {
@@ -85,6 +118,8 @@ export class AlbumUtils {
           } else {
             console.log(`✅ ensureAllPhotosAlbumExists: Updated album with ${imageIds.length} photos`);
           }
+        } else {
+          console.log('📁 ensureAllPhotosAlbumExists: No update needed');
         }
       } else {
         // Create new "All Photos" album
@@ -114,6 +149,8 @@ export class AlbumUtils {
       }
     } catch (error) {
       console.error('❌ ensureAllPhotosAlbumExists: Error:', error);
+    } finally {
+      this.isEnsuring = false;
     }
   }
 

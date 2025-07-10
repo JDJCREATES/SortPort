@@ -14,7 +14,7 @@ import {
   LayoutAnimation,
   Platform
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import Animated, { 
   FadeInDown, 
@@ -61,6 +61,19 @@ export default function AlbumScreen() {
   const { id: albumId } = useLocalSearchParams();
   const { userFlags } = useApp();
   
+  // Add focus tracking to prevent unnecessary refreshes
+  const isFocused = useRef(false);
+  
+  // Track focus state
+  useFocusEffect(
+    useCallback(() => {
+      isFocused.current = true;
+      return () => {
+        isFocused.current = false;
+      };
+    }, [])
+  );
+
   const [state, setState] = useState<AlbumScreenState>({
     album: null,
     photos: [],

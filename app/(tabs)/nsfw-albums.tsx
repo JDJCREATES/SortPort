@@ -48,6 +48,7 @@ interface NsfwAlbumsScreenState {
 }
 
 export default function NsfwAlbumsScreen() {
+  // ✅ MOVE ALL HOOKS TO THE TOP - NEVER CONDITIONAL
   const { albums, isLoadingAlbums, refreshAlbums, userFlags, settings } = useApp();
 
   const [state, setState] = useState<NsfwAlbumsScreenState>({
@@ -103,7 +104,7 @@ export default function NsfwAlbumsScreen() {
       switch (state.sortBy) {
         case 'name':
           comparison = a.name.localeCompare(b.name);
-          break;
+        break;
         case 'date':
           comparison = (a.createdAt || 0) - (b.createdAt || 0);
           break;
@@ -214,40 +215,9 @@ export default function NsfwAlbumsScreen() {
     return refreshPromise;
   }, [refreshAlbums, state.isRefreshing, contentTranslateY]);
 
-  // Focus effect for refreshing
-  useFocusEffect(
-    useCallback(() => {
-      if (!state.isRefreshing && state.isInitialLoad) {
-        handleRefresh();
-      }
-    }, [handleRefresh, state.isRefreshing, state.isInitialLoad])
-  );
-
-  const hasAccess = useMemo(() => {
-    // User has access if they have purchased credits OR have a positive balance
-    const hasCreditAccess = userFlags.hasPurchasedCredits || userFlags.creditBalance > 0;
-    const hasSettingEnabled = settings.showModeratedContent;
-    
-    return hasCreditAccess && hasSettingEnabled;
-  }, [userFlags.hasPurchasedCredits, userFlags.creditBalance, settings.showModeratedContent]);
-
   const handleAlbumPress = useCallback(
     (album: Album) => {
       try {
-        const hasCreditAccess = userFlags.hasPurchasedCredits || userFlags.creditBalance > 0;
-        
-        if (album.isLocked && !hasCreditAccess) {
-          Alert.alert(
-            'Credits Required',
-            'This album is locked. Purchase credits to access all albums.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Buy Credits', onPress: () => router.push('/settings') },
-            ]
-          );
-          return;
-        }
-
         headerOpacity.value = withTiming(0.5, { duration: 200 });
         router.push(`/album/${album.id}`);
       } catch (error) {
@@ -255,7 +225,7 @@ export default function NsfwAlbumsScreen() {
         Alert.alert('Error', 'Failed to open album. Please try again.');
       }
     },
-    [headerOpacity, userFlags.hasPurchasedCredits, userFlags.creditBalance]
+    [headerOpacity]
   );
 
   const handleAcceptWarning = useCallback(() => {
@@ -289,73 +259,23 @@ export default function NsfwAlbumsScreen() {
     transform: [{ translateY: contentTranslateY.value }],
   }));
 
-  // Check if user has access
-  if (!hasAccess) {
-    const hasCreditAccess = userFlags.hasPurchasedCredits || userFlags.creditBalance > 0;
-    
-    return (
-      <SafeAreaView style={styles.container}>
-        <Animated.View entering={FadeInUp} style={styles.noAccessContainer}>
-          <Ionicons name="lock-closed" size={64} color={lightTheme.colors.textSecondary} />
-          <Text style={styles.noAccessTitle}>
-            {!hasCreditAccess 
-              ? 'Credits Required' 
-              : 'Content Hidden'}
-          </Text>
-          <Text style={styles.noAccessText}>
-            {!hasCreditAccess
-              ? 'Access to moderated content requires credits. Purchase credits to view these albums.'
-              : 'Moderated content is currently hidden. Enable "Show Moderated Content" in Settings to view these albums.'}
-          </Text>
-          <TouchableOpacity
-            style={styles.upgradeButton}
-            onPress={() => router.push('/settings')}
-          >
-            <Text style={styles.upgradeButtonText}>
-              {!hasCreditAccess ? 'Buy Credits' : 'Go to Settings'}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </SafeAreaView>
-    );
-  }
+  // Focus effect for refreshing
+  useFocusEffect(
+    useCallback(() => {
+      if (!state.isRefreshing && state.isInitialLoad) {
+        handleRefresh();
+      }
+    }, [handleRefresh, state.isRefreshing, state.isInitialLoad])
+  );
 
-  // Content warning screen
-  if (!state.hasAcceptedWarning) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Animated.View entering={FadeInUp.delay(200)} style={styles.warningContainer}>
-          <View style={styles.warningIcon}>
-            <Ionicons name="warning" size={48} color={lightTheme.colors.warning} />
-          </View>
-          <Text style={styles.warningTitle}>Content Warning</Text>
-          <Text style={styles.warningText}>
-            This section contains albums with content that has been flagged as potentially sensitive or inappropriate. 
-            This may include adult content, violence, or other material that some users may find disturbing.
-          </Text>
-          <Text style={styles.warningSubtext}>
-            By proceeding, you acknowledge that you are of appropriate age and wish to view this content.
-          </Text>
-          <View style={styles.warningActions}>
-            <TouchableOpacity
-              style={styles.warningBackButton}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.warningBackButtonText}>Go Back</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.warningProceedButton}
-              onPress={handleAcceptWarning}
-            >
-              <Text style={styles.warningProceedButtonText}>I Understand, Proceed</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-      </SafeAreaView>
-    );
-  }
+  // Reset header opacity when screen comes back into focus
+  useFocusEffect(
+    useCallback(() => {
+      headerOpacity.value = withTiming(1, { duration: 300 });
+    }, [headerOpacity])
+  );
 
-  // Render functions
+  // ✅ RENDER FUNCTIONS - DEFINED AFTER ALL HOOKS
   const renderErrorState = useCallback(
     () => (
       <View style={styles.errorContainer}>
@@ -542,43 +462,72 @@ export default function NsfwAlbumsScreen() {
     </View>
   );
 
-  // Reset header opacity when screen comes back into focus
-  useFocusEffect(
-    useCallback(() => {
-      headerOpacity.value = withTiming(1, { duration: 300 });
-    }, [headerOpacity])
-  );
-
+  // ✅ CONDITIONAL RENDERING - NO EARLY RETURNS, USE CONDITIONAL JSX
   return (
     <SafeAreaView style={styles.container}>
-      {renderHeader()}
-      {renderViewModeSelector()}
+      {/* Content Warning Screen */}
+      {!state.hasAcceptedWarning ? (
+        <Animated.View entering={FadeInUp.delay(200)} style={styles.warningContainer}>
+          <View style={styles.warningIcon}>
+            <Ionicons name="warning" size={48} color={lightTheme.colors.warning} />
+          </View>
+          <Text style={styles.warningTitle}>Content Warning</Text>
+          <Text style={styles.warningText}>
+            This section contains albums with content that has been flagged as potentially sensitive or inappropriate. 
+            This may include adult content, violence, or other material that some users may find disturbing.
+          </Text>
+          <Text style={styles.warningSubtext}>
+            By proceeding, you acknowledge that you are of appropriate age and wish to view this content.
+          </Text>
+          <View style={styles.warningActions}>
+            <TouchableOpacity
+              style={styles.warningBackButton}
+              onPress={() => router.back()}
+            >
+              <Text style={styles.warningBackButtonText}>Go Back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.warningProceedButton}
+              onPress={handleAcceptWarning}
+            >
+              <Text style={styles.warningProceedButtonText}>I Understand, Proceed</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      ) : (
+        /* Main Content */
+        <>
+          {renderHeader()}
+          {renderViewModeSelector()}
 
-      <Animated.ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollViewContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={state.isRefreshing}
-            onRefresh={() => handleRefresh(true)}
-            tintColor={lightTheme.colors.warning}
-            title="Pull to refresh"
-            titleColor={lightTheme.colors.textSecondary}
-            progressBackgroundColor={lightTheme.colors.surface}
-          />
-        }
-        keyboardShouldPersistTaps="handled"
-        accessible={true}
-        accessibilityLabel="NSFW albums list"
-      >
-        {renderContent()}
-        {renderFooter()}
-      </Animated.ScrollView>
+          <Animated.ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollViewContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={state.isRefreshing}
+                onRefresh={() => handleRefresh(true)}
+                tintColor={lightTheme.colors.warning}
+                title="Pull to refresh"
+                titleColor={lightTheme.colors.textSecondary}
+                progressBackgroundColor={lightTheme.colors.surface}
+              />
+            }
+            keyboardShouldPersistTaps="handled"
+            accessible={true}
+            accessibilityLabel="NSFW albums list"
+          >
+            {renderContent()}
+            {renderFooter()}
+          </Animated.ScrollView>
+        </>
+      )}
     </SafeAreaView>
   );
 }
 
+// Keep all your existing styles...
 const styles = StyleSheet.create({
   container: {
     flex: 1,

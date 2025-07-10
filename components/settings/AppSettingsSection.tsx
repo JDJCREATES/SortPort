@@ -10,15 +10,15 @@ interface AppSettingsSectionProps {
   updateSetting: (key: keyof AppSettings, value: any) => Promise<void>;
 }
 
-export function AppSettingsSection({ 
-  userFlags, 
-  settings, 
-  updateSetting, 
+export function AppSettingsSection({
+  userFlags,
+  settings,
+  updateSetting,
 }: AppSettingsSectionProps) {
   return (
     <Animated.View entering={FadeInUp.delay(350)} style={styles.section}>
       <Text style={styles.sectionTitle}>App Settings</Text>
-      
+
       <View style={styles.settingItem}>
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Dark Mode</Text>
@@ -27,7 +27,10 @@ export function AppSettingsSection({
         <Switch
           value={settings.darkMode}
           onValueChange={(value) => updateSetting('darkMode', value)}
-          trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
+          trackColor={{
+            false: lightTheme.colors.border,
+            true: lightTheme.colors.primary,
+          }}
         />
       </View>
 
@@ -35,7 +38,9 @@ export function AppSettingsSection({
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Auto Sort</Text>
           <Text style={styles.settingDescription}>
-            {userFlags.hasPurchasedCredits ? 'Automatically sort new photos' : 'Premium feature - purchase credits to enable'}
+            {userFlags.hasPurchasedCredits
+              ? 'Automatically sort new photos'
+              : 'Premium feature - purchase credits to enable'}
           </Text>
         </View>
         <Switch
@@ -46,24 +51,10 @@ export function AppSettingsSection({
             }
           }}
           disabled={!userFlags.hasPurchasedCredits}
-          trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
-        />
-      </View>
-
-      <View style={styles.settingItem}>
-        <View style={styles.settingInfo}>
-          <Text style={styles.settingLabel}>Content Filter</Text>
-          <Text style={styles.settingDescription}>
-            Filter inappropriate content automatically
-          </Text>
-        </View>
-        <Switch
-          value={settings.nsfwFilter}
-          onValueChange={(value) => {
-            updateSetting('nsfwFilter', value);
+          trackColor={{
+            false: lightTheme.colors.border,
+            true: lightTheme.colors.primary,
           }}
-          disabled={false}
-          trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
         />
       </View>
 
@@ -80,9 +71,38 @@ export function AppSettingsSection({
             updateSetting('showModeratedContent', value);
           }}
           disabled={false}
-          trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
+          trackColor={{
+            false: lightTheme.colors.border,
+            true: lightTheme.colors.primary,
+          }}
         />
       </View>
+
+      {settings.showModeratedContent && (
+        <View style={styles.settingItem}>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingLabel}>Show in Main Albums</Text>
+            <Text style={styles.settingDescription}>
+              Display moderated content alongside regular albums
+            </Text>
+          </View>
+          <Switch
+            value={settings.showModeratedInMainAlbums}
+            onValueChange={(value) =>
+              updateSetting('showModeratedInMainAlbums', value)
+            }
+            trackColor={{
+              false: lightTheme.colors.border,
+              true: lightTheme.colors.primary + '40',
+            }}
+            thumbColor={
+              settings.showModeratedInMainAlbums
+                ? lightTheme.colors.primary
+                : lightTheme.colors.surface
+            }
+          />
+        </View>
+      )}
     </Animated.View>
   );
 }

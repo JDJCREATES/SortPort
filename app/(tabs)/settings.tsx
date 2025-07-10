@@ -31,7 +31,6 @@ export default function SettingsScreen() {
     ensureAllPhotosAlbum
   } = useApp();
   
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState<'primary' | 'secondary' | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -46,14 +45,6 @@ export default function SettingsScreen() {
       updateThemeColors(settings.customColors, settings.darkMode);
     }
   }, [settings]);
-
-  // Add useEffect to sync settings changes with context
-  React.useEffect(() => {
-    // Refresh albums when showModeratedContent changes to update tab visibility
-    if (settings.showModeratedContent !== undefined) {
-      refreshAlbums();
-    }
-  }, [settings.showModeratedContent, refreshAlbums]);
 
   const handleColorChange = async (colorType: 'primary' | 'secondary', color: string) => {
     if (!userFlags.hasPurchasedCredits) {
