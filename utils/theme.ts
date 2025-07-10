@@ -56,19 +56,73 @@ export const defaultDarkTheme: AppTheme = {
   },
 };
 
+// Create a theme manager class for better control
+export class ThemeManager {
+  private static instance: ThemeManager;
+  private currentTheme: AppTheme = defaultLightTheme;
+  private isDarkMode: boolean = false;
+  private listeners: ((theme: AppTheme, isDark: boolean) => void)[] = [];
+
+  static getInstance(): ThemeManager {
+    if (!ThemeManager.instance) {
+      ThemeManager.instance = new ThemeManager();
+    }
+    return ThemeManager.instance;
+  }
+
+  getCurrentTheme(): AppTheme {
+    return this.currentTheme;
+  }
+
+  isDark(): boolean {
+    return this.isDarkMode;
+  }
+
+  setTheme(isDark: boolean, customColors?: Partial<AppTheme['colors']>): void {
+    this.isDarkMode = isDark;
+    const baseTheme = isDark ? defaultDarkTheme : defaultLightTheme;
+    
+    this.currentTheme = {
+      ...baseTheme,
+      colors: {
+        ...baseTheme.colors,
+        ...customColors,
+      },
+    };
+
+    // Notify all listeners
+    this.listeners.forEach(listener => {
+      try {
+        listener(this.currentTheme, this.isDarkMode);
+      } catch (error) {
+        console.error('Error in theme listener:', error);
+      }
+    });
+  }
+
+  subscribe(listener: (theme: AppTheme, isDark: boolean) => void): () => void {
+    this.listeners.push(listener);
+    
+    // Return unsubscribe function
+    return () => {
+      const index = this.listeners.indexOf(listener);
+      if (index > -1) {
+        this.listeners.splice(index, 1);
+      }
+    };
+  }
+}
+
 // Export the current theme (will be dynamic based on user settings)
 export let lightTheme = defaultLightTheme;
 export let darkTheme = defaultDarkTheme;
 
+// Update theme colors function
 export const updateThemeColors = (customColors: Partial<AppTheme['colors']>, isDark: boolean = false) => {
-  const baseTheme = isDark ? defaultDarkTheme : defaultLightTheme;
-  const updatedTheme = {
-    ...baseTheme,
-    colors: {
-      ...baseTheme.colors,
-      ...customColors,
-    },
-  };
+  const themeManager = ThemeManager.getInstance();
+  themeManager.setTheme(isDark, customColors);
+  
+  const updatedTheme = themeManager.getCurrentTheme();
   
   if (isDark) {
     darkTheme = updatedTheme;
@@ -77,4 +131,9 @@ export const updateThemeColors = (customColors: Partial<AppTheme['colors']>, isD
   }
   
   return updatedTheme;
+};
+
+// Helper function to get current theme
+export const getCurrentTheme = (): AppTheme => {
+  return ThemeManager.getInstance().getCurrentTheme();
 };

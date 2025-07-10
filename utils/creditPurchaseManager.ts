@@ -2,8 +2,6 @@ import { UserFlags, CreditPack, PurchaseInfo, CreditTransaction } from '../types
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
-
-
 // Credit pack configurations
 const CREDIT_PACKS: CreditPack[] = [
   {

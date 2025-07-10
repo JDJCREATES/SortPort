@@ -6,7 +6,6 @@ import {
   AudioModule
 } from 'expo-audio';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
-import { LangChainAgent } from '../utils/langchainAgent';
 import { useApp } from '../contexts/AppContext';
 import { CREDIT_COSTS } from '../utils/creditPurchaseManager';
 import { lightTheme } from '../utils/theme';

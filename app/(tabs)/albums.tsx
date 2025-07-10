@@ -17,7 +17,6 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, {
   FadeInUp,
   FadeInDown,
-  SlideInRight,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
