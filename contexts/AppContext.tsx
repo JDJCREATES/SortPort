@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import { SupabaseAuth, UserProfile } from '../utils/supabase';
-import { RevenueCatManager } from '../utils/revenuecat';
+import { CreditPurchaseManager } from '../utils/creditPurchaseManager';
 import { MediaStorage } from '../utils/mediaStorage';
 import { AlbumUtils } from '../utils/albumUtils';
 import { UserFlags, AppSettings, Album } from '../types';
@@ -37,6 +37,7 @@ type AppAction =
   | { type: 'SET_AUTHENTICATED'; payload: { isAuthenticated: boolean; userProfile: UserProfile | null } }
   | { type: 'SET_USER_FLAGS_LOADING'; payload: boolean }
   | { type: 'SET_USER_FLAGS'; payload: UserFlags }
+  | { type: 'SET_CREDIT_BALANCE'; payload: number }
   | { type: 'SET_SETTINGS_LOADING'; payload: boolean }
   | { type: 'SET_SETTINGS'; payload: AppSettings }
   | { type: 'SET_ALBUMS_LOADING'; payload: boolean }
@@ -52,8 +53,8 @@ const initialState: AppState = {
   userProfile: null,
   isLoadingAuth: true,
   userFlags: {
-    isSubscribed: false,
-    hasUnlockPack: false
+    creditBalance: 0,
+    isProUser: false
   },
   isLoadingUserFlags: true,
   settings: {
@@ -94,6 +95,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
     
     case 'SET_USER_FLAGS':
       return { ...state, userFlags: action.payload, isLoadingUserFlags: false };
+    
+    case 'SET_CREDIT_BALANCE':
+      return { 
+        ...state, 
+        userFlags: { ...state.userFlags, creditBalance: action.payload },
+        isLoadingUserFlags: false 
+      };
     
     case 'SET_SETTINGS_LOADING':
       return { ...state, isLoadingSettings: action.payload };
@@ -156,6 +164,8 @@ interface AppContextActions {
   
   // User flags actions
   refreshUserFlags: () => Promise<void>;
+  deductCredits: (amount: number, type: 'ai_sort' | 'nsfw_process' | 'query', description: string, metadata?: Record<string, any>) => Promise<{ success: boolean; newBalance?: number; error?: string }>;
+  getCreditBalance: () => Promise<number>;
   
   // Settings actions
   updateSetting: (key: keyof AppSettings, value: any) => Promise<void>;
@@ -230,8 +240,8 @@ export function AppProvider({ children }: AppProviderProps) {
         dispatch({
           type: 'SET_USER_FLAGS',
           payload: {
-            isSubscribed: false,
-            hasUnlockPack: false,
+            creditBalance: 0,
+            isProUser: false,
           },
         });
       }
@@ -317,8 +327,8 @@ export function AppProvider({ children }: AppProviderProps) {
     dispatch({
       type: 'SET_USER_FLAGS',
       payload: {
-        isSubscribed: false,
-        hasUnlockPack: false,
+        creditBalance: 0,
+        isProUser: false,
       },
     });
   };
@@ -344,13 +354,49 @@ export function AppProvider({ children }: AppProviderProps) {
     dispatch({ type: 'SET_USER_FLAGS_LOADING', payload: true });
     
     try {
-      const revenueCat = RevenueCatManager.getInstance();
-      const flags = await revenueCat.getUserFlags();
+      const creditManager = CreditPurchaseManager.getInstance();
+      const flags = await creditManager.getUserFlags();
       dispatch({ type: 'SET_USER_FLAGS', payload: flags });
       console.log('✅ refreshUserFlags: Complete');
     } catch (error) {
       console.error('❌ refreshUserFlags: Error:', error);
       dispatch({ type: 'SET_USER_FLAGS_LOADING', payload: false });
+    }
+  };
+
+  const deductCredits = async (
+    amount: number, 
+    type: 'ai_sort' | 'nsfw_process' | 'query',
+    description: string,
+    metadata?: Record<string, any>
+  ): Promise<{ success: boolean; newBalance?: number; error?: string }> => {
+    try {
+      const creditManager = CreditPurchaseManager.getInstance();
+      const result = await creditManager.deductCredits(amount, type, description, metadata);
+      
+      if (result.success && result.newBalance !== undefined) {
+        dispatch({ type: 'SET_CREDIT_BALANCE', payload: result.newBalance });
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Error deducting credits:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  };
+
+  const getCreditBalance = async (): Promise<number> => {
+    try {
+      const creditManager = CreditPurchaseManager.getInstance();
+      const balance = await creditManager.getCreditBalance();
+      dispatch({ type: 'SET_CREDIT_BALANCE', payload: balance });
+      return balance;
+    } catch (error) {
+      console.error('Error getting credit balance:', error);
+      return 0;
     }
   };
 
@@ -448,6 +494,8 @@ export function AppProvider({ children }: AppProviderProps) {
     signOut,
     refreshUserProfile,
     refreshUserFlags,
+    deductCredits,
+    getCreditBalance,
     updateSetting,
     refreshSettings,
     refreshAlbums,

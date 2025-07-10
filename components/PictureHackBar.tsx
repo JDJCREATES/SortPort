@@ -7,6 +7,8 @@ import {
 } from 'expo-audio';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 import { LangChainAgent } from '../utils/langchainAgent';
+import { useApp } from '../contexts/AppContext';
+import { CREDIT_COSTS } from '../utils/creditPurchaseManager';
 import { lightTheme } from '../utils/theme';
 
 interface PictureHackBarProps {
@@ -22,6 +24,7 @@ export function PictureHackBar({
   placeholder = "What would you like to sort?",
   disabled = false 
 }: PictureHackBarProps) {
+  const { userFlags, deductCredits } = useApp();
   const [prompt, setPrompt] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -52,6 +55,16 @@ export function PictureHackBar({
 
   const handleSubmit = () => {
     if (prompt.trim() && !disabled && !isRecording && !isTranscribing) {
+      // Check if user has sufficient credits for the query
+      if (userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY) {
+        Alert.alert(
+          'Insufficient Credits',
+          `You need ${CREDIT_COSTS.NATURAL_LANGUAGE_QUERY} credits to submit a query. Please purchase more credits.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
       sendScale.value = withSpring(0.9, { damping: 15, stiffness: 300 }, () => {
         sendScale.value = withSpring(1);
       });
@@ -161,7 +174,7 @@ export function PictureHackBar({
   }));
 
   const isVoiceDisabled = Platform.OS === 'web' || disabled || isTranscribing;
-  const isSubmitDisabled = !prompt.trim() || disabled || isRecording || isTranscribing;
+  const isSubmitDisabled = !prompt.trim() || disabled || isRecording || isTranscribing || userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY;
 
   return (
     <Animated.View style={[styles.container, containerAnimatedStyle]}>
@@ -184,7 +197,8 @@ export function PictureHackBar({
         <TextInput
           style={[
             styles.textInput,
-            isTranscribing && styles.textInputDisabled
+            isTranscribing && styles.textInputDisabled,
+            userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY && styles.textInputLowCredits
           ]}
           value={prompt}
           onChangeText={setPrompt}
@@ -228,6 +242,14 @@ export function PictureHackBar({
           >
             <Ionicons name="send" size={18} color="white" />
           </AnimatedTouchableOpacity>
+        </View>
+        
+        {/* Credit cost indicator */}
+        <View style={styles.creditIndicator}>
+          <Ionicons name="diamond" size={12} color={lightTheme.colors.primary} />
+          <Text style={styles.creditCost}>
+            {CREDIT_COSTS.NATURAL_LANGUAGE_QUERY} credits per query
+          </Text>
         </View>
       </View>
     </Animated.View>
@@ -337,5 +359,21 @@ const styles = StyleSheet.create({
     backgroundColor: lightTheme.colors.border,
     elevation: 0,
     shadowOpacity: 0,
+  },
+  textInputLowCredits: {
+    borderColor: lightTheme.colors.warning,
+    backgroundColor: `${lightTheme.colors.warning}10`,
+  },
+  creditIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: lightTheme.spacing.xs,
+    marginTop: lightTheme.spacing.xs,
+    alignSelf: 'flex-end',
+  },
+  creditCost: {
+    fontSize: 11,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.textSecondary,
   },
 });

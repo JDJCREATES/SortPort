@@ -10,8 +10,8 @@ export interface ImageMeta {
 }
 
 export interface UserFlags {
-  isSubscribed: boolean;
-  hasUnlockPack: boolean;
+  creditBalance: number;
+  isProUser?: boolean; // For any permanent unlocks
 }
 
 export interface LangChainResult {
@@ -103,6 +103,17 @@ export interface RevenueCatProduct {
   currencyCode: string;
 }
 
+export interface CreditPack {
+  identifier: string;
+  credits: number;
+  price: string;
+  priceString: string;
+  bonus?: number; // Bonus percentage
+  description: string;
+  title: string;
+  currencyCode: string;
+}
+
 export interface PurchaseInfo {
   productIdentifier: string;
   purchaseDate: string;
@@ -134,6 +145,23 @@ export interface ModeratedImage {
   folder_id: string;
   is_nsfw: boolean;
   moderation_labels: ModerationLabel[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreditTransaction {
+  id: string;
+  user_id: string;
+  type: 'purchase' | 'ai_sort' | 'nsfw_process' | 'query' | 'refund' | 'bonus';
+  amount: number;
+  description: string;
+  metadata: Record<string, any>;
+  created_at: string;
+}
+
+export interface UserCredits {
+  user_id: string;
+  balance: number;
   created_at: string;
   updated_at: string;
 }

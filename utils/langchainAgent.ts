@@ -2,6 +2,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage } from '@langchain/core/messages';
 import { Platform } from 'react-native';
 import { LangChainResult, AlbumOutput, UserFlags, ImageMeta } from '../types';
+import { CreditPurchaseManager, CREDIT_COSTS } from './creditPurchaseManager';
 
 export class LangChainAgent {
   private model: ChatOpenAI | null = null;
@@ -228,15 +229,41 @@ export class LangChainAgent {
     prompt: string,
     images: ImageMeta[],
     flags: UserFlags,
+    deductCredits: (amount: number, type: 'ai_sort' | 'nsfw_process' | 'query', description: string, metadata?: Record<string, any>) => Promise<{ success: boolean; newBalance?: number; error?: string }>,
     onProgress?: (completed: number, total: number) => void
   ): Promise<AlbumOutput> {
     if (images.length === 0) {
       throw new Error('No photos available to sort. Please ensure you have photos in your gallery and have granted photo library permissions.');
     }
 
+    // Calculate credit cost for AI sorting
+    const limitedImages = images.slice(0, 20);
+    const atlasCount = Math.ceil(limitedImages.length / 9); // 9 images per atlas
+    const totalCost = atlasCount * CREDIT_COSTS.AI_SORT_PER_ATLAS;
+
+    // Check if user has sufficient credits
+    if (flags.creditBalance < totalCost) {
+      throw new Error(`Insufficient credits. You need ${totalCost} credits but only have ${flags.creditBalance}. Please purchase more credits to continue.`);
+    }
+
     try {
+      // Deduct credits before processing
+      const deductResult = await deductCredits(
+        totalCost,
+        'ai_sort',
+        `AI sorting of ${limitedImages.length} images (${atlasCount} atlases)`,
+        {
+          image_count: limitedImages.length,
+          atlas_count: atlasCount,
+          prompt: prompt.substring(0, 100) // Store first 100 chars of prompt
+        }
+      );
+
+      if (!deductResult.success) {
+        throw new Error(`Failed to deduct credits: ${deductResult.error}`);
+      }
+
       // Limit to prevent overwhelming the API
-      const limitedImages = images.slice(0, 20);
       
       // Convert images to base64
       const base64Images = await Promise.all(
@@ -274,13 +301,40 @@ export class LangChainAgent {
       }
 
       // Filter NSFW if needed
-      const filteredResults = this.filterNSFW(results, flags.hasUnlockPack);
+      const filteredResults = this.filterNSFW(results, flags.isProUser || false);
 
       // Group into albums
       return this.groupResults(filteredResults, prompt);
     } catch (error) {
       console.error('Error sorting images:', error);
+      
+      // Note: In a production app, you might want to refund credits on certain types of failures
+      // For now, we'll let the deduction stand as the API call was attempted
+      
       throw error;
     }
+  }
+
+  async processNaturalLanguageQuery(
+    query: string,
+    deductCredits: (amount: number, type: 'ai_sort' | 'nsfw_process' | 'query', description: string, metadata?: Record<string, any>) => Promise<{ success: boolean; newBalance?: number; error?: string }>
+  ): Promise<string> {
+    // Deduct credits for natural language query
+    const deductResult = await deductCredits(
+      CREDIT_COSTS.NATURAL_LANGUAGE_QUERY,
+      'query',
+      `Natural language query: ${query.substring(0, 50)}...`,
+      {
+        query: query.substring(0, 200) // Store first 200 chars
+      }
+    );
+
+    if (!deductResult.success) {
+      throw new Error(`Failed to deduct credits: ${deductResult.error}`);
+    }
+
+    // Process the query (this is a simplified implementation)
+    // In a real app, you'd send this to your AI model
+    return `Processed query: "${query}"`;
   }
 }
