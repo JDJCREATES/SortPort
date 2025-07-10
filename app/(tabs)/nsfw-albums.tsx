@@ -48,7 +48,7 @@ interface NsfwAlbumsScreenState {
 }
 
 export default function NsfwAlbumsScreen() {
-  const { albums, isLoadingAlbums, refreshAlbums, userFlags, settings } = useApp();
+  const { albums, isLoadingAlbums, refreshAlbums, userFlags, settings, albumsError } = useApp();
 
   const [state, setState] = useState<NsfwAlbumsScreenState>({
     isRefreshing: false,
