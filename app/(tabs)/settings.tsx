@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert } from 'react-n
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
-import { SubscriptionModal } from '../../components/SubscriptionModal';
+import { CreditPurchaseModal } from '../../components/CreditPurchaseModal';
 import { ColorPicker } from '../../components/ColorPicker';
 import { AuthModal } from '../../components/AuthModal';
 import { SourceFolderPicker } from '../../components/SourceFolderPicker';
@@ -13,7 +13,7 @@ import { PremiumFeaturesSection } from '../../components/settings/PremiumFeature
 import { CustomizationSection } from '../../components/settings/CustomizationSection';
 import { AppSettingsSection } from '../../components/settings/AppSettingsSection';
 import { DataManagementSection } from '../../components/settings/DataManagementSection';
-import { RevenueCatManager } from '../../utils/revenuecat';
+import { CreditPurchaseManager } from '../../utils/creditPurchaseManager';
 import { MediaStorage } from '../../utils/mediaStorage';
 import { lightTheme, updateThemeColors } from '../../utils/theme';
 
@@ -32,6 +32,7 @@ export default function SettingsScreen() {
   } = useApp();
   
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState<'primary' | 'secondary' | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSourcePicker, setShowSourcePicker] = useState(false);
@@ -55,8 +56,8 @@ export default function SettingsScreen() {
   }, [settings.showModeratedContent, refreshAlbums]);
 
   const handleColorChange = async (colorType: 'primary' | 'secondary', color: string) => {
-    if (!userFlags.isSubscribed && !userFlags.hasUnlockPack) {
-      setShowSubscriptionModal(true);
+    if (!userFlags.isProUser) {
+      setShowCreditPurchaseModal(true);
       return;
     }
 
@@ -70,8 +71,10 @@ export default function SettingsScreen() {
   };
 
   const handleSubscriptionSuccess = async () => {
+  }
+  const handleCreditPurchaseSuccess = async () => {
     await refreshUserFlags();
-    setShowSubscriptionModal(false);
+    setShowCreditPurchaseModal(false);
   };
 
   const handleAuthSuccess = async () => {
@@ -92,8 +95,8 @@ export default function SettingsScreen() {
 
   const handleRestorePurchases = async () => {
     try {
-      const revenueCat = RevenueCatManager.getInstance();
-      await revenueCat.restorePurchases();
+      const creditManager = CreditPurchaseManager.getInstance();
+      await creditManager.restorePurchases();
       await refreshUserFlags();
       Alert.alert('Restore Complete', 'Your purchases have been restored.');
     } catch (error) {
@@ -148,7 +151,7 @@ export default function SettingsScreen() {
 
         <PremiumFeaturesSection
           userFlags={userFlags}
-          setShowSubscriptionModal={setShowSubscriptionModal}
+          setShowCreditPurchaseModal={setShowCreditPurchaseModal}
           handleRestorePurchases={handleRestorePurchases}
         />
 
@@ -156,14 +159,14 @@ export default function SettingsScreen() {
           userFlags={userFlags}
           settings={settings}
           setShowColorPicker={setShowColorPicker}
-          setShowSubscriptionModal={setShowSubscriptionModal}
+          setShowCreditPurchaseModal={setShowCreditPurchaseModal}
         />
 
         <AppSettingsSection
           userFlags={userFlags}
           settings={settings}
           updateSetting={updateSetting}
-          setShowSubscriptionModal={setShowSubscriptionModal}
+          setShowCreditPurchaseModal={setShowCreditPurchaseModal}
         />
 
         <DataManagementSection
@@ -178,10 +181,10 @@ export default function SettingsScreen() {
         </Animated.View>
       </ScrollView>
 
-      <SubscriptionModal
-        visible={showSubscriptionModal}
-        onClose={() => setShowSubscriptionModal(false)}
-        onSuccess={handleSubscriptionSuccess}
+      <CreditPurchaseModal
+        visible={showCreditPurchaseModal}
+        onClose={() => setShowCreditPurchaseModal(false)}
+        onSuccess={handleCreditPurchaseSuccess}
       />
 
       {showColorPicker && (

@@ -8,14 +8,14 @@ interface AppSettingsSectionProps {
   userFlags: UserFlags;
   settings: AppSettings;
   updateSetting: (key: keyof AppSettings, value: any) => Promise<void>;
-  setShowSubscriptionModal: (show: boolean) => void;
+  setShowCreditPurchaseModal: (show: boolean) => void;
 }
 
 export function AppSettingsSection({ 
   userFlags, 
   settings, 
   updateSetting, 
-  setShowSubscriptionModal 
+  setShowCreditPurchaseModal 
 }: AppSettingsSectionProps) {
   return (
     <Animated.View entering={FadeInUp.delay(350)} style={styles.section}>
@@ -35,66 +35,66 @@ export function AppSettingsSection({
 
       <TouchableOpacity 
         style={styles.settingItem}
-        onPress={() => !userFlags.isSubscribed && setShowSubscriptionModal(true)}
+        onPress={() => !userFlags.isProUser && setShowCreditPurchaseModal(true)}
       >
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Auto Sort</Text>
           <Text style={styles.settingDescription}>
-            {userFlags.isSubscribed ? 'Automatically sort new photos' : 'Premium feature - upgrade to enable'}
+            {userFlags.isProUser ? 'Automatically sort new photos' : 'Pro feature - upgrade to enable'}
           </Text>
         </View>
         <Switch
-          value={settings.autoSort && userFlags.isSubscribed}
+          value={settings.autoSort && userFlags.isProUser}
           onValueChange={(value) => {
-            if (userFlags.isSubscribed) {
+            if (userFlags.isProUser) {
               updateSetting('autoSort', value);
             }
           }}
-          disabled={!userFlags.isSubscribed}
+          disabled={!userFlags.isProUser}
           trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
         />
       </TouchableOpacity>
 
       <TouchableOpacity 
         style={styles.settingItem}
-        onPress={() => !userFlags.isSubscribed && setShowSubscriptionModal(true)}
+        onPress={() => !userFlags.isProUser && setShowCreditPurchaseModal(true)}
       >
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Content Filter</Text>
           <Text style={styles.settingDescription}>
-            {userFlags.isSubscribed ? 'Filter inappropriate content' : 'Premium feature - upgrade to enable'}
+            {userFlags.isProUser ? 'Filter inappropriate content' : 'Pro feature - upgrade to enable'}
           </Text>
         </View>
         <Switch
           value={settings.nsfwFilter}
           onValueChange={(value) => {
-            if (userFlags.isSubscribed) {
+            if (userFlags.isProUser) {
               updateSetting('nsfwFilter', value);
             }
           }}
-          disabled={!userFlags.isSubscribed}
+          disabled={!userFlags.isProUser}
           trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
         />
       </TouchableOpacity>
 
       <TouchableOpacity 
         style={styles.settingItem}
-        onPress={() => !userFlags.hasUnlockPack && setShowSubscriptionModal(true)}
+        onPress={() => !userFlags.isProUser && setShowCreditPurchaseModal(true)}
       >
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Show Moderated Content</Text>
           <Text style={styles.settingDescription}>
-            {userFlags.hasUnlockPack ? 'Access to filtered content albums' : 'Unlock Pack required'}
+            {userFlags.isProUser ? 'Access to filtered content albums' : 'Pro feature required'}
           </Text>
         </View>
         <Switch
-          value={settings.showModeratedContent && userFlags.hasUnlockPack}
+          value={settings.showModeratedContent && userFlags.isProUser}
           onValueChange={(value) => {
-            if (userFlags.hasUnlockPack) {
+            if (userFlags.isProUser) {
               updateSetting('showModeratedContent', value);
             }
           }}
-          disabled={!userFlags.hasUnlockPack}
+          disabled={!userFlags.isProUser}
           trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
         />
       </TouchableOpacity>

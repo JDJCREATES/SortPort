@@ -9,16 +9,16 @@ interface CustomizationSectionProps {
   userFlags: UserFlags;
   settings: AppSettings;
   setShowColorPicker: (type: 'primary' | 'secondary' | null) => void;
-  setShowSubscriptionModal: (show: boolean) => void;
+  setShowCreditPurchaseModal: (show: boolean) => void;
 }
 
 export function CustomizationSection({ 
   userFlags, 
   settings, 
   setShowColorPicker, 
-  setShowSubscriptionModal 
+  setShowCreditPurchaseModal 
 }: CustomizationSectionProps) {
-  const canUseColorPicker = userFlags.isSubscribed || userFlags.hasUnlockPack;
+  const canUseColorPicker = userFlags.isProUser || false;
 
   return (
     <Animated.View entering={FadeInUp.delay(300)} style={styles.section}>
@@ -33,7 +33,7 @@ export function CustomizationSection({
         </View>
         <TouchableOpacity
           style={[styles.colorPreview, { backgroundColor: settings.customColors?.primary || lightTheme.colors.primary }]}
-          onPress={() => canUseColorPicker ? setShowColorPicker('primary') : setShowSubscriptionModal(true)}
+          onPress={() => canUseColorPicker ? setShowColorPicker('primary') : setShowCreditPurchaseModal(true)}
         >
           <Ionicons name="color-palette" size={16} color="white" />
         </TouchableOpacity>
@@ -48,7 +48,7 @@ export function CustomizationSection({
         </View>
         <TouchableOpacity
           style={[styles.colorPreview, { backgroundColor: settings.customColors?.secondary || lightTheme.colors.secondary }]}
-          onPress={() => canUseColorPicker ? setShowColorPicker('secondary') : setShowSubscriptionModal(true)}
+          onPress={() => canUseColorPicker ? setShowColorPicker('secondary') : setShowCreditPurchaseModal(true)}
         >
           <Ionicons name="color-palette" size={16} color="white" />
         </TouchableOpacity>

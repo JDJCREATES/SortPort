@@ -8,11 +8,13 @@ import { AlbumCard } from '../components/AlbumCard';
 import { PhotoLoader, PermissionStatus } from '../utils/photoLoader';
 import { LangChainAgent } from '../utils/langchainAgent';
 import { AlbumUtils } from '../utils/albumUtils';
-import { RevenueCatManager } from '../utils/revenuecat';
+import { CreditPurchaseManager, CREDIT_COSTS } from '../utils/creditPurchaseManager';
+import { useApp } from '../contexts/AppContext';
 import { ImageMeta, AlbumOutput, SortSession } from '../types';
 import { lightTheme } from '../utils/theme';
 
 export default function NewSortScreen() {
+  const { userFlags, deductCredits } = useApp();
   const params = useLocalSearchParams();
   const navigationRouter = useRouter();
   const initialPrompt = params.prompt as string || '';
@@ -80,6 +82,21 @@ export default function NewSortScreen() {
       return;
     }
 
+    // Calculate credit cost
+    const limitedImages = photos.slice(0, 20);
+    const atlasCount = Math.ceil(limitedImages.length / 9);
+    const totalCost = atlasCount * CREDIT_COSTS.AI_SORT_PER_ATLAS;
+
+    // Check if user has sufficient credits
+    if (userFlags.creditBalance < totalCost) {
+      Alert.alert(
+        'Insufficient Credits',
+        `You need ${totalCost} credits to sort ${limitedImages.length} images (${atlasCount} atlases). You currently have ${userFlags.creditBalance} credits. Please purchase more credits to continue.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     setCurrentPrompt(prompt);
     setIsProcessing(true);
     setProgress(0);
@@ -88,10 +105,6 @@ export default function NewSortScreen() {
     setError(null);
 
     try {
-      // Get user flags
-      const revenueCat = RevenueCatManager.getInstance();
-      const userFlags = await revenueCat.getUserFlags();
-
       // Initialize LangChain agent
       const agent = new LangChainAgent();
 
@@ -102,6 +115,7 @@ export default function NewSortScreen() {
         prompt,
         photos,
         userFlags,
+        deductCredits,
         (completed, total) => {
           const progressPercent = (completed / total) * 100;
           setProgress(progressPercent);
@@ -139,7 +153,7 @@ export default function NewSortScreen() {
       setError(error.message || 'Failed to sort photos. Please check your API configuration.');
       Alert.alert(
         'Sorting Failed',
-        error.message || 'There was an error sorting your photos. Please check your OpenAI API key configuration and try again.'
+        error.message || 'There was an error sorting your photos. Please try again.'
       );
     }
   };

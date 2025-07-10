@@ -7,58 +7,57 @@ import { lightTheme } from '../../utils/theme';
 
 interface PremiumFeaturesSectionProps {
   userFlags: UserFlags;
-  setShowSubscriptionModal: (show: boolean) => void;
+  setShowCreditPurchaseModal: (show: boolean) => void;
   handleRestorePurchases: () => void;
 }
 
 export function PremiumFeaturesSection({ 
   userFlags, 
-  setShowSubscriptionModal, 
+  setShowCreditPurchaseModal, 
   handleRestorePurchases 
 }: PremiumFeaturesSectionProps) {
   return (
     <Animated.View entering={FadeInUp.delay(250)} style={styles.section}>
-      <Text style={styles.sectionTitle}>Premium Features</Text>
+      <Text style={styles.sectionTitle}>Credits & Features</Text>
       
-      <TouchableOpacity 
-        style={styles.premiumCard}
-        onPress={() => setShowSubscriptionModal(true)}
-      >
-        <View style={styles.premiumHeader}>
-          <Ionicons name="diamond" size={24} color={lightTheme.colors.warning} />
-          <View style={styles.premiumInfo}>
-            <Text style={styles.premiumTitle}>SnapSort Pro</Text>
-            <Text style={styles.premiumStatus}>
-              {userFlags.isSubscribed ? 'Active' : 'Not Active'}
-            </Text>
+      {/* Credit Balance Display */}
+      <View style={styles.creditBalanceCard}>
+        <View style={styles.creditBalanceHeader}>
+          <Ionicons name="diamond" size={24} color={lightTheme.colors.primary} />
+          <View style={styles.creditBalanceInfo}>
+            <Text style={styles.creditBalanceTitle}>Credit Balance</Text>
+            <Text style={styles.creditBalanceAmount}>{userFlags.creditBalance} credits</Text>
           </View>
-          {!userFlags.isSubscribed && (
-            <View style={styles.upgradeButton}>
-              <Text style={styles.upgradeButtonText}>$2.99/mo</Text>
-            </View>
-          )}
+          <TouchableOpacity
+            style={styles.buyCreditsButton}
+            onPress={() => setShowCreditPurchaseModal(true)}
+          >
+            <Text style={styles.buyCreditsButtonText}>Buy More</Text>
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+        <Text style={styles.creditBalanceDescription}>
+          Use credits for AI sorting, NSFW processing, and natural language queries
+        </Text>
+      </View>
 
       <TouchableOpacity 
         style={styles.premiumCard}
-        onPress={() => setShowSubscriptionModal(true)}
+        onPress={() => setShowCreditPurchaseModal(true)}
       >
         <View style={styles.premiumHeader}>
-          <Ionicons name="lock-open" size={24} color={lightTheme.colors.primary} />
+          <Ionicons name="flash" size={24} color={lightTheme.colors.warning} />
           <View style={styles.premiumInfo}>
-            <Text style={styles.premiumTitle}>Unlock Pack</Text>
+            <Text style={styles.premiumTitle}>AI Sorting Credits</Text>
             <Text style={styles.premiumStatus}>
-              {userFlags.hasUnlockPack ? 'Owned' : 'Not Owned'}
+              Available for purchase
             </Text>
           </View>
-          {!userFlags.hasUnlockPack && (
-            <View style={styles.upgradeButton}>
-              <Text style={styles.upgradeButtonText}>$9.99</Text>
-            </View>
-          )}
+          <View style={styles.upgradeButton}>
+            <Text style={styles.upgradeButtonText}>From $2.99</Text>
+          </View>
         </View>
       </TouchableOpacity>
+
 
       <TouchableOpacity style={styles.restoreButton} onPress={handleRestorePurchases}>
         <Ionicons name="refresh" size={16} color={lightTheme.colors.primary} />
@@ -77,6 +76,50 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: lightTheme.colors.text,
     marginBottom: lightTheme.spacing.md,
+  },
+  creditBalanceCard: {
+    backgroundColor: `${lightTheme.colors.primary}10`,
+    borderRadius: lightTheme.borderRadius.lg,
+    padding: lightTheme.spacing.lg,
+    marginBottom: lightTheme.spacing.md,
+    borderWidth: 1,
+    borderColor: `${lightTheme.colors.primary}20`,
+  },
+  creditBalanceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: lightTheme.spacing.sm,
+  },
+  creditBalanceInfo: {
+    flex: 1,
+    marginLeft: lightTheme.spacing.sm,
+  },
+  creditBalanceTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.text,
+  },
+  creditBalanceAmount: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
+    color: lightTheme.colors.primary,
+  },
+  creditBalanceDescription: {
+    fontSize: 13,
+    fontFamily: 'Inter-Regular',
+    color: lightTheme.colors.textSecondary,
+    lineHeight: 18,
+  },
+  buyCreditsButton: {
+    backgroundColor: lightTheme.colors.primary,
+    paddingHorizontal: lightTheme.spacing.md,
+    paddingVertical: lightTheme.spacing.sm,
+    borderRadius: lightTheme.borderRadius.md,
+  },
+  buyCreditsButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
   },
   premiumCard: {
     backgroundColor: lightTheme.colors.surface,
