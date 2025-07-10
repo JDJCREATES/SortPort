@@ -6,12 +6,6 @@ import { useApp } from '../../contexts/AppContext';
 export default function TabLayout() {
   const { userFlags, settings } = useApp();
   
-  console.log('🐛 userFlags:', userFlags);
-  console.log('🐛 settings.showModeratedContent:', settings.showModeratedContent);
-  
-  const shouldShowNsfw = (userFlags.isSubscribed || userFlags.hasUnlockPack) && settings.showModeratedContent;
-  console.log('🐛 shouldShowNsfw:', shouldShowNsfw);
-
   return (
     <Tabs
       screenOptions={{
@@ -48,7 +42,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <MaterialCommunityIcons name="emoticon-devil" size={24} color={color} />
           ),
-          href: shouldShowNsfw ? '/nsfw-albums' : null,
+          href: '/nsfw-albums',
         }}
       />
       <Tabs.Screen

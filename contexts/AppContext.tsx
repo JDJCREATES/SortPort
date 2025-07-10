@@ -54,7 +54,7 @@ const initialState: AppState = {
   isLoadingAuth: true,
   userFlags: {
     creditBalance: 0,
-    isProUser: false
+    hasPurchasedCredits: false
   },
   isLoadingUserFlags: true,
   settings: {

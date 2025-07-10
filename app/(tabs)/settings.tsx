@@ -56,7 +56,7 @@ export default function SettingsScreen() {
   }, [settings.showModeratedContent, refreshAlbums]);
 
   const handleColorChange = async (colorType: 'primary' | 'secondary', color: string) => {
-    if (!userFlags.isProUser) {
+    if (!userFlags.hasPurchasedCredits) {
       setShowCreditPurchaseModal(true);
       return;
     }
@@ -70,8 +70,6 @@ export default function SettingsScreen() {
     updateThemeColors(newCustomColors, settings.darkMode);
   };
 
-  const handleSubscriptionSuccess = async () => {
-  }
   const handleCreditPurchaseSuccess = async () => {
     await refreshUserFlags();
     setShowCreditPurchaseModal(false);
@@ -159,14 +157,12 @@ export default function SettingsScreen() {
           userFlags={userFlags}
           settings={settings}
           setShowColorPicker={setShowColorPicker}
-          setShowCreditPurchaseModal={setShowCreditPurchaseModal}
         />
 
         <AppSettingsSection
           userFlags={userFlags}
           settings={settings}
           updateSetting={updateSetting}
-          setShowCreditPurchaseModal={setShowCreditPurchaseModal}
         />
 
         <DataManagementSection

@@ -2,6 +2,13 @@ import { UserFlags, CreditPack, PurchaseInfo, CreditTransaction } from '../types
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
+export interface PurchaseInfo {
+  productIdentifier: string;
+  purchaseDate: string;
+  originalPurchaseDate: string;
+  expirationDate?: string;
+}
+
 // Credit pack configurations
 const CREDIT_PACKS: CreditPack[] = [
   {
@@ -48,7 +55,7 @@ export class CreditPurchaseManager {
   private static USER_FLAGS_KEY = '@snapsort_user_flags';
   private userFlags: UserFlags = {
     creditBalance: 0,
-    isProUser: false,
+    hasPurchasedCredits: false,
   };
 
   static getInstance(): CreditPurchaseManager {
@@ -70,9 +77,10 @@ export class CreditPurchaseManager {
       
       if (user) {
         const creditBalance = await this.getCreditBalanceFromSupabase(user.id);
+        const hasPurchasedCredits = await this.checkHasPurchasedCredits(user.id);
         this.userFlags = {
           creditBalance,
-          isProUser: false, // You can implement pro user logic here
+          hasPurchasedCredits,
         };
       } else {
         // Fallback to local storage for unauthenticated users
@@ -85,6 +93,27 @@ export class CreditPurchaseManager {
       console.log('💳 Loaded user flags:', this.userFlags);
     } catch (error) {
       console.error('Error loading user flags:', error);
+    }
+  }
+
+  private async checkHasPurchasedCredits(userId: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('credit_transactions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('type', 'purchase')
+        .limit(1);
+
+      if (error) {
+        console.error('Error checking purchase history:', error);
+        return false;
+      }
+
+      return (data && data.length > 0);
+    } catch (error) {
+      console.error('Error in checkHasPurchasedCredits:', error);
+      return false;
     }
   }
 
@@ -168,6 +197,7 @@ export class CreditPurchaseManager {
 
     // Update local flags
     this.userFlags.creditBalance = data.new_balance;
+    this.userFlags.hasPurchasedCredits = true;
     await this.saveUserFlags();
 
     const purchaseInfo: PurchaseInfo = {

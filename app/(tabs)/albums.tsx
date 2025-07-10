@@ -80,7 +80,6 @@ export default function AlbumsScreen() {
   // Animated values
   const headerOpacity = useSharedValue(1);
   const contentTranslateY = useSharedValue(0);
-  const nsfwToggleScale = useSharedValue(0);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -89,15 +88,6 @@ export default function AlbumsScreen() {
     };
   }, []);
 
-  // Initialize NSFW toggle visibility
-  useEffect(() => {
-    const shouldShowNsfwToggle = userFlags.hasUnlockPack && settings.showModeratedContent;
-    nsfwToggleScale.value = withSpring(shouldShowNsfwToggle ? 1 : 0, {
-      damping: 15,
-      stiffness: 200,
-    });
-  }, [userFlags.hasUnlockPack, settings.showModeratedContent, nsfwToggleScale]);
-
   // Filter and process albums
   const processedAlbums = useMemo(() => {
     if (!albums || albums.length === 0) return [];
@@ -105,7 +95,7 @@ export default function AlbumsScreen() {
     let filtered = [...albums];
 
     // Filter out moderated albums unless explicitly showing NSFW content
-    if (!state.showNsfwContent) {
+    if (!settings.showModeratedContent) {
       filtered = filtered.filter(album => !album.isModeratedAlbum);
     }
 
@@ -146,7 +136,7 @@ export default function AlbumsScreen() {
     });
 
     return sorted;
-  }, [albums, state.searchQuery, state.sortBy, state.sortOrder, state.showLocked, state.showNsfwContent]);
+  }, [albums, state.searchQuery, state.sortBy, state.sortOrder, state.showLocked, settings.showModeratedContent]);
 
   // Enhanced refresh function
   const handleRefresh = useCallback(async (force: boolean = false) => {
@@ -239,13 +229,13 @@ export default function AlbumsScreen() {
   const handleAlbumPress = useCallback(
     (album: Album) => {
       try {
-        if (album.isLocked && !userFlags.hasUnlockPack) {
+        if (album.isLocked && !userFlags.hasPurchasedCredits) {
           Alert.alert(
             'Premium Feature',
-            'This album is locked. Upgrade to access all albums.',
+            'This album is locked. Purchase credits to access premium features.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Upgrade', onPress: () => router.push('/settings') },
+              { text: 'Buy Credits', onPress: () => router.push('/settings') },
             ]
           );
           return;
@@ -258,7 +248,7 @@ export default function AlbumsScreen() {
         Alert.alert('Error', 'Failed to open album. Please try again.');
       }
     },
-    [headerOpacity, userFlags.hasUnlockPack]
+    [headerOpacity, userFlags.hasPurchasedCredits]
   );
 
   const handleRetry = useCallback(() => {
@@ -283,22 +273,6 @@ export default function AlbumsScreen() {
     setState((prev) => ({ ...prev, showLocked: !prev.showLocked }));
   }, []);
 
-  const toggleNsfwContent = useCallback(() => {
-    if (!userFlags.hasUnlockPack) {
-      Alert.alert(
-        'Premium Feature',
-        'Access to moderated content requires the Unlock Pack. Upgrade to view these albums.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Upgrade', onPress: () => router.push('/settings') },
-        ]
-      );
-      return;
-    }
-
-    setState((prev) => ({ ...prev, showNsfwContent: !prev.showNsfwContent }));
-  }, [userFlags.hasUnlockPack]);
-
   const handleNewSort = useCallback(() => {
     router.push('/new-sort');
   }, []);
@@ -310,11 +284,6 @@ export default function AlbumsScreen() {
 
   const contentAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: contentTranslateY.value }],
-  }));
-
-  const nsfwToggleAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: nsfwToggleScale.value }],
-    opacity: nsfwToggleScale.value,
   }));
 
   // Render functions
@@ -417,32 +386,6 @@ export default function AlbumsScreen() {
           )}
         </View>
         <View style={styles.headerActions}>
-          {/* NSFW Content Toggle - Only visible to Unlock Pack users when moderated content is enabled */}
-          {userFlags.hasUnlockPack && settings.showModeratedContent && (
-            <Animated.View style={nsfwToggleAnimatedStyle}>
-              <TouchableOpacity
-                style={[
-                  styles.filterButton,
-                  state.showNsfwContent && styles.nsfwToggleActive,
-                ]}
-                onPress={toggleNsfwContent}
-                disabled={state.isRefreshing}
-                accessibilityLabel="Toggle NSFW content visibility"
-                accessibilityRole="button"
-              >
-                <Ionicons
-                  name={state.showNsfwContent ? "eye" : "eye-off"}
-                  size={18}
-                  color={
-                    state.showNsfwContent
-                      ? lightTheme.colors.warning
-                      : lightTheme.colors.textSecondary
-                  }
-                />
-              </TouchableOpacity>
-            </Animated.View>
-          )}
-
           <TouchableOpacity
             style={[
               styles.filterButton,
@@ -525,11 +468,6 @@ export default function AlbumsScreen() {
         {state.searchQuery && (
           <Text style={styles.footerSearchText}>
             Search: "{state.searchQuery}"
-          </Text>
-        )}
-        {state.showNsfwContent && (
-          <Text style={styles.footerNsfwText}>
-            ⚠️ Including moderated content
           </Text>
         )}
         {albums && albums.length > 0 && (
@@ -653,11 +591,6 @@ const styles = StyleSheet.create({
     backgroundColor: lightTheme.colors.primary + '20',
     borderWidth: 1,
     borderColor: lightTheme.colors.primary + '40',
-  },
-  nsfwToggleActive: {
-    backgroundColor: lightTheme.colors.warning + '20',
-    borderWidth: 1,
-    borderColor: lightTheme.colors.warning + '40',
   },
   newSortButton: {
     backgroundColor: lightTheme.colors.primary,

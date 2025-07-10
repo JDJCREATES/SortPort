@@ -11,7 +11,7 @@ export interface ImageMeta {
 
 export interface UserFlags {
   creditBalance: number;
-  isProUser?: boolean; // For any permanent unlocks
+  hasPurchasedCredits: boolean;
 }
 
 export interface LangChainResult {
@@ -94,15 +94,6 @@ export interface AppSettings {
   showModeratedContent?: boolean;
 }
 
-export interface RevenueCatProduct {
-  identifier: string;
-  description: string;
-  title: string;
-  price: string;
-  priceString: string;
-  currencyCode: string;
-}
-
 export interface CreditPack {
   identifier: string;
   credits: number;
@@ -112,13 +103,6 @@ export interface CreditPack {
   description: string;
   title: string;
   currencyCode: string;
-}
-
-export interface PurchaseInfo {
-  productIdentifier: string;
-  purchaseDate: string;
-  originalPurchaseDate: string;
-  expirationDate?: string;
 }
 
 export interface ModerationLabel {

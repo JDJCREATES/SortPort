@@ -47,7 +47,7 @@ interface NsfwAlbumsScreenState {
   hasAcceptedWarning: boolean;
 }
 
-export default function NsfwAlbumsScreen() {
+  albumsError
   const { albums, isLoadingAlbums, refreshAlbums, userFlags, settings } = useApp();
 
   const [state, setState] = useState<NsfwAlbumsScreenState>({
@@ -224,17 +224,16 @@ export default function NsfwAlbumsScreen() {
   );
 
   const hasAccess = (userFlags.isSubscribed || userFlags.hasUnlockPack) && settings.showModeratedContent;
-
   const handleAlbumPress = useCallback(
     (album: Album) => {
       try {
-        if (album.isLocked && !userFlags.isSubscribed && !userFlags.hasUnlockPack) {
+        if (album.isLocked && !userFlags.hasPurchasedCredits) {
           Alert.alert(
             'Premium Feature',
-            'This album is locked. Upgrade to access all albums.',
+            'This album is locked. Purchase credits to access premium features.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Upgrade', onPress: () => router.push('/settings') },
+              { text: 'Buy Credits', onPress: () => router.push('/settings') },
             ]
           );
           return;
@@ -247,7 +246,7 @@ export default function NsfwAlbumsScreen() {
         Alert.alert('Error', 'Failed to open album. Please try again.');
       }
     },
-    [headerOpacity, userFlags.isSubscribed, userFlags.hasUnlockPack]
+    [headerOpacity, userFlags.hasPurchasedCredits]
   );
 
   const handleAcceptWarning = useCallback(() => {
@@ -282,28 +281,21 @@ export default function NsfwAlbumsScreen() {
   }));
 
   // Check if user has access
-  if (!hasAccess) {
+  // Check if moderated content is enabled in settings
+  if (!settings.showModeratedContent) {
     return (
       <SafeAreaView style={styles.container}>
         <Animated.View entering={FadeInUp} style={styles.noAccessContainer}>
-          <Ionicons name="lock-closed" size={64} color={lightTheme.colors.textSecondary} />
-          <Text style={styles.noAccessTitle}>
-            {!(userFlags.isSubscribed || userFlags.hasUnlockPack) 
-              ? 'Premium Feature' 
-              : 'Content Hidden'}
-          </Text>
+          <Ionicons name="eye-off" size={64} color={lightTheme.colors.textSecondary} />
+          <Text style={styles.noAccessTitle}>Content Hidden</Text>
           <Text style={styles.noAccessText}>
-            {!(userFlags.isSubscribed || userFlags.hasUnlockPack)
-              ? 'Access to moderated content requires premium access. Upgrade to view these albums.'
-              : 'Moderated content is currently hidden. Enable "Show Moderated Content" in Settings to view these albums.'}
+            Moderated content is currently hidden. Enable "Show Moderated Content" in Settings to view these albums.
           </Text>
           <TouchableOpacity
             style={styles.upgradeButton}
             onPress={() => router.push('/settings')}
           >
-            <Text style={styles.upgradeButtonText}>
-              {!(userFlags.isSubscribed || userFlags.hasUnlockPack) ? 'Upgrade Now' : 'Go to Settings'}
-            </Text>
+            <Text style={styles.upgradeButtonText}>Go to Settings</Text>
           </TouchableOpacity>
         </Animated.View>
       </SafeAreaView>

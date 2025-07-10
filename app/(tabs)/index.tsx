@@ -118,7 +118,7 @@ export default function HomeScreen() {
             <View style={styles.sectionTitleContainer}>
               <Ionicons name="trending-up" size={20} color={lightTheme.colors.primary} />
               <Text style={styles.sectionTitle}>Smart Albums</Text>
-              {userFlags.isSubscribed && settings.autoSort && (
+              {userFlags.hasPurchasedCredits && settings.autoSort && (
                 <InfoIcon 
                   message="Auto-sort is enabled! New photos will be automatically organized into these albums based on AI analysis."
                   title="Auto-Sort Active"
@@ -157,7 +157,7 @@ export default function HomeScreen() {
           <View style={styles.activityCard}>
             <MaterialIcons name="auto-fix-high" size={20} color={lightTheme.colors.primary} />
             <Text style={styles.activityText}>
-              {userFlags.isSubscribed 
+              {userFlags.hasPurchasedCredits 
                 ? 'Auto-sort is keeping your photos organized in the background!'
                 : 'Try the Picture Hack feature above to sort your photos with AI!'
               }
