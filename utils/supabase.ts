@@ -7,11 +7,10 @@ export const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 export const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('❌ Missing env vars - URL:', !!supabaseUrl, 'Key:', !!supabaseAnonKey);
   throw new Error('Missing Supabase environment variables');
 }
 
-// Create a safe storage adapter that works with SSR
+// Create a safe storage adapter that works with SSR and web builds
 const createStorageAdapter = () => {
   if (Platform.OS === 'web') {
     return {
@@ -58,6 +57,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: typeof window !== 'undefined', // Only auto-refresh on client
     persistSession: typeof window !== 'undefined', // Only persist on client
     detectSessionInUrl: false, // Disable for SSR compatibility
+    flowType: 'pkce',
   },
 });
 
@@ -72,8 +72,47 @@ export interface UserProfile {
 }
 
 export class SupabaseAuth {
+  private static authPromise: Promise<any> | null = null;
+  private static isInitialized = false;
+
+  static async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+    
+    try {
+      // Skip during SSR
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.error('❌ SupabaseAuth: Session initialization failed, clearing corrupted state');
+        await supabase.auth.signOut();
+        return;
+      }
+
+      if (session) {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError || !user) {
+          await supabase.auth.signOut();
+          return;
+        }
+      }
+      
+      this.isInitialized = true;
+    } catch (error) {
+      console.error('❌ SupabaseAuth: Critical initialization error');
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutError) {
+        // Silent fail on cleanup
+      }
+    }
+  }
+
   static async signUp(email: string, password: string, fullName?: string) {
-    console.log('🔐 SupabaseAuth.signUp: Starting...');
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -86,19 +125,31 @@ export class SupabaseAuth {
       });
 
       if (error) {
-        console.error('❌ SupabaseAuth.signUp: Supabase error:', error);
         throw error;
       }
-      console.log('✅ SupabaseAuth.signUp: Success');
       return data;
     } catch (error) {
-      console.error('❌ SupabaseAuth.signUp: Failed:', error);
       throw error;
     }
   }
 
   static async signIn(email: string, password: string) {
-    console.log('🔐 SupabaseAuth.signIn: Starting...');
+    // Prevent multiple concurrent sign-in attempts
+    if (this.authPromise) {
+      return this.authPromise;
+    }
+
+    this.authPromise = this._performSignIn(email, password);
+    
+    try {
+      const result = await this.authPromise;
+      return result;
+    } finally {
+      this.authPromise = null;
+    }
+  }
+
+  private static async _performSignIn(email: string, password: string) {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -106,61 +157,50 @@ export class SupabaseAuth {
       });
 
       if (error) {
-        console.error('❌ SupabaseAuth.signIn: Supabase error:', error);
         throw error;
       }
-      console.log('✅ SupabaseAuth.signIn: Success');
       return data;
     } catch (error) {
-      console.error('❌ SupabaseAuth.signIn: Failed:', error);
       throw error;
     }
   }
 
   static async signOut() {
-    console.log('🔐 SupabaseAuth.signOut: Starting...');
     try {
+      // Clear any pending auth operations
+      this.authPromise = null;
+      
       const { error } = await supabase.auth.signOut();
       if (error) {
-        console.error('❌ SupabaseAuth.signOut: Supabase error:', error);
         throw error;
       }
-      console.log('✅ SupabaseAuth.signOut: Success');
     } catch (error) {
-      console.error('❌ SupabaseAuth.signOut: Failed:', error);
       throw error;
     }
   }
 
   static async getCurrentUser() {
-    console.log('🔐 SupabaseAuth.getCurrentUser: Starting...');
     try {
       // Skip during SSR
       if (typeof window === 'undefined') {
-        console.log('🔐 SupabaseAuth.getCurrentUser: Skipping during SSR');
         return null;
       }
 
       const { data: { user }, error } = await supabase.auth.getUser();
       if (error) {
         // Check if the error indicates a missing session rather than a real problem
-        if (error.name === 'AuthApiError' && error.message.includes('session')) {
-          console.log('🔐 SupabaseAuth.getCurrentUser: No session found, treating as no user');
+        if (error.name === 'AuthApiError' && (error.message.includes('session') || error.message.includes('JWT'))) {
           return null;
         }
-        console.error('❌ SupabaseAuth.getCurrentUser: Error:', error);
         throw error;
       }
-      console.log('✅ SupabaseAuth.getCurrentUser: Success, user:', !!user);
       return user;
     } catch (error) {
-      console.error('❌ SupabaseAuth.getCurrentUser: Failed:', error);
       throw error;
     }
   }
 
   static async updateProfile(updates: Partial<UserProfile>) {
-    console.log('👤 SupabaseAuth.updateProfile: Starting...');
     try {
       const user = await this.getCurrentUser();
       if (!user) throw new Error('No authenticated user');
@@ -173,23 +213,18 @@ export class SupabaseAuth {
         .single();
 
       if (error) {
-        console.error('❌ SupabaseAuth.updateProfile: Supabase error:', error);
         throw error;
       }
-      console.log('✅ SupabaseAuth.updateProfile: Success');
       return data;
     } catch (error) {
-      console.error('❌ SupabaseAuth.updateProfile: Failed:', error);
       throw error;
     }
   }
 
   static async getProfile(): Promise<UserProfile | null> {
-    console.log('👤 SupabaseAuth.getProfile: Starting...');
     try {
       const user = await this.getCurrentUser();
       if (!user) {
-        console.log('👤 SupabaseAuth.getProfile: No authenticated user found');
         return null;
       }
 
@@ -200,13 +235,10 @@ export class SupabaseAuth {
         .single();
 
       if (error && error.code !== 'PGRST116') {
-        console.error('❌ SupabaseAuth.getProfile: Supabase error:', error);
         throw error;
       }
-      console.log('✅ SupabaseAuth.getProfile: Success, profile:', !!data);
       return data;
     } catch (error) {
-      console.error('❌ SupabaseAuth.getProfile: Failed:', error);
       throw error;
     }
   }
@@ -216,27 +248,45 @@ export class SupabaseAuth {
     if (typeof window === 'undefined') {
       return { data: { subscription: { unsubscribe: () => {} } } };
     }
-    return supabase.auth.onAuthStateChange(callback);
+
+    // Wrap the callback to add error handling
+    const wrappedCallback = (event: string, session: any) => {
+      try {
+        callback(event, session);
+      } catch (error) {
+        console.error('❌ SupabaseAuth: Auth state change callback error');
+      }
+    };
+
+    return supabase.auth.onAuthStateChange(wrappedCallback);
   }
 
   static async getSession() {
-    console.log('🔐 SupabaseAuth.getSession: Starting...');
     try {
       // Skip during SSR
       if (typeof window === 'undefined') {
-        console.log('🔐 SupabaseAuth.getSession: Skipping during SSR');
         return null;
       }
 
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) {
-        console.error('❌ SupabaseAuth.getSession: Supabase error:', error);
         throw error;
       }
-      console.log('✅ SupabaseAuth.getSession: Success, session:', !!session);
       return session;
     } catch (error) {
-      console.error('❌ SupabaseAuth.getSession: Failed:', error);
+      throw error;
+    }
+  }
+
+  static async refreshSession() {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      console.error('❌ SupabaseAuth: Session refresh failed');
       throw error;
     }
   }
