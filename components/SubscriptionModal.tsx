@@ -31,9 +31,7 @@ export function SubscriptionModal({
   onClose,
   onSuccess,
 }: SubscriptionModalProps) {
-  const [selectedPlan, setSelectedPlan] = useState<'subscription' | 'unlock'>(
-    'subscription'
-  );
+  const [selectedPlan, setSelectedPlan] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
   const subscriptionFeatures = [
@@ -115,29 +113,29 @@ export function SubscriptionModal({
   ];
 
   const handlePurchase = async () => {
+    if (!selectedPlan) {
+      Alert.alert('No Plan Selected', 'Please select a plan to continue.');
+      return;
+    }
+
     setLoading(true);
     try {
       const revenueCat = RevenueCatManager.getInstance();
-      const productId =
-        selectedPlan === 'subscription'
-          ? 'snapsort_pro_monthly'
-          : 'unlock_pack';
-
-      // Mock purchase for demo
-      revenueCat.mockPurchase(selectedPlan);
-
-      onSuccess();
-      onClose();
-
+      // Map the selectedPlan to the actual product identifier
+      const productId = selectedPlan === 'subscription' ? 'snapsort_pro_monthly' : 'unlock_pack';
+      await revenueCat.purchaseProduct(productId);
+      
       Alert.alert(
-        'Purchase Successful!',
-        selectedPlan === 'subscription'
-          ? 'Welcome to SnapSort Pro! Your subscription is now active.'
-          : 'Unlock Pack activated! You now have access to all premium features.'
+        'Purchase Successful!', 
+        selectedPlan === 'unlock_pack' 
+          ? 'Unlock Pack activated! You now have access to all premium features.'
+          : 'Subscription activated! You now have access to all premium features.'
       );
+      
+      onSuccess();
     } catch (error) {
       console.error('Purchase error:', error);
-      Alert.alert('Purchase Failed', 'Please try again later.');
+      Alert.alert('Purchase Failed', 'Please try again or contact support.');
     } finally {
       setLoading(false);
     }
@@ -188,86 +186,49 @@ export function SubscriptionModal({
             </Animated.Text>
 
             {/* Plan Selection */}
-            <Animated.View
-              entering={FadeInDown.delay(300)}
-              style={styles.planSelector}
-            >
-              <AnimatedTouchableOpacity
-                entering={SlideInRight.delay(400)}
+            <View style={styles.plansContainer}>
+              <Text style={styles.plansTitle}>Choose Your Plan</Text>
+              
+              {/* Subscription Plan */}
+              <TouchableOpacity
                 style={[
-                  styles.planOption,
-                  selectedPlan === 'subscription' && styles.planOptionSelected,
+                  styles.planCard,
+                  selectedPlan === 'subscription' && styles.planCardSelected,
                 ]}
                 onPress={() => setSelectedPlan('subscription')}
               >
-                <View style={styles.planHeader}>
-                  <Ionicons
-                    name="diamond"
-                    size={24}
-                    color={lightTheme.colors.warning}
-                  />
-                  <View style={styles.planInfo}>
-                    <Text style={styles.planName}>SnapSort Pro</Text>
-                    <Text style={styles.planPrice}>$2.99/month</Text>
-                  </View>
-                  {selectedPlan === 'subscription' && (
-                    <View style={styles.selectedIndicator}>
-                      <Ionicons name="checkmark" size={16} color="white" />
-                    </View>
-                  )}
+                <View style={styles.planCardHeader}>
+                  <Text style={styles.planCardTitle}>SnapSort Pro</Text>
+                  <Text style={styles.planCardPrice}>$2.99/month</Text>
                 </View>
-                <Text style={styles.planDescription}>
-                  Perfect for power users who want unlimited AI sorting and
-                  cloud features
-                </Text>
-                <View style={styles.featuresContainer}>
-                  {subscriptionFeatures.map((feature, index) => (
-                    <View key={index} style={styles.featureItem}>
-                      {feature.icon}
-                      <Text style={styles.featureText}>{feature.text}</Text>
-                    </View>
-                  ))}
+                <Text style={styles.planCardSubtitle}>Monthly subscription</Text>
+                <View style={styles.planFeatures}>
+                  <Text style={styles.planFeature}>• Unlimited AI sorting</Text>
+                  <Text style={styles.planFeature}>• Custom themes</Text>
+                  <Text style={styles.planFeature}>• Cloud sync</Text>
                 </View>
-              </AnimatedTouchableOpacity>
+              </TouchableOpacity>
 
-              <AnimatedTouchableOpacity
-                entering={SlideInRight.delay(500)}
+              {/* Unlock Pack Plan */}
+              <TouchableOpacity
                 style={[
-                  styles.planOption,
-                  selectedPlan === 'unlock' && styles.planOptionSelected,
+                  styles.planCard,
+                  selectedPlan === 'unlock_pack' && styles.planCardSelected,
                 ]}
-                onPress={() => setSelectedPlan('unlock')}
+                onPress={() => setSelectedPlan('unlock_pack')}
               >
-                <View style={styles.planHeader}>
-                  <Ionicons
-                    name="lock-open"
-                    size={24}
-                    color={lightTheme.colors.primary}
-                  />
-                  <View style={styles.planInfo}>
-                    <Text style={styles.planName}>Unlock Pack</Text>
-                    <Text style={styles.planPrice}>$19.99 one-time</Text>
-                  </View>
-                  {selectedPlan === 'unlock' && (
-                    <View style={styles.selectedIndicator}>
-                      <Ionicons name="checkmark" size={16} color="white" />
-                    </View>
-                  )}
+                <View style={styles.planCardHeader}>
+                  <Text style={styles.planCardTitle}>Unlock Pack</Text>
+                  <Text style={styles.planCardPrice}>$9.99 once</Text>
                 </View>
-                <Text style={styles.planDescription}>
-                  One-time purchase for privacy features and advanced
-                  customization
-                </Text>
-                <View style={styles.featuresContainer}>
-                  {unlockFeatures.map((feature, index) => (
-                    <View key={index} style={styles.featureItem}>
-                      {feature.icon}
-                      <Text style={styles.featureText}>{feature.text}</Text>
-                    </View>
-                  ))}
+                <Text style={styles.planCardSubtitle}>One-time purchase</Text>
+                <View style={styles.planFeatures}>
+                  <Text style={styles.planFeature}>• Unlimited AI sorting</Text>
+                  <Text style={styles.planFeature}>• NSFW content access</Text>
+                  <Text style={styles.planFeature}>• No recurring charges</Text>
                 </View>
-              </AnimatedTouchableOpacity>
-            </Animated.View>
+              </TouchableOpacity>
+            </View>
 
             {/* Benefits Section */}
             <Animated.View
@@ -322,11 +283,9 @@ export function SubscriptionModal({
               <Text style={styles.purchaseButtonText}>
                 {loading
                   ? 'Processing...'
-                  : `Get ${
-                      selectedPlan === 'subscription'
-                        ? 'SnapSort Pro'
-                        : 'Unlock Pack'
-                    }`}
+                  : selectedPlan
+                  ? `Get ${selectedPlan === 'subscription' ? 'SnapSort Pro' : 'Unlock Pack'}`
+                  : 'Select a Plan'}
               </Text>
             </TouchableOpacity>
 
@@ -362,7 +321,8 @@ const styles = StyleSheet.create({
     borderRadius: lightTheme.borderRadius.xl,
     width: '100%',
     maxWidth: 500,
-    maxHeight: '90%',
+    maxHeight: '98%',
+    minHeight: 600,
     elevation: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
@@ -395,75 +355,65 @@ const styles = StyleSheet.create({
     padding: lightTheme.spacing.lg,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'Inter-Regular',
     color: lightTheme.colors.textSecondary,
     textAlign: 'center',
-    marginBottom: lightTheme.spacing.xl,
-    lineHeight: 22,
+    marginBottom: lightTheme.spacing.lg,
+    lineHeight: 20,
+    paddingHorizontal: lightTheme.spacing.sm,
   },
-  planSelector: {
-    gap: lightTheme.spacing.lg,
-    marginBottom: lightTheme.spacing.xl,
+  plansContainer: {
+    marginVertical: lightTheme.spacing.lg,
   },
-  planOption: {
+  plansTitle: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.text,
+    marginBottom: lightTheme.spacing.md,
+    textAlign: 'center',
+  },
+  planCard: {
     backgroundColor: lightTheme.colors.surface,
     borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  planOptionSelected: {
-    borderColor: lightTheme.colors.primary,
-    backgroundColor: `${lightTheme.colors.primary}08`,
-  },
-  planHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    padding: lightTheme.spacing.md,
     marginBottom: lightTheme.spacing.sm,
+    borderWidth: 2,
+    borderColor: lightTheme.colors.border,
   },
-  planInfo: {
-    flex: 1,
-    marginLeft: lightTheme.spacing.sm,
+  planCardSelected: {
+    borderColor: lightTheme.colors.primary,
+    backgroundColor: lightTheme.colors.primary + '10',
   },
-  planName: {
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
-    color: lightTheme.colors.text,
+  planCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: lightTheme.spacing.xs,
   },
-  planPrice: {
+  planCardTitle: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
+    color: lightTheme.colors.text,
+  },
+  planCardPrice: {
+    fontSize: 16,
+    fontFamily: 'Inter-Bold',
     color: lightTheme.colors.primary,
   },
-  selectedIndicator: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: lightTheme.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  planDescription: {
+  planCardSubtitle: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: lightTheme.colors.textSecondary,
-    marginBottom: lightTheme.spacing.md,
-    lineHeight: 20,
+    marginBottom: lightTheme.spacing.sm,
   },
-  featuresContainer: {
-    gap: lightTheme.spacing.sm,
+  planFeatures: {
+    gap: lightTheme.spacing.xs,
   },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: lightTheme.spacing.sm,
-  },
-  featureText: {
-    fontSize: 14,
+  planFeature: {
+    fontSize: 13,
     fontFamily: 'Inter-Regular',
     color: lightTheme.colors.text,
-    flex: 1,
   },
   benefitsSection: {
     backgroundColor: `${lightTheme.colors.primary}10`,
@@ -492,15 +442,18 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: lightTheme.spacing.lg,
+    paddingTop: lightTheme.spacing.md,
     borderTopWidth: 1,
     borderTopColor: lightTheme.colors.border,
+    backgroundColor: lightTheme.colors.background,
   },
   purchaseButton: {
     backgroundColor: lightTheme.colors.primary,
     borderRadius: lightTheme.borderRadius.lg,
-    paddingVertical: lightTheme.spacing.md,
+    paddingVertical: lightTheme.spacing.sm,
     alignItems: 'center',
-    marginBottom: lightTheme.spacing.md,
+    marginBottom: lightTheme.spacing.sm,
+    minHeight: 44,
     elevation: 3,
     shadowColor: lightTheme.colors.primary,
     shadowOffset: { width: 0, height: 3 },
@@ -528,10 +481,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
   },
   disclaimer: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: 'Inter-Regular',
     color: lightTheme.colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 14,
+    paddingHorizontal: lightTheme.spacing.sm,
   },
 });

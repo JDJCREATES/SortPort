@@ -6,8 +6,11 @@ import { useApp } from '../../contexts/AppContext';
 export default function TabLayout() {
   const { userFlags, settings } = useApp();
   
-  // Determine if NSFW tab should be shown
-  const showNsfwTab = userFlags.hasUnlockPack && settings.showModeratedContent;
+  console.log('🐛 userFlags:', userFlags);
+  console.log('🐛 settings.showModeratedContent:', settings.showModeratedContent);
+  
+  const shouldShowNsfw = (userFlags.isSubscribed || userFlags.hasUnlockPack) && settings.showModeratedContent;
+  console.log('🐛 shouldShowNsfw:', shouldShowNsfw);
 
   return (
     <Tabs
@@ -38,19 +41,16 @@ export default function TabLayout() {
           ),
         }}
       />
-      {showNsfwTab && (
-        <Tabs.Screen
-          name="nsfw-albums"
-          options={{
-            title: 'NSFW',
-            tabBarIcon: ({ color, focused }) => (
-              <MaterialCommunityIcons name="emoticon-devil" size={24} color={color} />
-            ),
-            // Fix the conditional check
-            href: (userFlags.isSubscribed || userFlags.hasUnlockPack) && settings.showModeratedContent ? '/nsfw-albums' : null,
-          }}
-        />
-      )}
+      <Tabs.Screen
+        name="nsfw-albums"
+        options={{
+          title: 'NSFW',
+          tabBarIcon: ({ color }) => (
+            <MaterialCommunityIcons name="emoticon-devil" size={24} color={color} />
+          ),
+          href: shouldShowNsfw ? '/nsfw-albums' : null,
+        }}
+      />
       <Tabs.Screen
         name="settings"
         options={{
