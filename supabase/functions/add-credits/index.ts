@@ -19,7 +19,13 @@ interface AddCreditsRequest {
   metadata?: Record<string, any>;
 }
 
-serve(async (req) => {
+interface AddCreditsResponse {
+  success: boolean;
+  new_balance?: number;
+  error?: string;
+}
+
+serve(async (req: Request): Promise<Response> => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -71,21 +77,29 @@ serve(async (req) => {
       throw error
     }
 
+    const response: AddCreditsResponse = {
+      success: true,
+      new_balance: data?.new_balance || 0
+    }
+
     return new Response(
-      JSON.stringify(data),
+      JSON.stringify(response),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       },
     )
-  } catch (error) {
-    console.error('Error in add-credits function:', error)
+  } catch (err: unknown) {
+    console.error('Error in add-credits function:', err)
     
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
+    const errorResponse: AddCreditsResponse = {
+      success: false,
+      error: errorMessage
+    }
+
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message
-      }),
+      JSON.stringify(errorResponse),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,

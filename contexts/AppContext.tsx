@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, ReactNode, useRef } from 'react';
 import { SupabaseAuth, UserProfile } from '../utils/supabase';
 import { CreditPurchaseManager } from '../utils/creditPurchaseManager';
 import { MediaStorage } from '../utils/mediaStorage';
@@ -192,21 +192,47 @@ interface AppProviderProps {
 
 export function AppProvider({ children }: AppProviderProps) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  
+  // Add these refs to prevent race conditions
+  const initializationPromise = useRef<Promise<void> | null>(null);
+  const refreshPromises = useRef<{
+    userFlags: Promise<void> | null;
+    albums: Promise<void> | null;
+  }>({ userFlags: null, albums: null });
 
-  // Initialize app data
+  // Initialize app data - prevent multiple concurrent calls
   useEffect(() => {
-    console.log('🚀 Starting app initialization...');
-    initializeApp();
+    if (!initializationPromise.current) {
+      console.log('🚀 Starting app initialization...');
+      initializationPromise.current = initializeApp();
+    }
   }, []);
 
-  // Set up auth state listener
+  // Set up auth state listener with debouncing
   useEffect(() => {
     console.log('🔐 Setting up auth state listener...');
+    let timeoutId: NodeJS.Timeout;
+    
     const { data: { subscription } } = SupabaseAuth.onAuthStateChange(async (event, session) => {
       console.log('🔐 Auth state changed:', event, !!session?.user, session?.user?.id || 'no-user');
       
-      if (session?.user) {
-        // User signed in
+      // Debounce rapid auth state changes
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(async () => {
+        await handleAuthStateChange(event, session);
+      }, 100);
+    });
+
+    return () => {
+      clearTimeout(timeoutId);
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleAuthStateChange = async (event: string, session: any) => {
+    if (session?.user) {
+      // User signed in - prevent concurrent profile loading
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         try {
           console.log('👤 Loading user profile after sign in...');
           const profile = await SupabaseAuth.getProfile();
@@ -216,10 +242,12 @@ export function AppProvider({ children }: AppProviderProps) {
             payload: { isAuthenticated: true, userProfile: profile },
           });
           
-          // Refresh user flags and albums when user signs in
+          // Only refresh data once per auth change
           console.log('🔄 Refreshing user data after sign in...');
-          await refreshUserFlags();
-          await refreshAlbums();
+          await Promise.all([
+            refreshUserFlags(),
+            refreshAlbums()
+          ]);
           console.log('✅ User data refresh complete');
         } catch (error) {
           console.error('Error loading user profile after sign in:', error);
@@ -228,33 +256,33 @@ export function AppProvider({ children }: AppProviderProps) {
             payload: { isAuthenticated: true, userProfile: null },
           });
         }
-      } else {
-        // User signed out
-        console.log('👤 User signed out, clearing state...');
-        dispatch({
-          type: 'SET_AUTHENTICATED',
-          payload: { isAuthenticated: false, userProfile: null },
-        });
-        
-        // Reset user flags when signed out
-        dispatch({
-          type: 'SET_USER_FLAGS',
-          payload: {
-            creditBalance: 0,
-            isProUser: false,
-          },
-        });
       }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+    } else {
+      // User signed out
+      console.log('👤 User signed out, clearing state...');
+      dispatch({
+        type: 'SET_AUTHENTICATED',
+        payload: { isAuthenticated: false, userProfile: null },
+      });
+      
+      dispatch({
+        type: 'SET_USER_FLAGS',
+        payload: {
+          creditBalance: 0,
+          hasPurchasedCredits: false,
+        },
+      });
+    }
+  };
 
   const initializeApp = async () => {
     console.log('🚀 initializeApp: Starting...');
     dispatch({ type: 'SET_INITIALIZING', payload: true });
 
     try {
+      // Initialize Supabase auth first
+      await SupabaseAuth.initialize();
+      
       // Load settings first (doesn't require auth)
       await refreshSettings();
       
@@ -262,13 +290,13 @@ export function AppProvider({ children }: AppProviderProps) {
       console.log('🔐 initializeApp: Checking auth status...');
       await checkAuthStatus();
       
-      // Load user flags (works for both authenticated and non-authenticated users)
+      // Load user flags and albums in parallel, but only once
       console.log('🏷️ initializeApp: Loading user flags...');
-      await refreshUserFlags();
-      
-      // Load albums (works for both authenticated and non-authenticated users)
       console.log('📁 initializeApp: Loading albums...');
-      await refreshAlbums();
+      await Promise.all([
+        refreshUserFlags(),
+        refreshAlbums()
+      ]);
       
       console.log('✅ initializeApp: Complete');
     } catch (error) {
@@ -328,7 +356,7 @@ export function AppProvider({ children }: AppProviderProps) {
       type: 'SET_USER_FLAGS',
       payload: {
         creditBalance: 0,
-        isProUser: false,
+        hasPurchasedCredits: false,
       },
     });
   };
@@ -350,18 +378,30 @@ export function AppProvider({ children }: AppProviderProps) {
   };
 
   const refreshUserFlags = async () => {
+    // Prevent concurrent executions
+    if (refreshPromises.current.userFlags) {
+      return refreshPromises.current.userFlags;
+    }
+
     console.log('🏷️ refreshUserFlags: Starting...');
     dispatch({ type: 'SET_USER_FLAGS_LOADING', payload: true });
     
-    try {
-      const creditManager = CreditPurchaseManager.getInstance();
-      const flags = await creditManager.getUserFlags();
-      dispatch({ type: 'SET_USER_FLAGS', payload: flags });
-      console.log('✅ refreshUserFlags: Complete');
-    } catch (error) {
-      console.error('❌ refreshUserFlags: Error:', error);
-      dispatch({ type: 'SET_USER_FLAGS_LOADING', payload: false });
-    }
+    const promise = (async () => {
+      try {
+        const creditManager = CreditPurchaseManager.getInstance();
+        const flags = await creditManager.getUserFlags();
+        dispatch({ type: 'SET_USER_FLAGS', payload: flags });
+        console.log('✅ refreshUserFlags: Complete');
+      } catch (error) {
+        console.error('❌ refreshUserFlags: Error:', error);
+        dispatch({ type: 'SET_USER_FLAGS_LOADING', payload: false });
+      } finally {
+        refreshPromises.current.userFlags = null;
+      }
+    })();
+
+    refreshPromises.current.userFlags = promise;
+    return promise;
   };
 
   const deductCredits = async (
@@ -426,40 +466,51 @@ export function AppProvider({ children }: AppProviderProps) {
   };
 
   const refreshAlbums = async () => {
+    // Prevent concurrent executions
+    if (refreshPromises.current.albums) {
+      return refreshPromises.current.albums;
+    }
+
     console.log('📁 refreshAlbums: Starting...');
     dispatch({ type: 'SET_ALBUMS_LOADING', payload: true });
     
-    try {
-      // Check permissions before loading albums
-      const permissionResult = await PhotoLoader.checkAndRequestPermissions();
-      
-      if (!permissionResult.granted) {
-        console.warn('⚠️ refreshAlbums: Photo permissions not granted:', permissionResult.message);
-        // Still try to load albums from database, but they might be empty
-        dispatch({ type: 'SET_ALBUMS_ERROR', payload: permissionResult.message });
+    const promise = (async () => {
+      try {
+        // Check permissions before loading albums
+        const permissionResult = await PhotoLoader.checkAndRequestPermissions();
+        
+        if (!permissionResult.granted) {
+          console.warn('⚠️ refreshAlbums: Photo permissions not granted:', permissionResult.message);
+          dispatch({ type: 'SET_ALBUMS_ERROR', payload: permissionResult.message });
+        }
+        
+        // Ensure All Photos album exists first
+        console.log('📁 refreshAlbums: Ensuring All Photos album exists...');
+        await AlbumUtils.ensureAllPhotosAlbumExists();
+        
+        // Load all albums
+        console.log('📁 refreshAlbums: Loading albums from database...');
+        let albums = await AlbumUtils.loadAlbums();
+        
+        // Filter out moderated albums if NSFW filter is enabled
+        if (state.settings.nsfwFilter && !state.settings.showModeratedContent) {
+          albums = albums.filter(album => !album.isModeratedAlbum);
+        }
+        
+        console.log('📁 refreshAlbums: Loaded', albums.length, 'albums');
+        dispatch({ type: 'SET_ALBUMS', payload: albums });
+        console.log('✅ refreshAlbums: Complete');
+      } catch (error) {
+        console.error('❌ refreshAlbums: Error:', error);
+        dispatch({ type: 'SET_ALBUMS_ERROR', payload: error instanceof Error ? error.message : 'Failed to load albums' });
+        dispatch({ type: 'SET_ALBUMS_LOADING', payload: false });
+      } finally {
+        refreshPromises.current.albums = null;
       }
-      
-      // Ensure All Photos album exists first
-      console.log('📁 refreshAlbums: Ensuring All Photos album exists...');
-      await AlbumUtils.ensureAllPhotosAlbumExists();
-      
-      // Load all albums
-      console.log('📁 refreshAlbums: Loading albums from database...');
-      let albums = await AlbumUtils.loadAlbums();
-      
-      // Filter out moderated albums if NSFW filter is enabled
-      if (state.settings.nsfwFilter && !state.settings.showModeratedContent) {
-        albums = albums.filter(album => !album.isModeratedAlbum);
-      }
-      
-      console.log('📁 refreshAlbums: Loaded', albums.length, 'albums');
-      dispatch({ type: 'SET_ALBUMS', payload: albums });
-      console.log('✅ refreshAlbums: Complete');
-    } catch (error) {
-      console.error('❌ refreshAlbums: Error:', error);
-      dispatch({ type: 'SET_ALBUMS_ERROR', payload: error instanceof Error ? error.message : 'Failed to load albums' });
-      dispatch({ type: 'SET_ALBUMS_LOADING', payload: false });
-    }
+    })();
+
+    refreshPromises.current.albums = promise;
+    return promise;
   };
 
   const addAlbum = async (album: Album) => {

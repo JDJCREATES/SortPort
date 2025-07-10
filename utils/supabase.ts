@@ -75,15 +75,16 @@ export class SupabaseAuth {
   private static authPromise: Promise<any> | null = null;
   private static isInitialized = false;
 
+  // Call this at the very beginning of your app initialization
   static async initialize(): Promise<void> {
     if (this.isInitialized) return;
     
     try {
-      // Skip during SSR
       if (typeof window === 'undefined') {
         return;
       }
 
+      // Only validate session, don't trigger auth state changes
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
@@ -92,23 +93,9 @@ export class SupabaseAuth {
         return;
       }
 
-      if (session) {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (userError || !user) {
-          await supabase.auth.signOut();
-          return;
-        }
-      }
-      
       this.isInitialized = true;
     } catch (error) {
       console.error('❌ SupabaseAuth: Critical initialization error');
-      try {
-        await supabase.auth.signOut();
-      } catch (signOutError) {
-        // Silent fail on cleanup
-      }
     }
   }
 

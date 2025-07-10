@@ -14,6 +14,13 @@ export interface UserFlags {
   hasPurchasedCredits: boolean;
 }
 
+export interface PurchaseInfo {
+  productIdentifier: string;
+  purchaseDate: string;
+  originalPurchaseDate: string;
+  expirationDate?: string;
+}
+
 export interface LangChainResult {
   id: string;
   description: string;

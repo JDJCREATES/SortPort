@@ -7,6 +7,7 @@ import {
   Modal,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, {
@@ -17,6 +18,7 @@ import Animated, {
 import { CreditPurchaseManager } from '../utils/creditPurchaseManager';
 import { CreditPack } from '../types';
 import { lightTheme } from '../utils/theme';
+import * as Haptics from 'expo-haptics';
 
 interface CreditPurchaseModalProps {
   visible: boolean;
@@ -42,6 +44,8 @@ export function CreditPurchaseModal({
       loadCurrentBalance();
     }
   }, [visible]);
+
+ 
 
   const loadCreditPacks = async () => {
     try {
@@ -82,13 +86,16 @@ export function CreditPurchaseModal({
       const selectedPackInfo = creditPacks.find(pack => pack.identifier === selectedPack);
       Alert.alert(
         'Purchase Successful! 🎉', 
-        `${selectedPackInfo?.credits} credits have been added to your account.`
+        `${selectedPackInfo?.credits} credits have been added to your account.`,
+        [{ text: 'Continue', onPress: onSuccess }] // Add callback to button
       );
       
-      onSuccess();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Purchase error:', error);
-      Alert.alert('Purchase Failed', 'Please try again or contact support.');
+      const errorMessage = error?.message?.includes('cancelled') 
+        ? 'Purchase was cancelled.' 
+        : 'Please try again or contact support if the problem persists.';
+      Alert.alert('Purchase Failed', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -183,12 +190,15 @@ export function CreditPurchaseModal({
                 return (
                   <AnimatedTouchableOpacity
                     key={pack.identifier}
-                    entering={FadeInDown.delay(300 + index * 100)}
+                    entering={SlideInRight.delay(300 + index * 100)}
                     style={[
                       styles.packCard,
                       isSelected && styles.packCardSelected,
                     ]}
-                    onPress={() => setSelectedPack(pack.identifier)}
+                    onPress={() => {
+                      setSelectedPack(pack.identifier);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
                   >
                     {isBestValue && (
                       <View style={styles.bestValueBadge}>
@@ -266,11 +276,18 @@ export function CreditPurchaseModal({
             <TouchableOpacity
               style={[
                 styles.purchaseButton,
-                loading && styles.purchaseButtonDisabled,
+                (loading || !selectedPack) && styles.purchaseButtonDisabled,
               ]}
               onPress={handlePurchase}
               disabled={loading || !selectedPack}
             >
+              {loading && (
+                <ActivityIndicator 
+                  size="small" 
+                  color="white" 
+                  style={{ marginRight: lightTheme.spacing.sm }} 
+                />
+              )}
               <Text style={styles.purchaseButtonText}>
                 {loading
                   ? 'Processing...'
@@ -310,7 +327,8 @@ const styles = StyleSheet.create({
     borderRadius: lightTheme.borderRadius.xl,
     width: '100%',
     maxWidth: 500,
-    maxHeight: '95%',
+    maxHeight: '98%',
+    minHeight: 600,
     elevation: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },

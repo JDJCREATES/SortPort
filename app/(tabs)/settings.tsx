@@ -157,6 +157,7 @@ export default function SettingsScreen() {
           userFlags={userFlags}
           settings={settings}
           setShowColorPicker={setShowColorPicker}
+          setShowCreditPurchaseModal={() => showCreditPurchaseModal}
         />
 
         <AppSettingsSection

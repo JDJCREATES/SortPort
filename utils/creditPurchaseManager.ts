@@ -2,12 +2,7 @@ import { UserFlags, CreditPack, PurchaseInfo, CreditTransaction } from '../types
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
-export interface PurchaseInfo {
-  productIdentifier: string;
-  purchaseDate: string;
-  originalPurchaseDate: string;
-  expirationDate?: string;
-}
+
 
 // Credit pack configurations
 const CREDIT_PACKS: CreditPack[] = [
@@ -78,6 +73,7 @@ export class CreditPurchaseManager {
       if (user) {
         const creditBalance = await this.getCreditBalanceFromSupabase(user.id);
         const hasPurchasedCredits = await this.checkHasPurchasedCredits(user.id);
+        
         this.userFlags = {
           creditBalance,
           hasPurchasedCredits,
@@ -86,13 +82,22 @@ export class CreditPurchaseManager {
         // Fallback to local storage for unauthenticated users
         const stored = await AsyncStorage.getItem(CreditPurchaseManager.USER_FLAGS_KEY);
         if (stored) {
-          this.userFlags = JSON.parse(stored);
+          const parsedFlags = JSON.parse(stored);
+          this.userFlags = {
+            creditBalance: parsedFlags.creditBalance || 0,
+            hasPurchasedCredits: parsedFlags.hasPurchasedCredits || false,
+          };
         }
       }
       
       console.log('💳 Loaded user flags:', this.userFlags);
     } catch (error) {
       console.error('Error loading user flags:', error);
+      // Set default values on error
+      this.userFlags = {
+        creditBalance: 0,
+        hasPurchasedCredits: false,
+      };
     }
   }
 
@@ -146,7 +151,9 @@ export class CreditPurchaseManager {
 
   async getUserFlags(): Promise<UserFlags> {
     await this.loadUserFlags();
-    return this.userFlags;
+    return {
+      ...this.userFlags
+    };
   }
 
   async getCreditPacks(): Promise<CreditPack[]> {
@@ -210,6 +217,22 @@ export class CreditPurchaseManager {
     return purchaseInfo;
   }
 
+  // Add validation method:
+  validateCreditBalance(requiredCredits: number): { 
+    canAfford: boolean; 
+    message: string; 
+  } {
+    if (this.userFlags.creditBalance >= requiredCredits) {
+      return { canAfford: true, message: 'Sufficient credits' };
+    }
+    
+    const shortfall = requiredCredits - this.userFlags.creditBalance;
+    return { 
+      canAfford: false, 
+      message: `Need ${shortfall} more credits. Current balance: ${this.userFlags.creditBalance}` 
+    };
+  }
+
   async deductCredits(
     amount: number, 
     type: 'ai_sort' | 'nsfw_process' | 'query',
@@ -217,6 +240,15 @@ export class CreditPurchaseManager {
     metadata?: Record<string, any>
   ): Promise<{ success: boolean; newBalance?: number; error?: string }> {
     try {
+      // Validate before attempting deduction
+      const validation = this.validateCreditBalance(amount);
+      if (!validation.canAfford) {
+        return {
+          success: false,
+          error: validation.message
+        };
+      }
+
       const { data, error } = await supabase.functions.invoke('deduct-credits', {
         body: {
           amount,
@@ -343,7 +375,7 @@ export class CreditPurchaseManager {
     
     this.userFlags = {
       creditBalance: 0,
-      isProUser: false,
+      hasPurchasedCredits: false,
     };
 
     await this.saveUserFlags();
