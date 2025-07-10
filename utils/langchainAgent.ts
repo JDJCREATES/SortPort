@@ -301,7 +301,7 @@ export class LangChainAgent {
       }
 
       // Filter NSFW if needed
-      const filteredResults = this.filterNSFW(results, flags.isProUser || false);
+      const filteredResults = this.filterNSFW(results, flags.hasPurchasedCredits);
 
       // Group into albums
       return this.groupResults(filteredResults, prompt);

@@ -8,14 +8,12 @@ interface AppSettingsSectionProps {
   userFlags: UserFlags;
   settings: AppSettings;
   updateSetting: (key: keyof AppSettings, value: any) => Promise<void>;
-  setShowCreditPurchaseModal: (show: boolean) => void;
 }
 
 export function AppSettingsSection({ 
   userFlags, 
   settings, 
   updateSetting, 
-  setShowCreditPurchaseModal 
 }: AppSettingsSectionProps) {
   return (
     <Animated.View entering={FadeInUp.delay(350)} style={styles.section}>
@@ -33,71 +31,58 @@ export function AppSettingsSection({
         />
       </View>
 
-      <TouchableOpacity 
-        style={styles.settingItem}
-        onPress={() => !userFlags.isProUser && setShowCreditPurchaseModal(true)}
-      >
+      <View style={styles.settingItem}>
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Auto Sort</Text>
           <Text style={styles.settingDescription}>
-            {userFlags.isProUser ? 'Automatically sort new photos' : 'Pro feature - upgrade to enable'}
+            {userFlags.hasPurchasedCredits ? 'Automatically sort new photos' : 'Premium feature - purchase credits to enable'}
           </Text>
         </View>
         <Switch
-          value={settings.autoSort && userFlags.isProUser}
+          value={settings.autoSort && userFlags.hasPurchasedCredits}
           onValueChange={(value) => {
-            if (userFlags.isProUser) {
+            if (userFlags.hasPurchasedCredits) {
               updateSetting('autoSort', value);
             }
           }}
-          disabled={!userFlags.isProUser}
+          disabled={!userFlags.hasPurchasedCredits}
           trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
         />
-      </TouchableOpacity>
+      </View>
 
-      <TouchableOpacity 
-        style={styles.settingItem}
-        onPress={() => !userFlags.isProUser && setShowCreditPurchaseModal(true)}
-      >
+      <View style={styles.settingItem}>
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Content Filter</Text>
           <Text style={styles.settingDescription}>
-            {userFlags.isProUser ? 'Filter inappropriate content' : 'Pro feature - upgrade to enable'}
+            Filter inappropriate content automatically
           </Text>
         </View>
         <Switch
           value={settings.nsfwFilter}
           onValueChange={(value) => {
-            if (userFlags.isProUser) {
-              updateSetting('nsfwFilter', value);
-            }
+            updateSetting('nsfwFilter', value);
           }}
-          disabled={!userFlags.isProUser}
+          disabled={false}
           trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
         />
-      </TouchableOpacity>
+      </View>
 
-      <TouchableOpacity 
-        style={styles.settingItem}
-        onPress={() => !userFlags.isProUser && setShowCreditPurchaseModal(true)}
-      >
+      <View style={styles.settingItem}>
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Show Moderated Content</Text>
           <Text style={styles.settingDescription}>
-            {userFlags.isProUser ? 'Access to filtered content albums' : 'Pro feature required'}
+            Access to filtered content albums
           </Text>
         </View>
         <Switch
-          value={settings.showModeratedContent && userFlags.isProUser}
+          value={settings.showModeratedContent}
           onValueChange={(value) => {
-            if (userFlags.isProUser) {
-              updateSetting('showModeratedContent', value);
-            }
+            updateSetting('showModeratedContent', value);
           }}
-          disabled={!userFlags.isProUser}
+          disabled={false}
           trackColor={{ false: lightTheme.colors.border, true: lightTheme.colors.primary }}
         />
-      </TouchableOpacity>
+      </View>
     </Animated.View>
   );
 }

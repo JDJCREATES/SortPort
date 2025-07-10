@@ -49,11 +49,13 @@ export function PremiumFeaturesSection({
           <View style={styles.premiumInfo}>
             <Text style={styles.premiumTitle}>AI Sorting Credits</Text>
             <Text style={styles.premiumStatus}>
-              Available for purchase
+              {userFlags.hasPurchasedCredits ? 'Premium features unlocked' : 'Available for purchase'}
             </Text>
           </View>
           <View style={styles.upgradeButton}>
-            <Text style={styles.upgradeButtonText}>From $2.99</Text>
+            <Text style={styles.upgradeButtonText}>
+              {userFlags.hasPurchasedCredits ? 'Buy More' : 'From $2.99'}
+            </Text>
           </View>
         </View>
       </TouchableOpacity>

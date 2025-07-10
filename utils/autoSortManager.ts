@@ -11,8 +11,8 @@ export class AutoSortManager {
 
   static async triggerAutoSort(userFlags: UserFlags): Promise<boolean> {
     // Check if auto-sort is enabled and user has subscription
-    if (!userFlags.isSubscribed) {
-      console.log('Auto-sort requires SnapSort Pro subscription');
+    if (!userFlags.hasPurchasedCredits) {
+      console.log('Auto-sort requires credit purchase to unlock premium features');
       return false;
     }
 
@@ -181,7 +181,7 @@ export class AutoSortManager {
   }
 
   static canRunAutoSort(userFlags: UserFlags): boolean {
-    return userFlags.isSubscribed && !this.isRunning;
+    return userFlags.hasPurchasedCredits && !this.isRunning;
   }
 
   static getLastRunTime(): number {

@@ -29,14 +29,13 @@ import { Album, ImageMeta } from '../../types';
 import { ImageViewerData } from '../../types/display';
 import { AlbumUtils } from '../../utils/albumUtils';
 import { PhotoLoader } from '../../utils/photoLoader';
-import { RevenueCatManager } from '../../utils/revenuecat';
-import { SubscriptionModal } from '../../components/SubscriptionModal';
 import { ImageFullscreenViewer } from '../../components/ImageFullscreenViewer';
 import { ExportAlbumModal } from '../../components/ExportAlbumModal';
 import { OptimizedImage } from '../../components/OptimizedImage';
 import { ImageCacheManager } from '../../utils/imageCache';
 import { useImagePreloader } from '../../hooks/useImagePreloader';
 import { lightTheme } from '../../utils/theme';
+import { useApp } from '../../contexts/AppContext';
 
 const PHOTOS_PER_BATCH = 50; // Increased batch size for better initial loading
 const PRELOAD_THRESHOLD = 0.7; // Start loading when 80% scrolled
@@ -58,15 +57,9 @@ interface AlbumScreenState {
   retryCount: number;
 }
 
-interface UserFlags {
-  isSubscribed: boolean;
-  hasUnlockPack: boolean;
-  isProUser: boolean;
-}
-
-
 export default function AlbumScreen() {
   const { id: albumId } = useLocalSearchParams();
+  const { userFlags } = useApp();
   
   const [state, setState] = useState<AlbumScreenState>({
     album: null,
@@ -82,12 +75,6 @@ export default function AlbumScreen() {
     showExportModal: false,
     error: null,
     retryCount: 0,
-  });
-  
-  const [userFlags, setUserFlags] = useState<UserFlags>({
-    isSubscribed: false,
-    hasUnlockPack: false,
-    isProUser: false,
   });
 
   // Performance refs
@@ -132,11 +119,6 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     }))
   , [state.photos]);
 
-  // Load user flags on mount
-  useEffect(() => {
-    loadUserFlags();
-  }, []);
-
   // Reset state when album changes
   useEffect(() => {
     if (hasLoadedRef.current) {
@@ -158,18 +140,6 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
       loadAlbum();
     }
   }, [albumId]);
-
-  const loadUserFlags = useCallback(async () => {
-    try {
-      const revenueCat = RevenueCatManager.getInstance();
-      const flags = await revenueCat.getUserFlags();
-      if (isMountedRef.current) {
-        setUserFlags(flags);
-      }
-    } catch (error) {
-      console.error('Error loading user flags:', error);
-    }
-  }, []);
 
   const loadAlbum = useCallback(async () => {
     if (hasLoadedRef.current || !isMountedRef.current) return;
@@ -388,10 +358,10 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
         <View style={styles.actionsContainer}>
           <TouchableOpacity 
             style={styles.actionButton} 
-            onPress={() => userFlags.hasUnlockPack ? null : setState(prev => ({ ...prev, showSubscriptionModal: true }))}
+            onPress={() => userFlags.hasPurchasedCredits ? null : Alert.alert('Premium Feature', 'Purchase credits to access sharing features.')}
           >
-            <Feather name="share" size={16} color={userFlags.hasUnlockPack ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
-            <Text style={[styles.actionButtonText, !userFlags.hasUnlockPack && styles.actionButtonTextDisabled]}>Share</Text>
+            <Feather name="share" size={16} color={userFlags.hasPurchasedCredits ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
+            <Text style={[styles.actionButtonText, !userFlags.hasPurchasedCredits && styles.actionButtonTextDisabled]}>Share</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -406,15 +376,15 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
                 return;
               }
               
-              if (userFlags.isSubscribed) {
+              if (userFlags.hasPurchasedCredits) {
                 setState(prev => ({ ...prev, showExportModal: true }));
               } else {
-                setState(prev => ({ ...prev, showSubscriptionModal: true }));
+                Alert.alert('Premium Feature', 'Purchase credits to access export features.');
               }
             }}
           >
-            <Feather name="download" size={16} color={userFlags.isSubscribed ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
-            <Text style={[styles.actionButtonText, !userFlags.isSubscribed && styles.actionButtonTextDisabled]}>Export</Text>
+            <Feather name="download" size={16} color={userFlags.hasPurchasedCredits ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
+            <Text style={[styles.actionButtonText, !userFlags.hasPurchasedCredits && styles.actionButtonTextDisabled]}>Export</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -518,15 +488,6 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
           </Text>
         </Animated.View>
       ) : null}
-
-      <SubscriptionModal
-        visible={state.showSubscriptionModal}
-        onClose={() => setState(prev => ({ ...prev, showSubscriptionModal: false }))}
-        onSuccess={async () => {
-          await loadUserFlags();
-          setState(prev => ({ ...prev, showSubscriptionModal: false }));
-        }}
-      />
 
       <ImageFullscreenViewer
         visible={state.showImageViewer}
