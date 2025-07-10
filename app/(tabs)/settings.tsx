@@ -147,7 +147,7 @@ export default function SettingsScreen() {
         <CustomizationSection
           userFlags={userFlags}
           settings={settings}
-          setShowColorPicker={setShowColorPicker}
+
           setShowCreditPurchaseModal={() => showCreditPurchaseModal}
         />
 

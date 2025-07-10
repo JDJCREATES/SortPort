@@ -1,5 +1,3 @@
-import * as MediaLibrary from 'expo-media-library';
-import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { Album, SortSession } from '../types';
 import { PhotoLoader } from './photoLoader';

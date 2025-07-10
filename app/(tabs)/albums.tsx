@@ -28,6 +28,7 @@ import { AlbumViewModeSelector } from '../../components/AlbumViewModeSelector';
 import { lightTheme } from '../../utils/theme';
 import { Album } from '../../types';
 import { AlbumViewMode } from '../../types/display';
+import { getCurrentTheme } from '../../utils/theme';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -55,6 +56,8 @@ export default function AlbumsScreen() {
     settings,
     albumsError 
   } = useApp();
+  
+  const theme = getCurrentTheme();
 
   const [state, setState] = useState<AlbumsScreenState>({
     isRefreshing: false,
@@ -79,6 +82,9 @@ export default function AlbumsScreen() {
   // Animated values
   const headerOpacity = useSharedValue(1);
   const contentTranslateY = useSharedValue(0);
+
+  // Create styles with current theme - MOVE THIS HERE
+  const styles = createStyles(theme);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -274,7 +280,7 @@ export default function AlbumsScreen() {
     () => (
       <View style={styles.errorContainer}>
         <Animated.View entering={FadeInUp.delay(200)}>
-          <Ionicons name="alert-circle" size={48} color={lightTheme.colors.error} />
+          <Ionicons name="alert-circle" size={48} color={theme.colors.error} />
           <Text style={styles.errorTitle}>Something went wrong</Text>
           <Text style={styles.errorText}>{state.errorMessage || albumsError}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
@@ -283,14 +289,14 @@ export default function AlbumsScreen() {
         </Animated.View>
       </View>
     ),
-    [state.errorMessage, albumsError, handleRetry]
+    [state.errorMessage, albumsError, handleRetry, styles, theme]
   );
 
   const renderEmptyState = useCallback(
     () => (
       <View style={styles.emptyContainer}>
         <Animated.View entering={FadeInUp.delay(200)}>
-          <Ionicons name="folder-open" size={64} color={lightTheme.colors.textSecondary} />
+          <Ionicons name="folder-open" size={64} color={theme.colors.textSecondary} />
           <Text style={styles.emptyTitle}>
             {state.searchQuery ? 'No matching albums' : 'No Albums Yet'}
           </Text>
@@ -308,7 +314,7 @@ export default function AlbumsScreen() {
         </Animated.View>
       </View>
     ),
-    [state.searchQuery, handleNewSort]
+    [state.searchQuery, handleNewSort, styles, theme]
   );
 
   const renderLoadingState = useCallback(
@@ -321,7 +327,7 @@ export default function AlbumsScreen() {
         </Animated.View>
       </View>
     ),
-    [state.isInitialLoad]
+    [state.isInitialLoad, styles]
   );
 
   const renderAlbumGrid = useCallback(
@@ -360,7 +366,7 @@ export default function AlbumsScreen() {
     <Animated.View style={[styles.header, headerAnimatedStyle]}>
       <Animated.View entering={FadeInUp.delay(100)}>
         <View style={styles.headerLeft}>
-          <Ionicons name="folder-open" size={24} color={lightTheme.colors.primary} />
+          <Ionicons name="folder-open" size={24} color={theme.colors.primary} />
           <Text style={styles.title}>Albums</Text>
           {state.isRefreshing && (
             <View style={styles.refreshIndicator}>
@@ -384,8 +390,8 @@ export default function AlbumsScreen() {
               size={18}
               color={
                 state.showLocked
-                  ? lightTheme.colors.textSecondary
-                  : lightTheme.colors.primary
+                  ? theme.colors.textSecondary
+                  : theme.colors.primary
               }
             />
           </TouchableOpacity>
@@ -405,8 +411,8 @@ export default function AlbumsScreen() {
               size={20}
               color={
                 state.showViewModeSelector
-                  ? lightTheme.colors.primary
-                  : lightTheme.colors.textSecondary
+                  ? theme.colors.primary
+                  : theme.colors.textSecondary
               }
             />
           </TouchableOpacity>
@@ -500,19 +506,19 @@ export default function AlbumsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: lightTheme.colors.background,
+    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: lightTheme.spacing.lg,
-    paddingTop: lightTheme.spacing.lg,
-    paddingBottom: lightTheme.spacing.md,
-    backgroundColor: lightTheme.colors.background,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.md,
+    backgroundColor: theme.colors.background,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -528,32 +534,32 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: lightTheme.spacing.sm,
+    gap: theme.spacing.sm,
     flex: 1,
   },
   title: {
     fontSize: 28,
     fontFamily: 'Inter-Bold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
     letterSpacing: -0.5,
   },
   refreshIndicator: {
-    marginLeft: lightTheme.spacing.sm,
+    marginLeft: theme.spacing.sm,
   },
   refreshText: {
     fontSize: 12,
-    color: lightTheme.colors.primary,
+    color: theme.colors.primary,
     fontFamily: 'Inter-Medium',
   },
   headerActions: {
     flexDirection: 'row',
-    gap: lightTheme.spacing.sm,
+    gap: theme.spacing.sm,
     alignItems: 'center',
   },
   filterButton: {
-    padding: lightTheme.spacing.sm,
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.md,
+    padding: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
     minWidth: 44,
     minHeight: 44,
     justifyContent: 'center',
@@ -571,77 +577,77 @@ const styles = StyleSheet.create({
     }),
   },
   filterButtonActive: {
-    backgroundColor: lightTheme.colors.primary + '20',
+    backgroundColor: theme.colors.primary + '20',
     borderWidth: 1,
-    borderColor: lightTheme.colors.primary + '40',
+    borderColor: theme.colors.primary + '40',
   },
   newSortButton: {
-    backgroundColor: lightTheme.colors.primary,
-    padding: lightTheme.spacing.sm,
-    borderRadius: lightTheme.borderRadius.md,
+    backgroundColor: theme.colors.primary,
+    padding: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
     minWidth: 44,
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 3,
-    shadowColor: lightTheme.colors.primary,
+    shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
   },
   viewModeSelectorContainer: {
-    backgroundColor: lightTheme.colors.surface,
+    backgroundColor: theme.colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: lightTheme.colors.border,
-    paddingVertical: lightTheme.spacing.sm,
+    borderBottomColor: theme.colors.border,
+    paddingVertical: theme.spacing.sm,
   },
   scrollView: {
     flex: 1,
   },
   scrollViewContent: {
-    paddingHorizontal: lightTheme.spacing.lg,
-    paddingBottom: lightTheme.spacing.xl,
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
   },
   loadingContainer: {
-    paddingVertical: lightTheme.spacing.xl * 2,
+    paddingVertical: theme.spacing.xl * 2,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 200,
   },
   loadingText: {
     fontSize: 16,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     textAlign: 'center',
   },
   errorContainer: {
-    paddingVertical: lightTheme.spacing.xl * 2,
+    paddingVertical: theme.spacing.xl * 2,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 200,
-    paddingHorizontal: lightTheme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
   },
   errorTitle: {
     fontSize: 20,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginTop: lightTheme.spacing.md,
-    marginBottom: lightTheme.spacing.sm,
+    color: theme.colors.text,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
     textAlign: 'center',
   },
   errorText: {
     fontSize: 16,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     textAlign: 'center',
-    marginBottom: lightTheme.spacing.lg,
+    marginBottom: theme.spacing.lg,
     lineHeight: 22,
   },
   retryButton: {
-    backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.xl,
-    paddingVertical: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.lg,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
     minWidth: 120,
     alignItems: 'center',
   },
@@ -651,39 +657,39 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
   },
   emptyContainer: {
-    paddingVertical: lightTheme.spacing.xl * 2,
+    paddingVertical: theme.spacing.xl * 2,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 300,
-    paddingHorizontal: lightTheme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
   },
   emptyTitle: {
     fontSize: 22,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginTop: lightTheme.spacing.lg,
-    marginBottom: lightTheme.spacing.sm,
+    color: theme.colors.text,
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
     textAlign: 'center',
   },
   emptyText: {
     fontSize: 16,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     textAlign: 'center',
-    marginBottom: lightTheme.spacing.xl,
+    marginBottom: theme.spacing.xl,
     lineHeight: 24,
     maxWidth: 280,
   },
   createButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.lg,
-    paddingVertical: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.lg,
-    gap: lightTheme.spacing.sm,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
+    gap: theme.spacing.sm,
     elevation: 3,
-    shadowColor: lightTheme.colors.primary,
+    shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
@@ -694,39 +700,39 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
   },
   footer: {
-    paddingVertical: lightTheme.spacing.xl,
+    paddingVertical: theme.spacing.xl,
     alignItems: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: lightTheme.colors.border,
-    marginTop: lightTheme.spacing.lg,
+    borderTopColor: theme.colors.border,
+    marginTop: theme.spacing.lg,
   },
   footerText: {
     fontSize: 14,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     textAlign: 'center',
   },
   footerSearchText: {
     fontSize: 12,
-    color: lightTheme.colors.primary,
+    color: theme.colors.primary,
     fontFamily: 'Inter-Medium',
     textAlign: 'center',
-    marginTop: lightTheme.spacing.xs,
+    marginTop: theme.spacing.xs,
   },
   footerNsfwText: {
     fontSize: 12,
-    color: lightTheme.colors.warning,
+    color: theme.colors.warning,
     fontFamily: 'Inter-Medium',
     textAlign: 'center',
-    marginTop: lightTheme.spacing.xs,
+    marginTop: theme.spacing.xs,
     opacity: 0.8,
   },
   footerStatsText: {
     fontSize: 12,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     textAlign: 'center',
-    marginTop: lightTheme.spacing.xs,
+    marginTop: theme.spacing.xs,
     opacity: 0.7,
   },
 });

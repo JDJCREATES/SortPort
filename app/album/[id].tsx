@@ -19,11 +19,7 @@ import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import Animated, { 
   FadeInDown, 
   FadeInUp, 
-  SlideInRight,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  runOnJS
+  SlideInRight
 } from 'react-native-reanimated';
 import { Album, ImageMeta } from '../../types';
 import { ImageViewerData } from '../../types/display';

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Switch } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { UserFlags, AppSettings } from '../../types';
-import { lightTheme } from '../../utils/theme';
+import { getCurrentTheme } from '../../utils/theme';
 
 interface AppSettingsSectionProps {
   userFlags: UserFlags;
@@ -15,6 +15,9 @@ export function AppSettingsSection({
   settings,
   updateSetting,
 }: AppSettingsSectionProps) {
+  const theme = getCurrentTheme();
+  const styles = createStyles(theme);
+
   return (
     <Animated.View entering={FadeInUp.delay(350)} style={styles.section}>
       <Text style={styles.sectionTitle}>App Settings</Text>
@@ -28,8 +31,8 @@ export function AppSettingsSection({
           value={settings.darkMode}
           onValueChange={(value) => updateSetting('darkMode', value)}
           trackColor={{
-            false: lightTheme.colors.border,
-            true: lightTheme.colors.primary,
+            false: theme.colors.border,
+            true: theme.colors.primary,
           }}
         />
       </View>
@@ -52,12 +55,13 @@ export function AppSettingsSection({
           }}
           disabled={!userFlags.hasPurchasedCredits}
           trackColor={{
-            false: lightTheme.colors.border,
-            true: lightTheme.colors.primary,
+            false: theme.colors.border,
+            true: theme.colors.primary,
           }}
         />
       </View>
 
+      {/* Show Moderated Content Toggle */}
       <View style={styles.settingItem}>
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Show Moderated Content</Text>
@@ -72,14 +76,18 @@ export function AppSettingsSection({
           }}
           disabled={false}
           trackColor={{
-            false: lightTheme.colors.border,
-            true: lightTheme.colors.primary,
+            false: theme.colors.border,
+            true: theme.colors.primary,
           }}
         />
       </View>
 
+      {/* Show in Main Albums Toggle - Conditional */}
       {settings.showModeratedContent && (
-        <View style={styles.settingItem}>
+        <Animated.View 
+          entering={FadeInUp.delay(100)} 
+          style={[styles.settingItem, styles.nestedSettingItem]}
+        >
           <View style={styles.settingInfo}>
             <Text style={styles.settingLabel}>Show in Main Albums</Text>
             <Text style={styles.settingDescription}>
@@ -92,43 +100,49 @@ export function AppSettingsSection({
               updateSetting('showModeratedInMainAlbums', value)
             }
             trackColor={{
-              false: lightTheme.colors.border,
-              true: lightTheme.colors.primary + '40',
+              false: theme.colors.border,
+              true: theme.colors.primary + '40',
             }}
             thumbColor={
               settings.showModeratedInMainAlbums
-                ? lightTheme.colors.primary
-                : lightTheme.colors.surface
+                ? theme.colors.primary
+                : theme.colors.surface
             }
           />
-        </View>
+        </Animated.View>
       )}
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   section: {
-    marginBottom: lightTheme.spacing.xl,
+    marginBottom: theme.spacing.xl,
   },
   sectionTitle: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.md,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
   },
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    marginBottom: lightTheme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
+  },
+  nestedSettingItem: {
+    marginLeft: theme.spacing.md,
+    backgroundColor: theme.colors.background,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary + '40',
   },
   settingInfo: {
     flex: 1,
@@ -136,13 +150,19 @@ const styles = StyleSheet.create({
   settingLabel: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
   },
   settingDescription: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     marginTop: 2,
     lineHeight: 18,
+  },
+  disabledLabel: {
+    opacity: 0.6,
+  },
+  disabledDescription: {
+    opacity: 0.6,
   },
 });

@@ -8,7 +8,7 @@ import {
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 import { useApp } from '../contexts/AppContext';
 import { CREDIT_COSTS } from '../utils/creditPurchaseManager';
-import { lightTheme } from '../utils/theme';
+import { getCurrentTheme } from '../utils/theme';
 
 interface PictureHackBarProps {
   onSubmit: (prompt: string) => void;
@@ -27,6 +27,7 @@ export function PictureHackBar({
   const [prompt, setPrompt] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const theme = getCurrentTheme();
   
   // Use type assertion to bypass TypeScript issues
   const audioRecorder = useAudioRecorder({
@@ -175,10 +176,13 @@ export function PictureHackBar({
   const isVoiceDisabled = Platform.OS === 'web' || disabled || isTranscribing;
   const isSubmitDisabled = !prompt.trim() || disabled || isRecording || isTranscribing || userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY;
 
+  // Create styles with current theme
+  const styles = createStyles(theme);
+
   return (
     <Animated.View style={[styles.container, containerAnimatedStyle]}>
       <View style={styles.header}>
-        <Ionicons name="sparkles" size={16} color={lightTheme.colors.primary} />
+        <Ionicons name="sparkles" size={16} color={theme.colors.primary} />
         <Text style={styles.headerText}>Picture Hack</Text>
         {isRecording && (
           <View style={styles.recordingIndicator}>
@@ -202,7 +206,7 @@ export function PictureHackBar({
           value={prompt}
           onChangeText={setPrompt}
           placeholder={placeholder}
-          placeholderTextColor={lightTheme.colors.textSecondary}
+          placeholderTextColor={theme.colors.textSecondary}
           multiline
           maxLength={200}
           editable={!disabled && !isTranscribing}
@@ -226,7 +230,7 @@ export function PictureHackBar({
               <Ionicons 
                 name="mic" 
                 size={20} 
-                color={isVoiceDisabled ? lightTheme.colors.border : lightTheme.colors.textSecondary} 
+                color={isVoiceDisabled ? theme.colors.border : theme.colors.textSecondary} 
               />
             )}
           </AnimatedTouchableOpacity>
@@ -242,19 +246,17 @@ export function PictureHackBar({
             <Ionicons name="send" size={18} color="white" />
           </AnimatedTouchableOpacity>
         </View>
-        
-     
       </View>
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    margin: lightTheme.spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    margin: theme.spacing.lg,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -264,30 +266,30 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: lightTheme.spacing.md,
+    marginBottom: theme.spacing.md,
   },
   headerText: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.primary,
-    marginLeft: lightTheme.spacing.sm,
+    color: theme.colors.primary,
+    marginLeft: theme.spacing.sm,
     flex: 1,
   },
   recordingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: lightTheme.spacing.xs,
+    gap: theme.spacing.xs,
   },
   recordingDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: lightTheme.colors.error,
+    backgroundColor: theme.colors.error,
   },
   recordingText: {
     fontSize: 12,
     fontFamily: 'Inter-Medium',
-    color: lightTheme.colors.error,
+    color: theme.colors.error,
   },
   transcribingIndicator: {
     flexDirection: 'row',
@@ -296,7 +298,7 @@ const styles = StyleSheet.create({
   transcribingText: {
     fontSize: 12,
     fontFamily: 'Inter-Medium',
-    color: lightTheme.colors.primary,
+    color: theme.colors.primary,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -304,17 +306,17 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    backgroundColor: lightTheme.colors.background,
-    borderRadius: lightTheme.borderRadius.md,
-    paddingHorizontal: lightTheme.spacing.md,
-    paddingVertical: lightTheme.spacing.md,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
     fontSize: 16,
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
     maxHeight: 100,
-    marginRight: lightTheme.spacing.sm,
+    marginRight: theme.spacing.sm,
     fontFamily: 'Inter-Regular',
     borderWidth: 1,
-    borderColor: lightTheme.colors.border,
+    borderColor: theme.colors.border,
   },
   textInputDisabled: {
     opacity: 0.6,
@@ -322,51 +324,51 @@ const styles = StyleSheet.create({
   buttonContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: lightTheme.spacing.sm,
+    gap: theme.spacing.sm,
   },
   iconButton: {
-    padding: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.md,
-    backgroundColor: lightTheme.colors.background,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.background,
     borderWidth: 1,
-    borderColor: lightTheme.colors.border,
+    borderColor: theme.colors.border,
   },
   recordingButton: {
-    backgroundColor: lightTheme.colors.error,
-    borderColor: lightTheme.colors.error,
+    backgroundColor: theme.colors.error,
+    borderColor: theme.colors.error,
   },
   disabledButton: {
     opacity: 0.5,
   },
   sendButton: {
-    backgroundColor: lightTheme.colors.primary,
-    padding: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.md,
+    backgroundColor: theme.colors.primary,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
     elevation: 2,
-    shadowColor: lightTheme.colors.primary,
+    shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
   sendButtonDisabled: {
-    backgroundColor: lightTheme.colors.border,
+    backgroundColor: theme.colors.border,
     elevation: 0,
     shadowOpacity: 0,
   },
   textInputLowCredits: {
-    borderColor: lightTheme.colors.warning,
-    backgroundColor: `${lightTheme.colors.warning}10`,
+    borderColor: theme.colors.warning,
+    backgroundColor: `${theme.colors.warning}10`,
   },
   creditIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: lightTheme.spacing.xs,
-    marginTop: lightTheme.spacing.xs,
+    gap: theme.spacing.xs,
+    marginTop: theme.spacing.xs,
     alignSelf: 'flex-end',
   },
   creditCost: {
     fontSize: 11,
     fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 });

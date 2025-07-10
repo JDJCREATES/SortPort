@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
-import { AnimatedAlbumCard } from '../../components/AnimatedAlbumCard';
+
 import { ResponsiveAlbumGrid } from '../../components/ResponsiveAlbumGrid';
 import { PictureHackBar } from '../../components/PictureHackBar';
 import { InfoIcon } from '../../components/InfoIcon';

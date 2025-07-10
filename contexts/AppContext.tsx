@@ -5,6 +5,7 @@ import { MediaStorage } from '../utils/mediaStorage';
 import { AlbumUtils } from '../utils/albumUtils';
 import { UserFlags, AppSettings, Album } from '../types';
 import { PhotoLoader } from '../utils/photoLoader';
+import { ThemeManager } from '../utils/theme';
 
 // Define the state shape
 interface AppState {
@@ -290,6 +291,14 @@ export function AppProvider({ children }: AppProviderProps) {
       // Load settings first (doesn't require auth)
       await refreshSettings();
       
+      // Initialize theme from loaded settings
+      const settings = await MediaStorage.loadSettings();
+      const themeManager = ThemeManager.getInstance();
+      themeManager.initializeFromSettings({
+        darkMode: settings.darkMode,
+        customColors: settings.customColors
+      });
+      
       // Check authentication status
       console.log('🔐 initializeApp: Checking auth status...');
       await checkAuthStatus();
@@ -445,22 +454,25 @@ export function AppProvider({ children }: AppProviderProps) {
   };
 
   const updateSetting = async (key: keyof AppSettings, value: any) => {
-    const currentSettings = await MediaStorage.loadSettings();
-    const newSettings = { ...currentSettings, [key]: value };
-    dispatch({ type: 'SET_SETTINGS', payload: newSettings });
-    await MediaStorage.saveSettings(newSettings);
-    
-    // If folder selection changed, update All Photos album
-    if (key === 'selectedFolders') {
-      await ensureAllPhotosAlbum();
-    }
-    
-    // If showModeratedContent changed, refresh albums to apply filter
-    if (key === 'showModeratedContent') {
-      // Use a timeout to prevent immediate re-render issues
-      setTimeout(() => {
-        refreshAlbums();
-      }, 100);
+    try {
+      const newSettings = { ...state.settings, [key]: value };
+      dispatch({ type: 'SET_SETTINGS', payload: newSettings });
+      await MediaStorage.saveSettings(newSettings);
+      
+      // Sync with theme manager when customColors or darkMode changes
+      if (key === 'customColors' || key === 'darkMode') {
+        const { ThemeManager } = await import('../utils/theme');
+        const themeManager = ThemeManager.getInstance();
+        themeManager.setTheme(
+          key === 'darkMode' ? value : newSettings.darkMode,
+          key === 'customColors' ? value : newSettings.customColors
+        );
+      }
+      
+      console.log(`✅ Setting ${key} updated successfully`);
+    } catch (error) {
+      console.error(`❌ Error updating setting ${key}:`, error);
+      throw error;
     }
   };
 
