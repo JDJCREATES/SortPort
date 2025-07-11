@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import { UserFlags } from '../../types';
-import { lightTheme } from '../../utils/theme';
+import { UserFlags, AppTheme } from '../../types';
+import { getCurrentTheme, ThemeManager } from '../../utils/theme';
 
 interface PremiumFeaturesSectionProps {
   userFlags: UserFlags;
@@ -16,6 +16,22 @@ export function PremiumFeaturesSection({
   setShowCreditPurchaseModal, 
   handleRestorePurchases 
 }: PremiumFeaturesSectionProps) {
+  // Same pattern as tabs - just track current theme
+  const [currentTheme, setCurrentTheme] = useState<AppTheme>(() => getCurrentTheme());
+  
+  // Subscribe to theme changes - same as tabs
+  useEffect(() => {
+    const themeManager = ThemeManager.getInstance();
+    
+    const unsubscribe = themeManager.subscribe((newTheme) => {
+      setCurrentTheme(newTheme);
+    });
+    
+    return unsubscribe;
+  }, []);
+
+  const styles = React.useMemo(() => createStyles(currentTheme), [currentTheme]);
+
   return (
     <Animated.View entering={FadeInUp.delay(250)} style={styles.section}>
       <Text style={styles.sectionTitle}>Credits & Features</Text>
@@ -23,7 +39,7 @@ export function PremiumFeaturesSection({
       {/* Credit Balance Display */}
       <View style={styles.creditBalanceCard}>
         <View style={styles.creditBalanceHeader}>
-          <Ionicons name="diamond" size={24} color={lightTheme.colors.primary} />
+          <Ionicons name="diamond" size={24} color={currentTheme.colors.primary} />
           <View style={styles.creditBalanceInfo}>
             <Text style={styles.creditBalanceTitle}>Credit Balance</Text>
             <Text style={styles.creditBalanceAmount}>{userFlags.creditBalance} credits</Text>
@@ -45,7 +61,7 @@ export function PremiumFeaturesSection({
         onPress={() => setShowCreditPurchaseModal(true)}
       >
         <View style={styles.premiumHeader}>
-          <Ionicons name="flash" size={24} color={lightTheme.colors.warning} />
+          <Ionicons name="flash" size={24} color={currentTheme.colors.warning} />
           <View style={styles.premiumInfo}>
             <Text style={styles.premiumTitle}>AI Sorting Credits</Text>
             <Text style={styles.premiumStatus}>
@@ -62,61 +78,61 @@ export function PremiumFeaturesSection({
 
 
       <TouchableOpacity style={styles.restoreButton} onPress={handleRestorePurchases}>
-        <Ionicons name="refresh" size={16} color={lightTheme.colors.primary} />
+        <Ionicons name="refresh" size={16} color={currentTheme.colors.primary} />
         <Text style={styles.restoreButtonText}>Restore Purchases</Text>
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   section: {
-    marginBottom: lightTheme.spacing.xl,
+    marginBottom: theme.spacing.xl,
   },
   sectionTitle: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.md,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
   },
   creditBalanceCard: {
-    backgroundColor: `${lightTheme.colors.primary}10`,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    marginBottom: lightTheme.spacing.md,
+    backgroundColor: `${theme.colors.primary}10`,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
     borderWidth: 1,
-    borderColor: `${lightTheme.colors.primary}20`,
+    borderColor: `${theme.colors.primary}20`,
   },
   creditBalanceHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: lightTheme.spacing.sm,
+    marginBottom: theme.spacing.sm,
   },
   creditBalanceInfo: {
     flex: 1,
-    marginLeft: lightTheme.spacing.sm,
+    marginLeft: theme.spacing.sm,
   },
   creditBalanceTitle: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
   },
   creditBalanceAmount: {
     fontSize: 20,
     fontFamily: 'Inter-Bold',
-    color: lightTheme.colors.primary,
+    color: theme.colors.primary,
   },
   creditBalanceDescription: {
     fontSize: 13,
     fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     lineHeight: 18,
   },
   buyCreditsButton: {
-    backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.md,
-    paddingVertical: lightTheme.spacing.sm,
-    borderRadius: lightTheme.borderRadius.md,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
   },
   buyCreditsButtonText: {
     color: 'white',
@@ -124,10 +140,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
   },
   premiumCard: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    marginBottom: lightTheme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -140,23 +156,23 @@ const styles = StyleSheet.create({
   },
   premiumInfo: {
     flex: 1,
-    marginLeft: lightTheme.spacing.sm,
+    marginLeft: theme.spacing.sm,
   },
   premiumTitle: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
   },
   premiumStatus: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   upgradeButton: {
-    backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.md,
-    paddingVertical: lightTheme.spacing.sm,
-    borderRadius: lightTheme.borderRadius.md,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
   },
   upgradeButtonText: {
     color: 'white',
@@ -167,11 +183,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: lightTheme.spacing.sm,
-    gap: lightTheme.spacing.xs,
+    padding: theme.spacing.sm,
+    gap: theme.spacing.xs,
   },
   restoreButtonText: {
-    color: lightTheme.colors.primary,
+    color: theme.colors.primary,
     fontSize: 14,
     fontFamily: 'Inter-SemiBold',
   },

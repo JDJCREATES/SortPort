@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { SupabaseAuth, UserProfile } from '../../utils/supabase';
-import { lightTheme } from '../../utils/theme';
+import { getCurrentTheme, ThemeManager } from '../../utils/theme';
+import { AppTheme } from '../../types';
 
 interface AccountSectionProps {
   userProfile: UserProfile | null;
@@ -19,6 +20,17 @@ export function AccountSection({
   signOut,
   setShowAuthModal 
 }: AccountSectionProps) {
+  const [currentTheme, setCurrentTheme] = useState<AppTheme>(() => getCurrentTheme());
+
+  // Subscribe to theme changes for instant updates
+  useEffect(() => {
+    const themeManager = ThemeManager.getInstance();
+    const unsubscribe = themeManager.subscribe((newTheme) => {
+      setCurrentTheme(newTheme);
+    });
+    return unsubscribe;
+  }, []);
+
   const handleSignOut = async () => {
     Alert.alert(
       'Sign Out',
@@ -34,6 +46,8 @@ export function AccountSection({
     );
   };
 
+  const styles = React.useMemo(() => createStyles(currentTheme), [currentTheme]);
+
   return (
     <Animated.View entering={FadeInUp.delay(150)} style={styles.section}>
       <Text style={styles.sectionTitle}>Account</Text>
@@ -45,7 +59,7 @@ export function AccountSection({
       ) : userProfile ? (
         <View style={styles.profileCard}>
           <View style={styles.profileHeader}>
-            <Ionicons name="person-circle" size={24} color={lightTheme.colors.primary} />
+            <Ionicons name="person-circle" size={24} color={currentTheme.colors.primary} />
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>
                 {userProfile.full_name || 'User'}
@@ -53,7 +67,7 @@ export function AccountSection({
               <Text style={styles.profileEmail}>{userProfile.email}</Text>
             </View>
             <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-              <Ionicons name="log-out" size={16} color={lightTheme.colors.error} />
+              <Ionicons name="log-out" size={16} color={currentTheme.colors.error} />
             </TouchableOpacity>
           </View>
         </View>
@@ -62,7 +76,7 @@ export function AccountSection({
           style={styles.signInCard}
           onPress={() => setShowAuthModal(true)}
         >
-          <Ionicons name="log-in" size={24} color={lightTheme.colors.primary} />
+          <Ionicons name="log-in" size={24} color={currentTheme.colors.primary} />
           <View style={styles.signInInfo}>
             <Text style={styles.signInTitle}>Sign In to SnapSort</Text>
             <Text style={styles.signInDescription}>
@@ -75,20 +89,20 @@ export function AccountSection({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   section: {
-    marginBottom: lightTheme.spacing.xl,
+    marginBottom: theme.spacing.xl,
   },
   sectionTitle: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.md,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
   },
   loadingCard: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
     alignItems: 'center',
     elevation: 1,
     shadowColor: '#000',
@@ -98,13 +112,13 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
   },
   profileCard: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -117,49 +131,49 @@ const styles = StyleSheet.create({
   },
   profileInfo: {
     flex: 1,
-    marginLeft: lightTheme.spacing.sm,
+    marginLeft: theme.spacing.sm,
   },
   profileName: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
   },
   profileEmail: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   signOutButton: {
-    padding: lightTheme.spacing.sm,
+    padding: theme.spacing.sm,
   },
   signInCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
     elevation: 2,
-    shadowColor: lightTheme.colors.primary,
+    shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     borderWidth: 1,
-    borderColor: `${lightTheme.colors.primary}20`,
+    borderColor: `${theme.colors.primary}20`,
   },
   signInInfo: {
     flex: 1,
-    marginLeft: lightTheme.spacing.md,
+    marginLeft: theme.spacing.md,
   },
   signInTitle: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.xs,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   signInDescription: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     lineHeight: 20,
   },
 });

@@ -52,7 +52,7 @@ const getLuminance = (hex: string): number => {
   return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
 };
 
-// Calculate contrast ratio between two colors - SINGLE IMPLEMENTATION
+// Calculate contrast ratio between two colors
 const calculateContrastRatio = (color1: string, color2: string): number => {
   const lum1 = getLuminance(color1);
   const lum2 = getLuminance(color2);
@@ -61,23 +61,40 @@ const calculateContrastRatio = (color1: string, color2: string): number => {
   return (brightest + 0.05) / (darkest + 0.05);
 };
 
-// Generate surface colors with stark differences
+// Intelligently invert a color for dark mode
+const invertColorForDarkMode = (hex: string): string => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  
+  const luminance = getLuminance(hex);
+  
+  // If it's already dark, make it lighter
+  if (luminance < 0.5) {
+    // For dark colors, create a lighter version
+    return generateTint(hex, 60); // Make it 60% lighter
+  } else {
+    // For light colors, create a darker version
+    return generateShade(hex, 70); // Make it 70% darker
+  }
+};
+
+// Generate surface colors dynamically based on background
 const generateSurfaceColors = (backgroundColor: string, isDark: boolean) => {
   const luminance = getLuminance(backgroundColor);
   
   if (isDark) {
-    // For dark mode, create much lighter surfaces with more contrast
+    // For dark mode, create lighter surfaces
     return {
-      surface: generateTint(backgroundColor, luminance > 0.1 ? 12 : 18),      // Much lighter for cards
-      surfaceVariant: generateTint(backgroundColor, luminance > 0.1 ? 8 : 12), // Subtle lift
-      border: generateTint(backgroundColor, luminance > 0.1 ? 25 : 35),        // Very visible borders
+      surface: generateTint(backgroundColor, luminance > 0.1 ? 12 : 18),
+      surfaceVariant: generateTint(backgroundColor, luminance > 0.1 ? 8 : 12),
+      border: generateTint(backgroundColor, luminance > 0.1 ? 25 : 35),
     };
   } else {
-    // For light mode, create much darker surfaces with more contrast
+    // For light mode, create darker surfaces
     return {
-      surface: generateShade(backgroundColor, luminance < 0.8 ? 8 : 5),       // Darker for cards
-      surfaceVariant: generateShade(backgroundColor, luminance < 0.8 ? 4 : 2), // Subtle depth
-      border: generateShade(backgroundColor, luminance < 0.8 ? 20 : 15),      // Very visible borders
+      surface: generateShade(backgroundColor, luminance < 0.8 ? 8 : 5),
+      surfaceVariant: generateShade(backgroundColor, luminance < 0.8 ? 4 : 2),
+      border: generateShade(backgroundColor, luminance < 0.8 ? 20 : 15),
     };
   }
 };
@@ -92,7 +109,7 @@ const generateTextColors = (backgroundColor: string, isDark: boolean) => {
   const lightSecondary = '#E2E8F0';
   const darkSecondary = '#475569';
   
-  // Calculate contrast ratios using the single method
+  // Calculate contrast ratios
   const lightContrast = calculateContrastRatio(backgroundColor, lightText);
   const darkContrast = calculateContrastRatio(backgroundColor, darkText);
   
@@ -123,58 +140,38 @@ const generateTextColors = (backgroundColor: string, isDark: boolean) => {
   }
 };
 
-// Enhanced background colors with more variety
-export const BACKGROUND_COLORS = {
-  light: [
-    '#FFFFFF', // Pure White
-    '#FEFEFE', // Almost White
-    '#F8FAFC', // Slate 50
-    '#F1F5F9', // Slate 100
-    '#E2E8F0', // Slate 200
-    '#FEF7F0', // Warm White
-    '#FFF8F0', // Cream
-    '#F0F9FF', // Sky 50
-    '#F0F8FF', // Alice Blue
-    '#ECFDF5', // Emerald 50
-    '#F0FDF4', // Green 50
-    '#FEF3C7', // Amber 50
-    '#FFFBEB', // Amber 25
-    '#FCE7F3', // Pink 50
-    '#FDF2F8', // Pink 25
-    '#F3E8FF', // Violet 50
-    '#FAF5FF', // Violet 25
-    '#E0F2FE', // Light Blue 50
-    '#F0F9FF', // Light Blue 25
-    '#F5F5F4', // Stone 50
-    '#FAFAF9', // Stone 25
-  ],
-  dark: [
-    '#000000', // Pure Black
-    '#0A0A0A', // Almost Black
-    '#0F172A', // Slate 900
-    '#1E293B', // Slate 800
-    '#334155', // Slate 700
-    '#475569', // Slate 600 (lighter dark)
-    '#1F2937', // Gray 800
-    '#374151', // Gray 700 (lighter dark)
-    '#4B5563', // Gray 600 (medium dark)
-    '#111827', // Gray 900
-    '#1F1F23', // Dark Purple Tint
-    '#0C1426', // Dark Blue
-    '#1A1625', // Dark Purple
-    '#1F1B24', // Dark Violet
-    '#0D1117', // GitHub Dark
-    '#161B22', // GitHub Dark Lighter
-    '#21262D', // GitHub Dark Medium
-    '#1C1917', // Stone 900
-    '#292524', // Stone 800
-    '#1F2937', // Cool Gray 800
-    '#2D3748', // Cool Gray 700 (lighter)
-    '#4A5568', // Cool Gray 600 (medium)
-  ]
-};
+// Single set of background colors - the system will handle dark mode conversion
+export const BACKGROUND_COLORS = [
+  '#FFFFFF', // Pure White
+  '#F8FAFC', // Slate 50
+  '#F1F5F9', // Slate 100
+  '#E2E8F0', // Slate 200
+  '#FEF7F0', // Warm White
+  '#FFF8F0', // Cream
+  '#F0F9FF', // Sky 50
+  '#ECFDF5', // Emerald 50
+  '#F0FDF4', // Green 50
+  '#FEF3C7', // Amber 50
+  '#FFFBEB', // Amber 25
+  '#FCE7F3', // Pink 50
+  '#FDF2F8', // Pink 25
+  '#F3E8FF', // Violet 50
+  '#FAF5FF', // Violet 25
+  '#E0F2FE', // Light Blue 50
+  '#F5F5F4', // Stone 50
+  '#FAFAF9', // Stone 25
+  // Add some mid-tone colors that work well in both modes
+  '#D1D5DB', // Gray 300
+  '#9CA3AF', // Gray 400
+  '#6B7280', // Gray 500
+  '#4B5563', // Gray 600
+  '#374151', // Gray 700
+  '#1F2937', // Gray 800
+  '#111827', // Gray 900
+  '#000000', // Pure Black
+];
 
-// Predefined accent colors with good contrast
+// Accent colors remain the same
 export const ACCENT_COLORS = [
   '#6366F1', // Indigo
   '#8B5CF6', // Violet
@@ -201,7 +198,7 @@ export const ACCENT_COLORS = [
 export const defaultLightTheme: AppTheme = {
   colors: {
     primary: '#6366F1',
-    secondary: '#FFFFFF', // Background
+    secondary: '#FFFFFF',
     background: '#FFFFFF',
     surface: '#F8FAFC',
     text: '#0F172A',
@@ -229,7 +226,7 @@ export const defaultLightTheme: AppTheme = {
 export const defaultDarkTheme: AppTheme = {
   colors: {
     primary: '#818CF8',
-    secondary: '#0F172A', // Background
+    secondary: '#0F172A',
     background: '#0F172A',
     surface: '#1E293B',
     text: '#F8FAFC',
@@ -254,7 +251,7 @@ export const defaultDarkTheme: AppTheme = {
   },
 };
 
-// Enhanced Theme Manager with better contrast
+// Enhanced Theme Manager
 export class ThemeManager {
   private static instance: ThemeManager;
   private currentTheme: AppTheme = defaultLightTheme;
@@ -290,22 +287,33 @@ export class ThemeManager {
     // Start with base theme
     let themeColors = { ...baseTheme.colors };
     
-    // Apply custom colors
+    // Apply custom colors intelligently
     if (this.customColors.primary) {
       themeColors.primary = this.customColors.primary;
     }
     
     if (this.customColors.secondary) {
       // Secondary is the background color
-      themeColors.background = this.customColors.secondary;
-      themeColors.secondary = this.customColors.secondary;
+      let backgroundColor = this.customColors.secondary;
       
-      // Generate surface colors with stark differences
-      const surfaceColors = generateSurfaceColors(this.customColors.secondary, isDark);
+      // If we're in dark mode and the chosen color is light, invert it
+      if (isDark && getLuminance(backgroundColor) > 0.5) {
+        backgroundColor = invertColorForDarkMode(backgroundColor);
+      }
+      // If we're in light mode and the chosen color is dark, invert it
+      else if (!isDark && getLuminance(backgroundColor) < 0.5) {
+        backgroundColor = invertColorForDarkMode(backgroundColor);
+      }
+      
+      themeColors.background = backgroundColor;
+      themeColors.secondary = backgroundColor;
+      
+      // Generate surface colors dynamically
+      const surfaceColors = generateSurfaceColors(backgroundColor, isDark);
       themeColors = { ...themeColors, ...surfaceColors };
       
       // Generate text colors with guaranteed contrast
-      const textColors = generateTextColors(this.customColors.secondary, isDark);
+      const textColors = generateTextColors(backgroundColor, isDark);
       themeColors = { ...themeColors, ...textColors };
     }
     
@@ -328,7 +336,7 @@ export class ThemeManager {
       lightTheme = this.currentTheme;
     }
 
-    // Notify all listeners with error handling
+    // Notify all listeners
     this.listeners.forEach(listener => {
       try {
         listener(this.currentTheme, this.isDarkMode);
@@ -395,19 +403,30 @@ export class ThemeManager {
     const baseTheme = this.isDarkMode ? defaultDarkTheme : defaultLightTheme;
     let themeColors = { ...baseTheme.colors };
     
-    // Apply preview colors
+    // Apply preview colors intelligently
     if (customColors.primary) {
       themeColors.primary = customColors.primary;
     }
     
     if (customColors.secondary) {
-      themeColors.background = customColors.secondary;
-      themeColors.secondary = customColors.secondary;
+      let backgroundColor = customColors.secondary;
       
-      const surfaceColors = generateSurfaceColors(customColors.secondary, this.isDarkMode);
+      // If we're in dark mode and the chosen color is light, invert it
+      if (this.isDarkMode && getLuminance(backgroundColor) > 0.5) {
+        backgroundColor = invertColorForDarkMode(backgroundColor);
+      }
+      // If we're in light mode and the chosen color is dark, invert it
+      else if (!this.isDarkMode && getLuminance(backgroundColor) < 0.5) {
+        backgroundColor = invertColorForDarkMode(backgroundColor);
+      }
+      
+      themeColors.background = backgroundColor;
+      themeColors.secondary = backgroundColor;
+      
+      const surfaceColors = generateSurfaceColors(backgroundColor, this.isDarkMode);
       themeColors = { ...themeColors, ...surfaceColors };
       
-      const textColors = generateTextColors(customColors.secondary, this.isDarkMode);
+      const textColors = generateTextColors(backgroundColor, this.isDarkMode);
       themeColors = { ...themeColors, ...textColors };
     }
     
@@ -417,7 +436,7 @@ export class ThemeManager {
     };
   }
 
-  // Get contrast ratio for accessibility checking - SINGLE PUBLIC METHOD
+  // Get contrast ratio for accessibility checking
   getContrastRatio(color1: string, color2: string): number {
     return calculateContrastRatio(color1, color2);
   }
@@ -444,7 +463,7 @@ export const previewThemeColors = (customColors: Partial<AppTheme['colors']>): A
   return ThemeManager.getInstance().previewTheme(customColors);
 };
 
-// Helper function to get contrast ratio - SINGLE EXPORT
+// Helper function to get contrast ratio
 export const getContrastRatio = (color1: string, color2: string): number => {
   return ThemeManager.getInstance().getContrastRatio(color1, color2);
 };

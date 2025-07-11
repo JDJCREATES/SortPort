@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import { lightTheme } from '../../utils/theme';
+import { getCurrentTheme, ThemeManager } from '../../utils/theme';
+import { AppTheme } from '../../types';
 
 interface SourceManagementSectionProps {
   selectedFolders: string[];
@@ -13,6 +14,19 @@ export function SourceManagementSection({
   selectedFolders, 
   setShowSourcePicker 
 }: SourceManagementSectionProps) {
+  const [currentTheme, setCurrentTheme] = useState<AppTheme>(() => getCurrentTheme());
+
+  // Subscribe to theme changes for instant updates
+  useEffect(() => {
+    const themeManager = ThemeManager.getInstance();
+    const unsubscribe = themeManager.subscribe((newTheme) => {
+      setCurrentTheme(newTheme);
+    });
+    return unsubscribe;
+  }, []);
+
+  const styles = React.useMemo(() => createStyles(currentTheme), [currentTheme]);
+
   return (
     <Animated.View entering={FadeInUp.delay(200)} style={styles.section}>
       <Text style={styles.sectionTitle}>Photo Sources</Text>
@@ -27,29 +41,29 @@ export function SourceManagementSection({
             Choose which folders to include in AI sorting ({selectedFolders.length} selected)
           </Text>
         </View>
-        <Ionicons name="folder" size={20} color={lightTheme.colors.primary} />
+        <Ionicons name="folder" size={20} color={currentTheme.colors.primary} />
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   section: {
-    marginBottom: lightTheme.spacing.xl,
+    marginBottom: theme.spacing.xl,
   },
   sectionTitle: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.md,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
   },
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
-    padding: lightTheme.spacing.lg,
-    marginBottom: lightTheme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -62,12 +76,12 @@ const styles = StyleSheet.create({
   settingLabel: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
   },
   settingDescription: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     marginTop: 2,
     lineHeight: 18,
   },

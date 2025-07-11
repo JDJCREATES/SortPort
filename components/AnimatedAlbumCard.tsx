@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Animated, { 
   useSharedValue, 
@@ -12,7 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Album } from '../types';
 import { AlbumViewMode } from '../types/display';
 import { OptimizedImage } from './OptimizedImage';
-import { lightTheme } from '../utils/theme';
+import { getCurrentTheme, ThemeManager } from '../utils/theme';
+import { AppTheme } from '../types';
 
 interface AnimatedAlbumCardProps {
   album: Album;
@@ -33,6 +34,17 @@ export function AnimatedAlbumCard({
   viewMode = 'grid-2',
   showDetails = true
 }: AnimatedAlbumCardProps) {
+  const [currentTheme, setCurrentTheme] = useState<AppTheme>(() => getCurrentTheme());
+
+  // Subscribe to theme changes for instant updates
+  useEffect(() => {
+    const themeManager = ThemeManager.getInstance();
+    const unsubscribe = themeManager.subscribe((newTheme) => {
+      setCurrentTheme(newTheme);
+    });
+    return unsubscribe;
+  }, []);
+
   const scale = useSharedValue(0);
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(50);
@@ -73,6 +85,8 @@ export function AnimatedAlbumCard({
   const isCompactMode = viewMode === 'grid-6' || viewMode === 'grid-8';
   const isLargeMode = viewMode === 'large';
 
+  const styles = React.useMemo(() => createStyles(currentTheme), [currentTheme]);
+
   return (
     <AnimatedTouchableOpacity 
       style={[
@@ -109,7 +123,7 @@ export function AnimatedAlbumCard({
             <Ionicons 
               name="sparkles" 
               size={isCompactMode ? 16 : isLargeMode ? 48 : 32} 
-              color={lightTheme.colors.primary} 
+              color={currentTheme.colors.primary} 
             />
           </View>
         )}
@@ -157,11 +171,11 @@ export function AnimatedAlbumCard({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
     overflow: 'hidden',
     elevation: 3,
     shadowColor: '#000',
@@ -170,13 +184,13 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   largeContainer: {
-    borderRadius: lightTheme.borderRadius.xl,
+    borderRadius: theme.borderRadius.xl,
     elevation: 4,
     shadowOpacity: 0.15,
     shadowRadius: 12,
   },
   compactContainer: {
-    borderRadius: lightTheme.borderRadius.sm,
+    borderRadius: theme.borderRadius.sm,
     elevation: 2,
     shadowOpacity: 0.08,
     shadowRadius: 4,
@@ -191,53 +205,53 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: '100%',
     height: '100%',
-    backgroundColor: lightTheme.colors.border,
+    backgroundColor: theme.colors.border,
   },
   largeThumbnail: {
-    borderRadius: lightTheme.borderRadius.lg,
+    borderRadius: theme.borderRadius.lg,
   },
   placeholderThumbnail: {
     width: '100%',
     height: '100%',
-    backgroundColor: `${lightTheme.colors.primary}15`,
+    backgroundColor: `${theme.colors.primary}15`,
     justifyContent: 'center',
     alignItems: 'center',
   },
   largePlaceholderThumbnail: {
-    borderRadius: lightTheme.borderRadius.lg,
+    borderRadius: theme.borderRadius.lg,
   },
   lockOverlay: {
     position: 'absolute',
-    top: lightTheme.spacing.sm,
-    right: lightTheme.spacing.sm,
+    top: theme.spacing.sm,
+    right: theme.spacing.sm,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: lightTheme.borderRadius.sm,
-    padding: lightTheme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
+    padding: theme.spacing.xs,
   },
   moderatedOverlay: {
     position: 'absolute',
-    top: lightTheme.spacing.sm,
-    left: lightTheme.spacing.sm,
+    top: theme.spacing.sm,
+    left: theme.spacing.sm,
     backgroundColor: 'rgba(255, 152, 0, 0.9)', // Orange warning color
-    borderRadius: lightTheme.borderRadius.sm,
-    padding: lightTheme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
+    padding: theme.spacing.xs,
   },
   countBadge: {
     position: 'absolute',
-    bottom: lightTheme.spacing.sm,
-    right: lightTheme.spacing.sm,
-    backgroundColor: lightTheme.colors.primary,
-    borderRadius: lightTheme.borderRadius.md,
-    paddingHorizontal: lightTheme.spacing.sm,
-    paddingVertical: lightTheme.spacing.xs,
+    bottom: theme.spacing.sm,
+    right: theme.spacing.sm,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
     minWidth: 28,
     alignItems: 'center',
   },
   compactCountBadge: {
-    paddingHorizontal: lightTheme.spacing.xs,
+    paddingHorizontal: theme.spacing.xs,
     paddingVertical: 2,
     minWidth: 20,
-    borderRadius: lightTheme.borderRadius.sm,
+    borderRadius: theme.borderRadius.sm,
   },
   countText: {
     color: 'white',
@@ -256,24 +270,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   info: {
-    padding: lightTheme.spacing.md,
+    padding: theme.spacing.md,
   },
   largeInfo: {
-    padding: lightTheme.spacing.lg,
+    padding: theme.spacing.lg,
   },
   albumName: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.xs,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   largeAlbumName: {
     fontSize: 20,
-    marginBottom: lightTheme.spacing.sm,
+    marginBottom: theme.spacing.sm,
   },
   tags: {
     fontSize: 12,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
   },
   largeTags: {

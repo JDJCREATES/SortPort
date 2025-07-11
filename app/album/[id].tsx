@@ -30,7 +30,7 @@ import { ExportAlbumModal } from '../../components/ExportAlbumModal';
 import { OptimizedImage } from '../../components/OptimizedImage';
 import { ImageCacheManager } from '../../utils/imageCache';
 import { useImagePreloader } from '../../hooks/useImagePreloader';
-import { lightTheme } from '../../utils/theme';
+import { getCurrentTheme } from '../../utils/theme';
 import { useApp } from '../../contexts/AppContext';
 
 const PHOTOS_PER_BATCH = 50; // Increased batch size for better initial loading
@@ -56,6 +56,7 @@ interface AlbumScreenState {
 export default function AlbumScreen() {
   const { id: albumId } = useLocalSearchParams();
   const { userFlags } = useApp();
+  const theme = getCurrentTheme();
   
   // Add focus tracking to prevent unnecessary refreshes
   const isFocused = useRef(false);
@@ -88,8 +89,8 @@ export default function AlbumScreen() {
 
   // Performance refs
   const hasLoadedRef = useRef(false);
-const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const isMountedRef = useRef(true);
@@ -110,8 +111,6 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
       if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
     };
   }, []);
-
-  
 
   // Memoized image viewer data
   const imageViewerData = useMemo<ImageViewerData[]>(() => 
@@ -340,11 +339,11 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     
     return (
       <Animated.View entering={FadeInUp} style={styles.loadingFooter}>
-        <ActivityIndicator size="small" color={lightTheme.colors.primary} />
+        <ActivityIndicator size="small" color={theme.colors.primary} />
         <Text style={styles.loadingText}>Loading more photos...</Text>
       </Animated.View>
     );
-  }, [state.isFetchingMore]);
+  }, [state.isFetchingMore, theme.colors.primary]);
 
   const renderHeader = useCallback(() => {
     if (!state.album) return null;
@@ -369,7 +368,7 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
             style={styles.actionButton} 
             onPress={() => userFlags.hasPurchasedCredits ? null : Alert.alert('Premium Feature', 'Purchase credits to access sharing features.')}
           >
-            <Feather name="share" size={16} color={userFlags.hasPurchasedCredits ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
+            <Feather name="share" size={16} color={userFlags.hasPurchasedCredits ? theme.colors.primary : theme.colors.textSecondary} />
             <Text style={[styles.actionButtonText, !userFlags.hasPurchasedCredits && styles.actionButtonTextDisabled]}>Share</Text>
           </TouchableOpacity>
           
@@ -392,24 +391,26 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
               }
             }}
           >
-            <Feather name="download" size={16} color={userFlags.hasPurchasedCredits ? lightTheme.colors.primary : lightTheme.colors.textSecondary} />
+            <Feather name="download" size={16} color={userFlags.hasPurchasedCredits ? theme.colors.primary : theme.colors.textSecondary} />
             <Text style={[styles.actionButtonText, !userFlags.hasPurchasedCredits && styles.actionButtonTextDisabled]}>Export</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
     );
-  }, [state.album, userFlags]);
+  }, [state.album, userFlags, theme.colors.primary, theme.colors.textSecondary]);
 
   const keyExtractor = useCallback((item: ImageMeta, index: number) => {
     return `photo-${item.id}-${index}`;
   }, []);
 
+  // Create styles with current theme
+  const styles = createStyles(theme);
 
   if (state.loading && !state.album) {
     return (
       <SafeAreaView style={styles.container}>
         <Animated.View entering={FadeInUp} style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={lightTheme.colors.primary} />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>Loading album...</Text>
           {state.retryCount > 0 && (
             <Text style={styles.retryText}>Attempt {state.retryCount}</Text>
@@ -453,14 +454,14 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     <SafeAreaView style={styles.container}>
       <Animated.View entering={SlideInRight.delay(100)} style={styles.header}>
         <TouchableOpacity style={styles.headerBackButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={lightTheme.colors.text} />
+          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{state.album.name}</Text>
         <TouchableOpacity style={styles.viewModeButton} onPress={toggleViewMode}>
           {state.viewMode === 'grid' ? (
-            <Feather name="list" size={20} color={lightTheme.colors.textSecondary} />
+            <Feather name="list" size={20} color={theme.colors.textSecondary} />
           ) : (
-            <MaterialIcons name="grid-view" size={20} color={lightTheme.colors.textSecondary} />
+            <MaterialIcons name="grid-view" size={20} color={theme.colors.textSecondary} />
           )}
         </TouchableOpacity>
       </Animated.View>
@@ -516,19 +517,19 @@ const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: lightTheme.colors.background,
+    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: lightTheme.spacing.lg,
-    paddingVertical: lightTheme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: lightTheme.colors.border,
-    backgroundColor: lightTheme.colors.background,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.background,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -542,34 +543,34 @@ const styles = StyleSheet.create({
     }),
   },
   headerBackButton: {
-    padding: lightTheme.spacing.sm,
-    marginLeft: -lightTheme.spacing.sm,
+    padding: theme.spacing.sm,
+    marginLeft: -theme.spacing.sm,
   },
   title: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
     flex: 1,
     textAlign: 'center',
-    marginHorizontal: lightTheme.spacing.md,
+    marginHorizontal: theme.spacing.md,
   },
   viewModeButton: {
-    padding: lightTheme.spacing.sm,
+    padding: theme.spacing.sm,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: lightTheme.spacing.md,
+    gap: theme.spacing.md,
   },
   loadingText: {
     fontSize: 16,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
   },
   retryText: {
     fontSize: 14,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     opacity: 0.7,
   },
@@ -577,28 +578,28 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: lightTheme.spacing.xl,
-    gap: lightTheme.spacing.md,
+    paddingHorizontal: theme.spacing.xl,
+    gap: theme.spacing.md,
   },
   errorTitle: {
     fontSize: 20,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
     textAlign: 'center',
   },
   errorText: {
     fontSize: 16,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     textAlign: 'center',
     lineHeight: 22,
   },
   retryButton: {
-    backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.xl,
-    paddingVertical: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.lg,
-    marginTop: lightTheme.spacing.md,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
+    marginTop: theme.spacing.md,
   },
   retryButtonText: {
     color: 'white',
@@ -606,74 +607,74 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
   },
   backButton: {
-    paddingHorizontal: lightTheme.spacing.xl,
-    paddingVertical: lightTheme.spacing.md,
-    borderRadius: lightTheme.borderRadius.lg,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
     borderWidth: 1,
-    borderColor: lightTheme.colors.border,
+    borderColor: theme.colors.border,
   },
   backButtonText: {
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
     fontSize: 16,
     fontFamily: 'Inter-Medium',
   },
   albumInfo: {
-    padding: lightTheme.spacing.lg,
+    padding: theme.spacing.lg,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: lightTheme.colors.border,
+    borderBottomColor: theme.colors.border,
   },
   photoCount: {
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.sm,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
   },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: lightTheme.spacing.xs,
+    gap: theme.spacing.xs,
   },
   tag: {
-    backgroundColor: lightTheme.colors.surface,
-    paddingHorizontal: lightTheme.spacing.sm,
-    paddingVertical: lightTheme.spacing.xs,
-    borderRadius: lightTheme.borderRadius.sm,
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
   },
   tagText: {
     fontSize: 12,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
   },
   actionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingVertical: lightTheme.spacing.md,
+    paddingVertical: theme.spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: lightTheme.colors.border,
+    borderBottomColor: theme.colors.border,
   },
   actionButton: {
     alignItems: 'center',
-    gap: lightTheme.spacing.xs,
-    padding: lightTheme.spacing.sm,
+    gap: theme.spacing.xs,
+    padding: theme.spacing.sm,
   },
   actionButtonText: {
     fontSize: 12,
-    color: lightTheme.colors.primary,
+    color: theme.colors.primary,
     fontFamily: 'Inter-Medium',
   },
   actionButtonTextDisabled: {
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
   photoContainer: {
-    padding: lightTheme.spacing.sm,
+    padding: theme.spacing.sm,
   },
   gridPhoto: {
     flex: 1,
     aspectRatio: 1,
     margin: 2,
-    borderRadius: lightTheme.borderRadius.sm,
+    borderRadius: theme.borderRadius.sm,
     overflow: 'hidden',
-    backgroundColor: lightTheme.colors.surface,
+    backgroundColor: theme.colors.surface,
   },
   gridImage: {
     width: '100%',
@@ -683,17 +684,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: lightTheme.spacing.xl,
-    gap: lightTheme.spacing.md,
+    paddingHorizontal: theme.spacing.xl,
+    gap: theme.spacing.md,
   },
   emptyTitle: {
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
   },
   emptyText: {
     fontSize: 14,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
     textAlign: 'center',
     lineHeight: 20,
@@ -702,7 +703,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: lightTheme.spacing.lg,
-    gap: lightTheme.spacing.sm,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.sm,
   },
 });

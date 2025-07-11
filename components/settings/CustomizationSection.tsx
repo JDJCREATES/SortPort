@@ -22,7 +22,7 @@ import Animated, {
 import { UserFlags, AppSettings } from '../../types';
 import { 
   getCurrentTheme, 
-  previewThemeColors, 
+  previewThemeColors,
   BACKGROUND_COLORS, 
   ACCENT_COLORS,
   getContrastRatio,
@@ -171,7 +171,7 @@ export function CustomizationSection({
   const ColorPickerModal = () => {
     const colors = colorPickerType === 'primary' 
       ? ACCENT_COLORS 
-      : (settings.darkMode ? BACKGROUND_COLORS.dark : BACKGROUND_COLORS.light);
+      : BACKGROUND_COLORS;
     
     console.log('Available colors:', colors.length, 'Type:', colorPickerType);
     
@@ -419,7 +419,7 @@ export function CustomizationSection({
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.previewActionButton, { backgroundColor: previewTheme.colors.primary }]}>
-                    <Text style={styles.previewActionText}>Confirm</Text>
+                    <Text style={[styles.previewActionText]}>Confirm</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -717,10 +717,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
   },
-  poorContrastModalOption: {
-    borderWidth: 2,
-    borderColor: '#FF6B6B',
-  },
   selectedIndicator: {
     position: 'absolute',
     top: 0,
@@ -731,14 +727,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: theme.borderRadius.md,
-  },
-  contrastWarningModal: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 8,
-    padding: 2,
   },
   modalFooter: {
     flexDirection: 'row',

@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Album } from '../types';
 import { OptimizedImage } from './OptimizedImage';
-import { lightTheme } from '../utils/theme';
+import { getCurrentTheme, ThemeManager } from '../utils/theme';
+import { AppTheme } from '../types';
 
 interface AlbumCardProps {
   album: Album;
@@ -12,6 +13,19 @@ interface AlbumCardProps {
 }
 
 export function AlbumCard({ album, onPress, showLocked = true }: AlbumCardProps) {
+  const [currentTheme, setCurrentTheme] = useState<AppTheme>(() => getCurrentTheme());
+
+  // Subscribe to theme changes for instant updates
+  useEffect(() => {
+    const themeManager = ThemeManager.getInstance();
+    const unsubscribe = themeManager.subscribe((newTheme) => {
+      setCurrentTheme(newTheme);
+    });
+    return unsubscribe;
+  }, []);
+
+  const styles = React.useMemo(() => createStyles(currentTheme), [currentTheme]);
+
   return (
     <TouchableOpacity style={styles.container} onPress={onPress}>
       <View style={styles.imageContainer}>
@@ -51,12 +65,12 @@ export function AlbumCard({ album, onPress, showLocked = true }: AlbumCardProps)
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   container: {
     width: '48%',
-    marginBottom: lightTheme.spacing.md,
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.lg,
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
     overflow: 'hidden',
   },
   imageContainer: {
@@ -66,12 +80,12 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: '100%',
     height: '100%',
-    backgroundColor: lightTheme.colors.border,
+    backgroundColor: theme.colors.border,
   },
   placeholderThumbnail: {
     width: '100%',
     height: '100%',
-    backgroundColor: lightTheme.colors.border,
+    backgroundColor: theme.colors.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -81,20 +95,20 @@ const styles = StyleSheet.create({
   },
   lockOverlay: {
     position: 'absolute',
-    top: lightTheme.spacing.sm,
-    right: lightTheme.spacing.sm,
+    top: theme.spacing.sm,
+    right: theme.spacing.sm,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: lightTheme.borderRadius.sm,
-    padding: lightTheme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
+    padding: theme.spacing.xs,
   },
   countBadge: {
     position: 'absolute',
-    bottom: lightTheme.spacing.sm,
-    right: lightTheme.spacing.sm,
-    backgroundColor: lightTheme.colors.primary,
-    borderRadius: lightTheme.borderRadius.sm,
-    paddingHorizontal: lightTheme.spacing.sm,
-    paddingVertical: lightTheme.spacing.xs,
+    bottom: theme.spacing.sm,
+    right: theme.spacing.sm,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.sm,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
   },
   countText: {
     color: 'white',
@@ -102,16 +116,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   info: {
-    padding: lightTheme.spacing.sm,
+    padding: theme.spacing.sm,
   },
   albumName: {
     fontSize: 14,
     fontWeight: '600',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.xs,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
   },
   tags: {
     fontSize: 12,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
   },
 });

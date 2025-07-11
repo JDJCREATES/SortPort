@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Switch } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import { UserFlags, AppSettings } from '../../types';
-import { getCurrentTheme } from '../../utils/theme';
+import { UserFlags, AppSettings, AppTheme } from '../../types';
+import { getCurrentTheme, ThemeManager } from '../../utils/theme';
 
 interface AppSettingsSectionProps {
   userFlags: UserFlags;
@@ -15,8 +15,17 @@ export function AppSettingsSection({
   settings,
   updateSetting,
 }: AppSettingsSectionProps) {
-  const theme = getCurrentTheme();
-  const styles = createStyles(theme);
+  const [currentTheme, setCurrentTheme] = useState<AppTheme>(() => getCurrentTheme());
+
+  useEffect(() => {
+    const themeManager = ThemeManager.getInstance();
+    const unsubscribe = themeManager.subscribe((newTheme) => {
+      setCurrentTheme(newTheme);
+    });
+    return unsubscribe;
+  }, []);
+
+  const styles = React.useMemo(() => createStyles(currentTheme), [currentTheme]);
 
   return (
     <Animated.View entering={FadeInUp.delay(350)} style={styles.section}>
@@ -31,8 +40,8 @@ export function AppSettingsSection({
           value={settings.darkMode}
           onValueChange={(value) => updateSetting('darkMode', value)}
           trackColor={{
-            false: theme.colors.border,
-            true: theme.colors.primary,
+            false: currentTheme.colors.border,
+            true: currentTheme.colors.primary,
           }}
         />
       </View>
@@ -55,8 +64,8 @@ export function AppSettingsSection({
           }}
           disabled={!userFlags.hasPurchasedCredits}
           trackColor={{
-            false: theme.colors.border,
-            true: theme.colors.primary,
+            false: currentTheme.colors.border,
+            true: currentTheme.colors.primary,
           }}
         />
       </View>
@@ -76,8 +85,8 @@ export function AppSettingsSection({
           }}
           disabled={false}
           trackColor={{
-            false: theme.colors.border,
-            true: theme.colors.primary,
+            false: currentTheme.colors.border,
+            true: currentTheme.colors.primary,
           }}
         />
       </View>
@@ -100,22 +109,38 @@ export function AppSettingsSection({
               updateSetting('showModeratedInMainAlbums', value)
             }
             trackColor={{
-              false: theme.colors.border,
-              true: theme.colors.primary + '40',
+              false: currentTheme.colors.border,
+              true: currentTheme.colors.primary + '40',
             }}
             thumbColor={
               settings.showModeratedInMainAlbums
-                ? theme.colors.primary
-                : theme.colors.surface
+                ? currentTheme.colors.primary
+                : currentTheme.colors.surface
             }
           />
         </Animated.View>
       )}
+      <View style={styles.settingItem}>
+        <View style={styles.settingInfo}>
+          <Text style={styles.settingLabel}>Notifications</Text>
+          <Text style={styles.settingDescription}>
+            Enable or disable notifications
+          </Text>
+        </View>
+        <Switch
+          value={settings.notifications}
+          onValueChange={(value) => updateSetting('notifications', value)}
+          trackColor={{
+            false: currentTheme.colors.border,
+            true: currentTheme.colors.primary,
+          }}
+        />
+      </View>
     </Animated.View>
   );
 }
 
-const createStyles = (theme: any) => StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   section: {
     marginBottom: theme.spacing.xl,
   },
@@ -141,8 +166,8 @@ const createStyles = (theme: any) => StyleSheet.create({
   nestedSettingItem: {
     marginLeft: theme.spacing.md,
     backgroundColor: theme.colors.background,
-    borderLeftWidth: 3,
-    borderLeftColor: theme.colors.primary + '40',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   settingInfo: {
     flex: 1,
@@ -158,11 +183,5 @@ const createStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: 2,
     lineHeight: 18,
-  },
-  disabledLabel: {
-    opacity: 0.6,
-  },
-  disabledDescription: {
-    opacity: 0.6,
   },
 });
