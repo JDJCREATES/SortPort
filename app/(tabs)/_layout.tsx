@@ -3,10 +3,12 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 import { getCurrentTheme } from '../../utils/theme';
 import { useApp } from '../../contexts/AppContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const { settings } = useApp();
   const theme = getCurrentTheme();
+  const insets = useSafeAreaInsets();
   
   return (
     <Tabs
@@ -17,6 +19,15 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: theme.colors.background,
           borderTopColor: theme.colors.border,
+          // Ensure proper spacing above system buttons
+          paddingBottom: Platform.select({
+            android: Math.max(insets.bottom, 8), // Ensure minimum 8px padding
+            ios: insets.bottom,
+          }),
+          height: Platform.select({
+            android: 60 + Math.max(insets.bottom, 8), // Base height + safe area
+            ios: 60 + insets.bottom,
+          }),
           // Add subtle shadow/elevation
           ...Platform.select({
             ios: {
@@ -27,18 +38,29 @@ export default function TabLayout() {
             },
             android: {
               elevation: 8,
+              borderTopWidth: 1,
             },
           }),
         },
-        // Valid tab bar styling options
         tabBarItemStyle: {
           paddingVertical: 4,
+          paddingBottom: Platform.select({
+            android: 4,
+            ios: 0,
+          }),
         },
         tabBarLabelStyle: {
           fontSize: 12,
           fontFamily: 'Inter-Medium',
           marginTop: 2,
+          marginBottom: Platform.select({
+            android: 2,
+            ios: 0,
+          }),
         },
+        // Ensure tab bar is always visible
+        tabBarHideOnKeyboard: false,
+        tabBarPosition: 'bottom',
         // Valid animation options
         animation: 'shift',
       }}>
