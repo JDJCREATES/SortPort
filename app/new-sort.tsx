@@ -11,13 +11,14 @@ import { AlbumUtils } from '../utils/albumUtils';
 import { CreditPurchaseManager, CREDIT_COSTS } from '../utils/creditPurchaseManager';
 import { useApp } from '../contexts/AppContext';
 import { ImageMeta, AlbumOutput, SortSession } from '../types';
-import { lightTheme } from '../utils/theme';
+import { getCurrentTheme } from '../utils/theme';
 
 export default function NewSortScreen() {
   const { userFlags, deductCredits } = useApp();
   const params = useLocalSearchParams();
   const navigationRouter = useRouter();
   const initialPrompt = params.prompt as string || '';
+  const theme = getCurrentTheme();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -221,11 +222,14 @@ export default function NewSortScreen() {
     }
   };
 
+  // Create styles with current theme
+  const styles = createStyles(theme);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
-         <Ionicons name="arrow-back" size={24} color={lightTheme.colors.text} />
+         <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>New Sort</Text>
         <View style={styles.headerSpacer} />
@@ -234,7 +238,7 @@ export default function NewSortScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.promptSection}>
           <View style={styles.promptHeader}>
-            <Ionicons name="sparkles" size={20} color={lightTheme.colors.primary} />
+            <Ionicons name="sparkles" size={20} color={theme.colors.primary} />
             <Text style={styles.promptTitle}>AI Photo Sorting</Text>
           </View>
           <Text style={styles.promptDescription}>
@@ -264,7 +268,7 @@ export default function NewSortScreen() {
         {error && (
           <View style={styles.errorSection}>
             <View style={styles.errorContainer}>
-              <Ionicons name="alert-circle" size={20} color={lightTheme.colors.error} />
+              <Ionicons name="alert-circle" size={20} color={theme.colors.error} />
               <Text style={styles.errorText}>{error}</Text>
             </View>
             {(permissionStatus !== 'granted' || photos.length === 0) && (
@@ -385,27 +389,27 @@ export default function NewSortScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: lightTheme.colors.background,
+    backgroundColor: theme.colors.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: lightTheme.spacing.lg,
-    paddingVertical: lightTheme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: lightTheme.colors.border,
+    borderBottomColor: theme.colors.border,
   },
   backButton: {
-    padding: lightTheme.spacing.sm,
-    marginLeft: -lightTheme.spacing.sm,
+    padding: theme.spacing.sm,
+    marginLeft: -theme.spacing.sm,
   },
   title: {
     fontSize: 20,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    fontWeight: '600',
+    color: theme.colors.text,
     flex: 1,
     textAlign: 'center',
   },
@@ -416,188 +420,194 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   promptSection: {
-    padding: lightTheme.spacing.lg,
+    padding: theme.spacing.lg,
   },
   promptHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: lightTheme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+    gap: theme.spacing.sm,
   },
   promptTitle: {
     fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginLeft: lightTheme.spacing.sm,
+    fontWeight: '600',
+    color: theme.colors.text,
   },
   promptDescription: {
     fontSize: 14,
-    color: lightTheme.colors.textSecondary,
-    fontFamily: 'Inter-Regular',
-    marginBottom: lightTheme.spacing.lg,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.lg,
     lineHeight: 20,
   },
   currentPromptContainer: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.md,
-    padding: lightTheme.spacing.md,
-    marginTop: lightTheme.spacing.md,
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary,
   },
   currentPromptLabel: {
     fontSize: 12,
-    color: lightTheme.colors.textSecondary,
-    fontFamily: 'Inter-Medium',
-    marginBottom: lightTheme.spacing.xs,
+    fontWeight: '500',
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.xs,
   },
   currentPromptText: {
     fontSize: 14,
-    color: lightTheme.colors.text,
-    fontFamily: 'Inter-Regular',
+    color: theme.colors.text,
     fontStyle: 'italic',
   },
   loadingSection: {
-    padding: lightTheme.spacing.lg,
-    paddingTop: 0,
+    padding: theme.spacing.lg,
     alignItems: 'center',
   },
   loadingText: {
     fontSize: 16,
-    color: lightTheme.colors.textSecondary,
-    fontFamily: 'Inter-Regular',
+    color: theme.colors.textSecondary,
+    fontWeight: '500',
   },
   errorSection: {
-    padding: lightTheme.spacing.lg,
-    paddingTop: 0,
+    padding: theme.spacing.lg,
   },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: `${lightTheme.colors.error}15`,
-    borderRadius: lightTheme.borderRadius.md,
-    padding: lightTheme.spacing.md,
-    gap: lightTheme.spacing.sm,
-    marginBottom: lightTheme.spacing.md,
+    backgroundColor: theme.colors.error + '10',
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.error + '30',
+    gap: theme.spacing.sm,
   },
   errorText: {
     flex: 1,
     fontSize: 14,
-    color: lightTheme.colors.error,
-    fontFamily: 'Inter-Regular',
+    color: theme.colors.error,
     lineHeight: 20,
   },
   retryButton: {
-    backgroundColor: lightTheme.colors.primary,
-    borderRadius: lightTheme.borderRadius.md,
-    paddingVertical: lightTheme.spacing.md,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
     alignItems: 'center',
+    marginTop: theme.spacing.md,
   },
   retryButtonText: {
     color: 'white',
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
+    fontSize: 16,
+    fontWeight: '600',
   },
   resultsSection: {
-    padding: lightTheme.spacing.lg,
-    paddingTop: 0,
+    padding: theme.spacing.lg,
   },
   resultsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: lightTheme.spacing.md,
+    marginBottom: theme.spacing.lg,
   },
   resultsTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
+    fontSize: 20,
+    fontWeight: '600',
+    color: theme.colors.text,
   },
   saveButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: lightTheme.colors.primary,
-    paddingHorizontal: lightTheme.spacing.md,
-    paddingVertical: lightTheme.spacing.sm,
-    borderRadius: lightTheme.borderRadius.md,
-    gap: lightTheme.spacing.xs,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    gap: theme.spacing.xs,
   },
   saveButtonText: {
     color: 'white',
     fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
   },
   albumGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: theme.spacing.md,
   },
   noResultsContainer: {
     alignItems: 'center',
-    paddingVertical: lightTheme.spacing.xl,
+    paddingVertical: theme.spacing.xl,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderStyle: 'dashed',
   },
   noResultsTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.sm,
+    fontSize: 18,
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
   },
   noResultsText: {
     fontSize: 14,
-    color: lightTheme.colors.textSecondary,
-    fontFamily: 'Inter-Regular',
+    color: theme.colors.textSecondary,
     textAlign: 'center',
-    paddingHorizontal: lightTheme.spacing.lg,
+    lineHeight: 20,
   },
   unsortedSection: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.md,
-    padding: lightTheme.spacing.md,
-    marginTop: lightTheme.spacing.md,
+    marginTop: theme.spacing.lg,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.warning + '10',
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.warning + '30',
   },
   unsortedTitle: {
     fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.xs,
+    fontWeight: '600',
+    color: theme.colors.warning,
+    marginBottom: theme.spacing.xs,
   },
   unsortedText: {
     fontSize: 12,
-    color: lightTheme.colors.textSecondary,
-    fontFamily: 'Inter-Regular',
+    color: theme.colors.textSecondary,
+    lineHeight: 16,
   },
   welcomeSection: {
-    padding: lightTheme.spacing.lg,
-    paddingTop: 0,
+    padding: theme.spacing.lg,
+    alignItems: 'center',
   },
   welcomeTitle: {
-    fontSize: 20,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.md,
+    fontSize: 22,
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginBottom: theme.spacing.lg,
+    textAlign: 'center',
   },
   welcomeText: {
-    fontSize: 14,
-    color: lightTheme.colors.textSecondary,
-    fontFamily: 'Inter-Regular',
-    marginBottom: lightTheme.spacing.sm,
-    lineHeight: 20,
+    fontSize: 16,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm,
+    lineHeight: 22,
   },
   examplePrompts: {
-    marginTop: lightTheme.spacing.lg,
+    marginTop: theme.spacing.xl,
+    width: '100%',
   },
   exampleTitle: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: lightTheme.colors.text,
-    marginBottom: lightTheme.spacing.sm,
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
   },
   examplePrompt: {
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.md,
-    padding: lightTheme.spacing.md,
-    marginBottom: lightTheme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   examplePromptText: {
     fontSize: 14,
-    color: lightTheme.colors.primary,
-    fontFamily: 'Inter-Regular',
+    color: theme.colors.primary,
+    fontWeight: '500',
   },
 });
