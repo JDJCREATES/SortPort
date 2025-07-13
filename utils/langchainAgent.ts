@@ -30,19 +30,19 @@ export class LangChainAgent {
     }
 
     try {
-      // Fetch the audio file
-      const response = await fetch(audioUri);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch audio file: ${response.statusText}`);
-      }
-      
-      const audioBlob = await response.blob();
-
-      // Create FormData for the API request
+      // For Expo, we need to handle the file differently
       const formData = new FormData();
-      formData.append('file', audioBlob, 'audio.m4a');
+      
+      // Create file object for the audio
+      const audioFile = {
+        uri: audioUri,
+        type: 'audio/m4a',
+        name: 'audio.m4a',
+      } as any;
+      
+      formData.append('file', audioFile);
       formData.append('model', 'whisper-1');
-      formData.append('language', 'en'); // Optional: specify language
+      formData.append('language', 'en');
       formData.append('response_format', 'json');
 
       // Make request to OpenAI Whisper API
@@ -50,6 +50,7 @@ export class LangChainAgent {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'multipart/form-data',
         },
         body: formData,
       });
@@ -62,13 +63,13 @@ export class LangChainAgent {
       const transcriptionData = await transcriptionResponse.json();
       
       if (!transcriptionData.text) {
-        throw new Error('No transcription text received from API');
+        throw new Error('No transcription text received');
       }
 
       return transcriptionData.text.trim();
     } catch (error) {
       console.error('Error transcribing audio:', error);
-      throw new Error(`Voice transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
     }
   }
 

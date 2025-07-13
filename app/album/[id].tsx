@@ -1,6 +1,6 @@
 // Album screen component for displaying photos in a specific album
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { 
   View, 
   Text, 
@@ -12,7 +12,8 @@ import {
   FlatList,
   InteractionManager,
   LayoutAnimation,
-  Platform
+  Platform,
+  Dimensions
 } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
@@ -33,9 +34,10 @@ import { useImagePreloader } from '../../hooks/useImagePreloader';
 import { getCurrentTheme } from '../../utils/theme';
 import { useApp } from '../../contexts/AppContext';
 
-const PHOTOS_PER_BATCH = 50; // Increased batch size for better initial loading
+const { width: screenWidth } = Dimensions.get('window');
+const PHOTOS_PER_BATCH = 100; // Increased batch size for better initial loading
 const PRELOAD_THRESHOLD = 0.7; // Start loading when 80% scrolled
-const PRELOAD_LOOKAHEAD = 20; // Number of images to preload ahead
+const PRELOAD_LOOKAHEAD = 25; // Number of images to preload ahead
 
 interface AlbumScreenState {
   album: Album | null;
@@ -52,6 +54,41 @@ interface AlbumScreenState {
   error: string | null;
   retryCount: number;
 }
+
+// Memoized photo item component for maximum performance
+const PhotoItem = memo<{
+  item: ImageMeta;
+  index: number;
+  onPress: (index: number) => void;
+  itemSize: number;
+}>(({ item, index, onPress, itemSize }) => {
+  const handlePress = useCallback(() => {
+    onPress(index);
+  }, [index, onPress]);
+
+  const itemStyle = useMemo(() => ({
+    width: itemSize,
+    height: itemSize,
+    margin: 2,
+    borderRadius: 8,
+    overflow: 'hidden' as const,
+    backgroundColor: '#f0f0f0',
+  }), [itemSize]);
+
+  return (
+    <OptimizedImage
+      uri={item.uri}
+      thumbnailUri={item.thumbnailUri}
+      style={itemStyle}
+      resizeMode="cover"
+      priority="normal"
+      showLoadingIndicator={true}
+      onPress={handlePress}
+    />
+  );
+});
+
+PhotoItem.displayName = 'PhotoItem';
 
 export default function AlbumScreen() {
   const { id: albumId } = useLocalSearchParams();
@@ -93,7 +130,17 @@ export default function AlbumScreen() {
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
-  const isMountedRef = useRef(true);
+  const isMountedRef = useRef<boolean>(true);
+
+  // Memoize item size calculation
+  const itemSize = useMemo(() => {
+    const padding = 16; // theme.spacing.lg equivalent
+    const gap = 4; // 2px margin on each side
+    const numColumns = 3;
+    const totalGaps = (numColumns - 1) * gap;
+    const availableWidth = screenWidth - (padding * 2) - totalGaps;
+    return Math.floor(availableWidth / numColumns);
+  }, [screenWidth]);
 
   // Auto-preload images based on scroll position
   useImagePreloader({
@@ -174,6 +221,13 @@ export default function AlbumScreen() {
         throw new Error('Album not found');
       }
 
+      console.log('📁 Found album:', {
+        name: foundAlbum.name,
+        count: foundAlbum.count,
+        isModeratedAlbum: foundAlbum.isModeratedAlbum,
+        imageIdsLength: foundAlbum.imageIds?.length
+      });
+
       if (!isMountedRef.current) return;
 
       // Use InteractionManager to defer heavy operations
@@ -182,10 +236,23 @@ export default function AlbumScreen() {
           setState(prev => ({ ...prev, album: foundAlbum }));
 
           if (foundAlbum.imageIds && foundAlbum.imageIds.length > 0) {
+            // ✅ Pass showModerated=true for moderated albums
+            const showModerated = foundAlbum.isModeratedAlbum;
+            
+            console.log('📸 Loading photos with showModerated:', showModerated);
+            
             const result = await PhotoLoader.loadPhotosByIds(
               foundAlbum.imageIds,
-              PHOTOS_PER_BATCH
+              PHOTOS_PER_BATCH,
+              undefined, // afterId
+              showModerated // ✅ This is the key fix!
             );
+            
+            console.log('📸 PhotoLoader result:', {
+              photosLoaded: result.photos.length,
+              hasMore: result.hasMore,
+              nextCursor: result.nextAfterId
+            });
             
             if (isMountedRef.current) {
               // Preload first batch of images
@@ -254,11 +321,23 @@ export default function AlbumScreen() {
     setState(prev => ({ ...prev, isFetchingMore: true }));
     
     try {
+      // ✅ Use the same showModerated flag for pagination
+      const showModerated = state.album.isModeratedAlbum;
+      
+      console.log('📸 Loading more photos with showModerated:', showModerated);
+      
       const result = await PhotoLoader.loadPhotosByIds(
         state.album.imageIds,
         PHOTOS_PER_BATCH,
-        state.nextPhotoCursor
+        state.nextPhotoCursor,
+        showModerated // ✅ Pass the flag here too
       );
+
+      console.log('📸 Load more result:', {
+        newPhotosLoaded: result.photos.length,
+        totalPhotos: state.photos.length + result.photos.length,
+        hasMore: result.hasMore
+      });
 
       if (isMountedRef.current) {
         // Preload upcoming images for smoother scrolling
@@ -320,19 +399,15 @@ export default function AlbumScreen() {
     }));
   }, []);
 
-  const renderPhotoItem = useCallback(({ item, index }: { item: ImageMeta; index: number }) => {
-    return (
-      <OptimizedImage
-        uri={item.uri}
-        thumbnailUri={item.thumbnailUri}
-        style={styles.gridPhoto}
-        resizeMode="cover"
-        priority="normal"
-        showLoadingIndicator={true}
-        onPress={() => handleImagePress(index)}
-      />
-    );
-  }, [handleImagePress]);
+  // Optimized render item function with memoization
+  const renderPhotoItem = useCallback(({ item, index }: { item: ImageMeta; index: number }) => (
+    <PhotoItem
+      item={item}
+      index={index}
+      onPress={handleImagePress}
+      itemSize={itemSize}
+    />
+  ), [handleImagePress, itemSize]);
 
   const renderFooter = useCallback(() => {
     if (!state.isFetchingMore) return null;
@@ -399,9 +474,21 @@ export default function AlbumScreen() {
     );
   }, [state.album, userFlags, theme.colors.primary, theme.colors.textSecondary]);
 
+  // Memoized key extractor
   const keyExtractor = useCallback((item: ImageMeta, index: number) => {
     return `photo-${item.id}-${index}`;
   }, []);
+
+  // Memoized getItemLayout for better performance
+  const getItemLayout = useCallback((data: any, index: number) => {
+    const itemWithMargin = itemSize + 4; // item size + margins
+    const row = Math.floor(index / 3);
+    return {
+      length: itemWithMargin,
+      offset: itemWithMargin * row,
+      index,
+    };
+  }, [itemSize]);
 
   // Create styles with current theme
   const styles = createStyles(theme);
@@ -479,13 +566,17 @@ export default function AlbumScreen() {
           ListHeaderComponent={renderHeader}
           ListFooterComponent={renderFooter}
           showsVerticalScrollIndicator={false}
+          // Performance optimizations
           removeClippedSubviews={true}
-          maxToRenderPerBatch={15}
-          windowSize={8}
-          initialNumToRender={15}
-          updateCellsBatchingPeriod={100}
+          maxToRenderPerBatch={12}
+          windowSize={6}
+          initialNumToRender={12}
+          updateCellsBatchingPeriod={50}
           disableVirtualization={false}
           legacyImplementation={false}
+          getItemLayout={getItemLayout}
+          // Prevent unnecessary re-renders
+          extraData={`${state.photos.length}-${itemSize}`}
         />
       ) : !state.loading && !state.isFetchingMore ? (
         <Animated.View entering={FadeInUp.delay(300)} style={styles.emptyContainer}>
@@ -501,7 +592,7 @@ export default function AlbumScreen() {
 
       <ImageFullscreenViewer
         visible={state.showImageViewer}
-        onClose={() => setState(prev => ({ ...prev, showImageViewer: false }))}
+        onClose={handleImageViewerClose}
         images={imageViewerData}
         initialIndex={state.selectedImageIndex}
         onImageChange={handleImageChange}
@@ -667,18 +758,6 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   photoContainer: {
     padding: theme.spacing.sm,
-  },
-  gridPhoto: {
-    flex: 1,
-    aspectRatio: 1,
-    margin: 2,
-    borderRadius: theme.borderRadius.sm,
-    overflow: 'hidden',
-    backgroundColor: theme.colors.surface,
-  },
-  gridImage: {
-    width: '100%',
-    height: '100%',
   },
   emptyContainer: {
     flex: 1,

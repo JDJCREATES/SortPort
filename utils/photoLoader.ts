@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { ImageMeta } from '../types';
 import { MediaStorage } from './mediaStorage';
 import { ImageCacheManager } from './imageCache';
+import { AlbumUtils } from './albumUtils';
 
 export type PermissionStatus = 'granted' | 'denied' | 'undetermined';
 
@@ -288,97 +289,87 @@ export class PhotoLoader {
   }
 
   static async loadPhotosByIds(
-    photoIds: string[], 
-    first: number = 50, 
-    afterId?: string
+    imageIds: string[], 
+    limit: number = 50, 
+    afterId?: string,
+    showModerated: boolean = false // ✅ Make sure this parameter exists
   ): Promise<{
     photos: ImageMeta[];
     nextAfterId: string | null;
     hasMore: boolean;
   }> {
     try {
-      console.log('📸 loadPhotosByIds called with:', photoIds.length, 'IDs, first:', first, 'afterId:', afterId);
-      
       if (Platform.OS === 'web') {
-        throw new Error('Photo access is not available on web.');
+        return { photos: [], nextAfterId: null, hasMore: false };
       }
 
-      const permissionStatus = await this.requestPermissions();
-      if (permissionStatus !== 'granted') {
-        throw new Error('Photo library permission not granted');
-      }
+      console.log('📸 PhotoLoader.loadPhotosByIds called:', {
+        imageIdsCount: imageIds.length,
+        limit,
+        afterId,
+        showModerated
+      });
+
+      // Get NSFW image IDs for filtering
+      const nsfwImageIds = showModerated ? [] : await AlbumUtils.getNsfwImageIds();
+      const nsfwSet = new Set(nsfwImageIds);
+
+      console.log('🔒 NSFW filtering:', {
+        showModerated,
+        nsfwImageIdsCount: nsfwImageIds.length,
+        willFilter: !showModerated
+      });
+
+      // Filter out NSFW images from the imageIds if not showing moderated content
+      const filteredImageIds = showModerated 
+        ? imageIds 
+        : imageIds.filter(id => !nsfwSet.has(id));
+
+      console.log('📸 After NSFW filtering:', {
+        originalCount: imageIds.length,
+        filteredCount: filteredImageIds.length,
+        removedCount: imageIds.length - filteredImageIds.length
+      });
 
       // Find starting index
       let startIndex = 0;
       if (afterId) {
-        const afterIndex = photoIds.findIndex(id => id === afterId);
-        if (afterIndex !== -1) {
-          startIndex = afterIndex + 1;
-        }
+        const afterIndex = filteredImageIds.findIndex(id => id === afterId);
+        startIndex = afterIndex >= 0 ? afterIndex + 1 : 0;
       }
 
-      // Get batch of IDs
-      const batchIds = photoIds.slice(startIndex, startIndex + first);
+      // Get batch of image IDs
+      const batchIds = filteredImageIds.slice(startIndex, startIndex + limit);
       
       if (batchIds.length === 0) {
         return { photos: [], nextAfterId: null, hasMore: false };
       }
 
-      console.log('📸 Loading batch of', batchIds.length, 'photos starting from index', startIndex);
-
-      // Load photos directly by ID using getAssetInfoAsync
+      // Load photos from device
       const photos: ImageMeta[] = [];
-      let successCount = 0;
-      let failureCount = 0;
-
-      // Process photos in parallel batches for better performance
-      const PARALLEL_BATCH_SIZE = 10;
-      for (let i = 0; i < batchIds.length; i += PARALLEL_BATCH_SIZE) {
-        const parallelBatch = batchIds.slice(i, i + PARALLEL_BATCH_SIZE);
-        
-        const batchPromises = parallelBatch.map(async (photoId): Promise<ImageMeta | null> => {
-          try {
-            const asset = await MediaLibrary.getAssetInfoAsync(photoId);
-            successCount++;
-            
-            // Use the original URI - Expo Image will handle thumbnail generation automatically
-            // You can also create a thumbnail URI by appending resize parameters
-            const thumbnailUri = asset.uri; // Expo Image will cache and optimize this
-            
-            return {
+      
+      for (const imageId of batchIds) {
+        try {
+          const asset = await MediaLibrary.getAssetInfoAsync(imageId);
+          if (asset && asset.uri) {
+            photos.push({
               id: asset.id,
               uri: asset.uri,
-              thumbnailUri, // Same as uri, Expo Image handles the rest
               filename: asset.filename,
               width: asset.width,
               height: asset.height,
               creationTime: asset.creationTime,
               modificationTime: asset.modificationTime,
-            };
-          } catch (error) {
-            failureCount++;
-            console.warn(`📸 Failed to load photo ${photoId}:`, error);
-            return null;
+            });
           }
-        });
-
-        const batchResults = await Promise.all(batchPromises);
-        // Fix the type predicate - filter out null values
-        const validPhotos = batchResults.filter((photo): photo is ImageMeta => photo !== null);
-        photos.push(...validPhotos);
+        } catch (error) {
+          console.warn(`Failed to load photo ${imageId}:`, error);
+        }
       }
 
-      console.log(`📸 Loaded ${successCount} photos successfully, ${failureCount} failed, total: ${photos.length}/${batchIds.length}`);
-
-      // Preload images for better performance
-      if (photos.length > 0) {
-        ImageCacheManager.preloadUpcomingImages(photos, 0, Math.min(10, photos.length));
-      }
-
-      // Calculate next batch info
-      const actualNextIndex = startIndex + batchIds.length; // Use requested batch size, not actual loaded count
-      const hasMore = actualNextIndex < photoIds.length;
-      const nextAfterId = hasMore ? photoIds[actualNextIndex - 1] : null; // Use last ID from current batch
+      // Determine if there are more photos
+      const hasMore = startIndex + limit < filteredImageIds.length;
+      const nextAfterId = hasMore ? batchIds[batchIds.length - 1] : null;
 
       return {
         photos,
@@ -386,7 +377,7 @@ export class PhotoLoader {
         hasMore,
       };
     } catch (error) {
-      console.error('❌ Error loading photos by IDs:', error);
+      console.error('Error loading photos by IDs:', error);
       return { photos: [], nextAfterId: null, hasMore: false };
     }
   }
@@ -428,7 +419,7 @@ export class PhotoLoader {
   static async getAvailableFolders(): Promise<Array<{id: string, name: string, count: number}>> {
     try {
       if (Platform.OS === 'web') {
-        throw new Error('Photo folder access is not available on web.');
+        throw new Error('Photo access is not available on web.');
       }
 
       const permissionStatus = await this.requestPermissions();
@@ -441,7 +432,7 @@ export class PhotoLoader {
       });
 
       const folders = await Promise.all(
-        albums.map(async (album) => ({
+        albums.map(async (album: MediaLibrary.Album) => ({
           id: album.id,
           name: album.title,
           count: album.assetCount,
@@ -500,7 +491,7 @@ export class PhotoLoader {
       console.log(`📁 Loaded ${allAssets.length} photos from folder ${folderId}`);
 
       // Convert to ImageMeta format
-      const result = allAssets.map(asset => ({
+      const result = allAssets.map((asset: MediaLibrary.Asset) => ({
         id: asset.id,
         uri: asset.uri,
         thumbnailUri: asset.uri,

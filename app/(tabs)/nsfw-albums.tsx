@@ -87,9 +87,24 @@ export default function NsfwAlbumsScreen() {
 
   // Filter to only show moderated albums
   const moderatedAlbums = useMemo(() => {
+    console.log('🔍 NSFW Albums - Processing albums:', {
+      totalAlbums: albums?.length || 0,
+      moderatedCount: albums?.filter(a => a.isModeratedAlbum).length || 0
+    });
+
     if (!albums || albums.length === 0) return [];
     
+    // Only show moderated albums
     let filtered = albums.filter(album => album.isModeratedAlbum);
+    
+    console.log('🔍 NSFW Albums - Found moderated albums:', {
+      count: filtered.length,
+      albums: filtered.map(a => ({ 
+        id: a.id, 
+        name: a.name, 
+        count: a.count 
+      }))
+    });
 
     // Apply search filter
     if (state.searchQuery.trim()) {

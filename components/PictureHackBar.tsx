@@ -9,6 +9,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } fr
 import { useApp } from '../contexts/AppContext';
 import { CREDIT_COSTS } from '../utils/creditPurchaseManager';
 import { getCurrentTheme } from '../utils/theme';
+import { LangChainAgent } from '../utils/langchainAgent';
 
 interface PictureHackBarProps {
   onSubmit: (prompt: string) => void;
@@ -29,6 +30,9 @@ export function PictureHackBar({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const theme = getCurrentTheme();
   
+  // Initialize LangChain agent for transcription
+  const langChainAgent = new LangChainAgent();
+  
   // Use type assertion to bypass TypeScript issues
   const audioRecorder = useAudioRecorder({
     extension: '.m4a',
@@ -46,7 +50,7 @@ export function PictureHackBar({
       outputFormat: 'mpeg4aac',
       sampleRate: 44100,
     },
-  } as any); // Type assertion to bypass strict typing
+  } as any);
   
   const sendScale = useSharedValue(1);
   const micScale = useSharedValue(1);
@@ -89,13 +93,23 @@ export function PictureHackBar({
       }
 
       console.log('Starting recording...');
-      audioRecorder.record();
+      console.log('Recorder before start:', audioRecorder);
+      
+      await audioRecorder.record();
       setIsRecording(true);
       
+      console.log('Recorder after start:', audioRecorder);
+      console.log('Recording state:', audioRecorder.isRecording);
+      
       // Start pulsing animation
-      micPulse.value = withTiming(1.2, { duration: 500 }, () => {
-        micPulse.value = withTiming(1, { duration: 500 });
-      });
+      const pulse = () => {
+        micPulse.value = withTiming(1.2, { duration: 500 }, () => {
+          micPulse.value = withTiming(1, { duration: 500 }, () => {
+            if (isRecording) pulse(); // Continue pulsing while recording
+          });
+        });
+      };
+      pulse();
 
       console.log('Recording started');
     } catch (err) {
@@ -109,14 +123,29 @@ export function PictureHackBar({
       console.log('Stopping recording...');
       setIsRecording(false);
       
-      audioRecorder.stop();
+      // Stop the recording first
+      await audioRecorder.stop();
       
-      // Since the API might not provide URI directly, simulate transcription
-      setIsTranscribing(true);
-      setPrompt('Transcribing audio...');
+      // Wait a moment for the recording to be processed
+      await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Simulate transcription with a delay
-      setTimeout(() => {
+      // Try different ways to get the URI
+      let recordingUri = audioRecorder.uri;
+      
+      // If uri is not available, try other properties
+      if (!recordingUri) {
+        // Check if there's a different property name
+        recordingUri = (audioRecorder as any).getURI?.() || 
+                      (audioRecorder as any).recordingUri || 
+                      (audioRecorder as any).fileUri;
+      }
+      
+      console.log('Available recorder properties:', Object.keys(audioRecorder));
+      console.log('Recorder object:', audioRecorder);
+      
+      if (!recordingUri) {
+        console.warn('No recording URI available, using mock transcription');
+        // Skip transcription and use mock data
         const mockTranscriptions = [
           'Find all my vacation photos from last summer',
           'Show me pictures of my dog',
@@ -127,9 +156,48 @@ export function PictureHackBar({
         
         const randomTranscription = mockTranscriptions[Math.floor(Math.random() * mockTranscriptions.length)];
         setPrompt(randomTranscription);
-        setIsTranscribing(false);
-        console.log('Mock transcription:', randomTranscription);
-      }, 2000);
+        
+        Alert.alert(
+          'Recording Saved', 
+          'Recording completed but transcription is not available. Using sample text.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      console.log('Recording stopped, URI:', recordingUri);
+      
+      // Start transcription
+      setIsTranscribing(true);
+      setPrompt('Transcribing audio...');
+      
+      try {
+        const transcription = await langChainAgent.transcribeAudio(recordingUri);
+        setPrompt(transcription);
+        console.log('Transcription completed:', transcription);
+      } catch (transcriptionError) {
+        console.error('Transcription failed:', transcriptionError);
+        
+        // Fallback to mock transcription if API fails
+        const mockTranscriptions = [
+          'Find all my vacation photos from last summer',
+          'Show me pictures of my dog',
+          'Sort photos by date taken',
+          'Find all selfies',
+          'Show me photos from the beach'
+        ];
+        
+        const randomTranscription = mockTranscriptions[Math.floor(Math.random() * mockTranscriptions.length)];
+        setPrompt(randomTranscription);
+        
+        Alert.alert(
+          'Transcription Error', 
+          'Failed to transcribe audio. Using sample text instead. Please check your OpenAI API key configuration.',
+          [{ text: 'OK' }]
+        );
+      }
+      
+      setIsTranscribing(false);
       
     } catch (error) {
       console.error('Error stopping recording:', error);

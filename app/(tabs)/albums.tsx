@@ -29,6 +29,7 @@ import { lightTheme } from '../../utils/theme';
 import { Album } from '../../types';
 import { AlbumViewMode } from '../../types/display';
 import { getCurrentTheme } from '../../utils/theme';
+import { AlbumUtils } from '../../utils/albumUtils';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -99,9 +100,10 @@ export default function AlbumsScreen() {
     
     let filtered = [...albums];
 
-    // Filter out moderated albums based on settings
+    // Filter out moderated albums based on settings (keep this here)
     if (!settings.showModeratedInMainAlbums) {
       filtered = filtered.filter(album => !album.isModeratedAlbum);
+      console.log(`📁 Main Albums - Filtered out moderated albums, showing ${filtered.length} albums`);
     }
 
     // Apply search filter
@@ -114,7 +116,6 @@ export default function AlbumsScreen() {
       );
     }
 
-    // Remove the showLocked filter logic - no more locked albums
     // Apply sorting
     const sorted = [...filtered].sort((a, b) => {
       let comparison = 0;

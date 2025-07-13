@@ -1,4 +1,4 @@
-export type AlbumViewMode = 'grid-2' | 'grid-3' | 'grid-4' | 'grid-6' | 'grid-8' | 'large';
+export type AlbumViewMode = 'grid-2' | 'grid-3' | 'grid-4' | 'grid-6' | 'grid-8' | 'large' | 'large-portrait';
 
 export interface ViewModeConfig {
   columns: number;
@@ -42,6 +42,12 @@ export const VIEW_MODE_CONFIGS: Record<AlbumViewMode, ViewModeConfig> = {
     columns: 1,
     aspectRatio: 16 / 9,
     spacing: 16,
+    showDetails: true,
+  },
+  'large-portrait': {
+    columns: 2,
+    aspectRatio: 3 / 4, // Portrait aspect ratio
+    spacing: 12,
     showDetails: true,
   },
 };
