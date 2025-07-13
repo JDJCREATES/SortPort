@@ -3,11 +3,18 @@ import { Platform } from 'react-native';
 import { ImageMeta } from '../types';
 import { MediaStorage } from './mediaStorage';
 import { ImageCacheManager } from './imageCache';
-import { AlbumUtils } from './albumUtils';
 
 export type PermissionStatus = 'granted' | 'denied' | 'undetermined';
 
 export class PhotoLoader {
+  // Add a static property to inject the NSFW filter function
+  private static nsfwFilterFunction: (() => Promise<string[]>) | null = null;
+
+  // Method to inject the NSFW filter function (called from AlbumUtils)
+  static setNsfwFilter(filterFn: () => Promise<string[]>): void {
+    this.nsfwFilterFunction = filterFn;
+  }
+
   static async requestPermissions(): Promise<PermissionStatus> {
     try {
       if (Platform.OS === 'web') {
@@ -310,15 +317,17 @@ export class PhotoLoader {
         showModerated
       });
 
-      // Get NSFW image IDs for filtering
-      const nsfwImageIds = showModerated ? [] : await AlbumUtils.getNsfwImageIds();
+      // Get NSFW image IDs for filtering (use injected function if available)
+      let nsfwImageIds: string[] = [];
+      if (!showModerated && this.nsfwFilterFunction) {
+        try {
+          nsfwImageIds = await this.nsfwFilterFunction();
+        } catch (error) {
+          console.warn('Failed to load NSFW filter, continuing without filtering:', error);
+        }
+      }
+      
       const nsfwSet = new Set(nsfwImageIds);
-
-      console.log('🔒 NSFW filtering:', {
-        showModerated,
-        nsfwImageIdsCount: nsfwImageIds.length,
-        willFilter: !showModerated
-      });
 
       // Filter out NSFW images from the imageIds if not showing moderated content
       const filteredImageIds = showModerated 
