@@ -281,7 +281,16 @@ function SourceFolderPickerComponent({
       
     } catch (error) {
       console.error('AWS bulk moderation failed:', error);
-      // Fallback to no filtering
+      
+      // Show error to user and don't update selection if storage fails
+      if (error instanceof Error && error.message.includes('Storage not accessible')) {
+        setError(error.message);
+        // Don't update selection - let user fix storage issue first
+        return;
+      }
+      
+      // For other errors, fallback to no filtering
+      console.log('Proceeding with folder selection despite processing error');
       onSelect(allSelectedFolders);
       onClose();
     } finally {

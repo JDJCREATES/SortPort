@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabaseUrl } from './supabase';
 import * as FileSystem from 'expo-file-system';
 
 export interface BulkProcessingProgress {
@@ -25,39 +25,77 @@ export class BulkNSFWProcessor {
     try {
       console.log(`🚀 Uploading ${imageUris.length} images to nsfw-temp-processing bucket`);
 
-      // ✅ TEST STORAGE ACCESS FIRST
-      console.log(`🧪 Testing storage bucket access...`);
+      // ✅ CHECK BUCKET EXISTS
+      console.log(`🧪 Checking storage bucket availability...`);
+      
+      // Check if user is authenticated
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      console.log(`👤 Auth check:`, { 
+        authenticated: !!user, 
+        userId: user?.id,
+        authError: authError?.message 
+      });
+      
+      console.log(`🔧 Supabase config:`, {
+        url: supabaseUrl,
+        hasUrl: !!supabaseUrl,
+        urlValid: supabaseUrl?.includes('supabase.co')
+      });
+
+      if (!user) {
+        throw new Error('User not authenticated. Please sign in first.');
+      }
+
       try {
-        const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-        console.log(`📦 Available buckets:`, buckets?.map(b => b.name));
+        // Try to list files in bucket instead of listing buckets
+        const { data: files, error: listError } = await supabase.storage
+          .from('nsfw-temp-processing')
+          .list('', { limit: 1 });
+        
+        console.log(`📦 Bucket test result:`, { 
+          canAccess: !listError, 
+          error: listError?.message,
+          filesFound: files?.length 
+        });
         
         if (listError) {
-          throw new Error(`Cannot list buckets: ${listError.message}`);
+          console.warn(`⚠️ Cannot list buckets: ${listError.message}`);
+          console.log(`🔄 Trying direct bucket access instead...`);
+        } else {
+          const nsfwBucket = buckets?.find(b => b.name === 'nsfw-temp-processing');
+          if (!nsfwBucket) {
+            console.warn(`⚠️ Bucket not found in list. Available: ${buckets?.map(b => b.name).join(', ')}`);
+            console.log(`🔄 Trying direct bucket access instead...`);
+          } else {
+            console.log(`✅ Bucket 'nsfw-temp-processing' found in list`);
+          }
         }
-
-        const nsfwBucket = buckets?.find(b => b.name === 'nsfw-temp-processing');
-        if (!nsfwBucket) {
-          throw new Error(`Bucket 'nsfw-temp-processing' not found. Available: ${buckets?.map(b => b.name).join(', ')}`);
-        }
-
-        console.log(`✅ Bucket 'nsfw-temp-processing' found and accessible`);
 
         // Test upload with tiny file
         const testBlob = new Blob(['test'], { type: 'text/plain' });
         const testPath = `test-${Date.now()}.txt`;
         
-        const { error: testUploadError } = await supabase.storage
+        console.log(`🧪 Testing upload to: ${supabaseUrl}/storage/v1/object/nsfw-temp-processing/${testPath}`);
+        
+        const { data: testUploadData, error: testUploadError } = await supabase.storage
           .from('nsfw-temp-processing')
           .upload(testPath, testBlob);
 
         if (testUploadError) {
+          console.error(`❌ Test upload failed:`, {
+            message: testUploadError.message,
+            details: testUploadError
+          });
           throw new Error(`Test upload failed: ${testUploadError.message}`);
         }
 
-        console.log(`✅ Test upload successful, proceeding with image uploads...`);
+        console.log(`✅ Test upload successful:`, testUploadData);
 
         // Clean up test file
-        await supabase.storage.from('nsfw-temp-processing').remove([testPath]);
+        const { error: removeError } = await supabase.storage.from('nsfw-temp-processing').remove([testPath]);
+        if (removeError) {
+          console.warn(`⚠️ Failed to clean up test file:`, removeError);
+        }
 
       } catch (storageTestError) {
         console.error(`❌ Storage test failed:`, storageTestError);
@@ -113,7 +151,7 @@ export class BulkNSFWProcessor {
             throw new Error(`Failed to upload image ${i}: ${uploadError.message}`);
           }
 
-          console.log(`✅ Upload successful for image ${i}`);
+          console.log(`✅ Upload successful for image ${i}:`, uploadData?.path);
           uploadedPaths.push(fileName);
           
         } catch (imageError) {
