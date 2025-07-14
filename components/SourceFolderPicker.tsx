@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Platform } from 'react-native';
 import { PhotoLoader } from '../utils/photoLoader';
 import { useApp } from '../contexts/AppContext';
 import { getCurrentTheme } from '../utils/theme';
-import { supabase } from '../utils/supabase';
 import { AlbumUtils } from '../utils/albumUtils';
 import { LocalNSFWDetector } from '../utils/localNsfwDetection';
 
@@ -139,6 +138,13 @@ function SourceFolderPickerComponent({
       tempSelected.includes(folder.id)
     );
     
+    // If no folders selected, just clear and close immediately
+    if (tempSelected.length === 0) {
+      onSelect([]);
+      onClose();
+      return;
+    }
+    
     // Only scan newly selected folders that haven't been scanned before
     const newlySelectedFolders = tempSelected.filter(id => !selectedFolders.includes(id));
     
@@ -163,12 +169,14 @@ function SourceFolderPickerComponent({
     }
     
     setIsScanning(true);
-    setScanProgress({ current: 0, total: 0, message: 'Initializing local NSFW detection...' });
+    setScanProgress({ 
+      current: 0, 
+      total: 0, 
+      message: 'Loading photos for bulk processing...' 
+    });
     
     try {
-      // ✅ Initialize local NSFW detection
-      await LocalNSFWDetector.initialize();
-      
+      // Get all photos from newly selected folders
       const allPhotos = await PhotoLoader.loadAllPhotoIds(newlySelectedFolderIds);
       
       if (allPhotos.length === 0) {
@@ -177,168 +185,88 @@ function SourceFolderPickerComponent({
         return;
       }
 
-      // ✅ PHASE 1: Local detection on ALL photos
+      console.log(`🚀 Starting REAL bulk NSFW processing for ${allPhotos.length} photos`);
+
+      // ✅ SKIP LOCAL DETECTION - Go straight to AWS bulk processing
       setScanProgress({ 
         current: 0, 
         total: allPhotos.length, 
-        message: `Local scanning ${allPhotos.length} photos...` 
+        message: `Submitting ${allPhotos.length} images for AWS bulk processing...` 
       });
 
-      let processedCount = 0;
-      let locallyFlaggedImages: any[] = [];
-      const localResults: { [imageId: string]: any } = {};
+      console.log(`☁️ Submitting ${allPhotos.length} images for AWS bulk processing`);
 
-      console.log(`🧠 Starting local NSFW detection on ${allPhotos.length} photos`);
+      // ✅ Use REAL bulk processing - send ALL images to AWS
+      const { BulkNSFWProcessor } = await import('../utils/bulkNsfwProcessor');
+      
+      // Extract URIs for bulk processing
+      const imageUris = allPhotos.map(photo => photo.uri);
+      
+      console.log(`☁️ Starting AWS bulk processing for ${imageUris.length} images`);
 
-      // Process in batches for local detection
-      const LOCAL_BATCH_SIZE = 20; // Larger batches for local processing
-      for (let i = 0; i < allPhotos.length; i += LOCAL_BATCH_SIZE) {
-        const batch = allPhotos.slice(i, i + LOCAL_BATCH_SIZE);
-        
-        // ✅ Use the local detector
-        const batchUris = batch.map(photo => photo.uri);
-        const localDetectionResults = await LocalNSFWDetector.batchDetectNSFW(batchUris, 10);
-        
-        localDetectionResults.forEach((result, index) => {
-          const photo = batch[index];
-          localResults[photo.id] = result;
+      // ✅ Use REAL bulk processing with progress tracking
+      const bulkResults = await BulkNSFWProcessor.processBulkImages(
+        imageUris,
+        userProfile.id,
+        (progress: any) => {
+          const completed = progress.completed || progress.current || 0;
+          const total = progress.total || allPhotos.length;
+          const status = progress.status || progress.message || 'Processing';
+          const progressPercentage = total > 0 ? Math.round((completed / total) * 100) : 0;
           
-          // ✅ Flag images that local detector thinks are NSFW
-          if (result.isNsfw) {
-            locallyFlaggedImages.push({
-              id: photo.id,
-              uri: photo.uri,
-              folderId: photo.folderId || 'unknown',
-              localConfidence: result.confidence,
-              localMethod: result.method
-            });
-          }
-        });
-        
-        processedCount += batch.length;
-        setScanProgress({
-          current: processedCount,
-          total: allPhotos.length,
-          message: `Local scan: ${processedCount}/${allPhotos.length} (${locallyFlaggedImages.length} flagged)`
-        });
-
-        // Small delay to prevent UI blocking
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-
-      console.log(`🧠 Local detection complete:`, {
-        totalScanned: allPhotos.length,
-        locallyFlagged: locallyFlaggedImages.length,
-        flaggedPercentage: ((locallyFlaggedImages.length / allPhotos.length) * 100).toFixed(1) + '%',
-        methods: locallyFlaggedImages.reduce((acc, img) => {
-          acc[img.localMethod] = (acc[img.localMethod] || 0) + 1;
-          return acc;
-        }, {} as any)
-      });
-
-      // ✅ PHASE 2: AWS analysis only on locally flagged images
-      if (locallyFlaggedImages.length > 0) {
-        setScanProgress({ 
-          current: 0, 
-          total: locallyFlaggedImages.length, 
-          message: `AWS analysis of ${locallyFlaggedImages.length} flagged images...` 
-        });
-
-        const awsResults: { [imageId: string]: any } = {};
-        const finalNsfwImages: any[] = [];
-
-        // Send to AWS in smaller batches
-        const AWS_BATCH_SIZE = 5;
-        let awsProcessed = 0;
-
-        for (let i = 0; i < locallyFlaggedImages.length; i += AWS_BATCH_SIZE) {
-          const batch = locallyFlaggedImages.slice(i, i + AWS_BATCH_SIZE);
-          
-          try {
-            const batchImages = await Promise.all(
-              batch.map(async (photo) => {
-                const base64 = await PhotoLoader.getPhotoBase64(photo.uri);
-                return {
-                  image_base64: base64,
-                  image_id: photo.id,
-                };
-              })
-            );
-
-            console.log(`☁️ Sending batch ${Math.floor(i/AWS_BATCH_SIZE) + 1} to AWS (${batch.length} images)`);
-
-            const { data, error } = await supabase.functions.invoke('rekognition-moderation', {
-              body: {
-                images: batchImages,
-                batch_id: `hybrid_${Date.now()}_${i}`,
-              }
-            });
-
-            if (!error && data?.results) {
-              data.results.forEach((result: any) => {
-                awsResults[result.image_id] = result;
-                
-                // ✅ Combine local and AWS results
-                if (result.is_nsfw) {
-                  const photo = batch.find(p => p.id === result.image_id);
-                  const localData = localResults[result.image_id];
-                  
-                  if (photo) {
-                    finalNsfwImages.push({
-                      id: photo.id,
-                      uri: photo.uri,
-                      filename: `nsfw_${photo.id}`,
-                      folderId: photo.folderId,
-                      width: 0,
-                      height: 0,
-                      creationTime: Date.now(),
-                      modificationTime: Date.now(),
-                      // Include both local and AWS data
-                      localConfidence: localData?.confidence || 0,
-                      localMethod: localData?.method || 'unknown',
-                      awsConfidence: result.confidence_score || 0,
-                    });
-                  }
-                }
-              });
-
-              console.log(`☁️ AWS batch ${Math.floor(i/AWS_BATCH_SIZE) + 1} complete:`, {
-                processed: data.results.length,
-                confirmed: data.results.filter((r: any) => r.is_nsfw).length
-              });
-            }
-          } catch (batchError) {
-            console.error(`❌ AWS batch ${Math.floor(i/AWS_BATCH_SIZE) + 1} failed:`, batchError);
-          }
-
-          awsProcessed += batch.length;
           setScanProgress({
-            current: awsProcessed,
-            total: locallyFlaggedImages.length,
-            message: `AWS analysis: ${awsProcessed}/${locallyFlaggedImages.length}`
+            current: completed,
+            total: total,
+            message: `AWS bulk processing: ${status} (${progressPercentage}%)`
           });
-
-          // Rate limiting
-          if (i + AWS_BATCH_SIZE < locallyFlaggedImages.length) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
         }
+      );
 
-        // ✅ Create categorized albums with AWS results
+      console.log(`☁️ AWS bulk processing complete:`, {
+        totalProcessed: bulkResults.totalImages,
+        awsConfirmed: bulkResults.nsfwDetected,
+        processingTime: bulkResults.processingTimeMs
+      });
+
+      // ✅ Process AWS results and create albums
+      if (bulkResults.nsfwDetected > 0 && bulkResults.results) {
+        const finalNsfwImages: any[] = [];
+        const awsResults: { [imageId: string]: any } = {};
+
+        // Map AWS results back to our image data
+        bulkResults.results.forEach((result: any, index: number) => {
+          if (result.is_nsfw && index < allPhotos.length) {
+            const originalImage = allPhotos[index];
+            
+            awsResults[originalImage.id] = result;
+            
+            finalNsfwImages.push({
+              id: originalImage.id,
+              uri: originalImage.uri,
+              filename: `nsfw_${originalImage.id}`,
+              folderId: originalImage.folderId,
+              width: 0,
+              height: 0,
+              creationTime: Date.now(),
+              modificationTime: Date.now(),
+              awsConfidence: result.confidence_score || 0,
+            });
+          }
+        });
+
+        // Create categorized albums with AWS results
         if (finalNsfwImages.length > 0) {
           console.log(`🔒 Creating albums for ${finalNsfwImages.length} confirmed NSFW images`);
           await AlbumUtils.createCategorizedModeratedAlbums(finalNsfwImages, awsResults);
         }
 
-        console.log(`🏁 Hybrid scanning complete:`, {
+        console.log(`🏁 AWS bulk processing complete:`, {
           totalPhotos: allPhotos.length,
-          locallyFlagged: locallyFlaggedImages.length,
           awsConfirmed: finalNsfwImages.length,
-          efficiency: `${((1 - locallyFlaggedImages.length / allPhotos.length) * 100).toFixed(1)}% reduction in AWS calls`,
-          costSavings: `~$${((allPhotos.length - locallyFlaggedImages.length) * 0.001).toFixed(2)} saved`
+          processingTime: bulkResults.processingTimeMs
         });
       } else {
-        console.log(`✅ No NSFW content detected locally - no AWS calls needed!`);
+        console.log(`✅ No NSFW content confirmed by AWS bulk processing`);
       }
 
       // Update moderated folders
@@ -352,7 +280,7 @@ function SourceFolderPickerComponent({
       onClose();
       
     } catch (error) {
-      console.error('Hybrid moderation failed:', error);
+      console.error('AWS bulk moderation failed:', error);
       // Fallback to no filtering
       onSelect(allSelectedFolders);
       onClose();
@@ -383,7 +311,7 @@ function SourceFolderPickerComponent({
   // Memoized computed values
   const isSelectAllActive = useMemo(() => tempSelected.length === folders.length, [tempSelected.length, folders.length]);
   const hasSelection = useMemo(() => tempSelected.length > 0, [tempSelected.length]);
-  const canConfirm = useMemo(() => hasSelection && !error && !isScanning, [hasSelection, error, isScanning]);
+  const canConfirm = useMemo(() => !error && !isScanning, [error, isScanning]);
 
   if (!visible) return null;
 
@@ -550,7 +478,9 @@ function SourceFolderPickerComponent({
               <Text style={styles.confirmButtonText}>
                 {isScanning 
                   ? `Scanning... ${scanProgress.current}/${scanProgress.total}`
-                  : `Apply (${tempSelected.length})`
+                  : tempSelected.length === 0 
+                    ? 'Clear Selection'
+                    : `Apply (${tempSelected.length})`
                 }
               </Text>
             </TouchableOpacity>

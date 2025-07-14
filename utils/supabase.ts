@@ -10,6 +10,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
+//this code might need to be cleaned up/updated!!!
+
 // Create a safe storage adapter that works with SSR and web builds
 const createStorageAdapter = () => {
   if (Platform.OS === 'web') {
@@ -67,6 +69,8 @@ export interface UserProfile {
   full_name?: string;
   avatar_url?: string;
   subscription_status?: 'free' | 'pro' | 'unlock';
+  status?: 'active' | 'inactive';
+  deleted_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +105,20 @@ export class SupabaseAuth {
 
   static async signUp(email: string, password: string, fullName?: string) {
     try {
+      // ✅ Check for existing inactive user first
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', email)
+        .eq('status', 'inactive')
+        .single();
+
+      if (existingProfile) {
+        console.log('🔄 Found inactive user, attempting reactivation');
+        return await this.reactivateUser(email, password, fullName);
+      }
+
+      // Normal signup flow
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -275,6 +293,112 @@ export class SupabaseAuth {
     } catch (error) {
       console.error('❌ SupabaseAuth: Session refresh failed');
       throw error;
+    }
+  }
+
+  // ✅ New reactivation method
+  static async reactivateUser(email: string, password: string, fullName?: string) {
+    try {
+      console.log('🔄 Reactivating user account:', email);
+
+      // First, try to sign in with existing auth user
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        // If sign in fails, the auth user might not exist, so create new one
+        console.log('🔄 Auth user not found, creating new auth user');
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: fullName,
+            },
+          },
+        });
+
+        if (signUpError) {
+          throw signUpError;
+        }
+
+        // Reactivate the profile with new auth user ID
+        if (signUpData.user) {
+          await supabase
+            .from('profiles')
+            .update({
+              id: signUpData.user.id, // Update with new auth user ID
+              status: 'active',
+              deleted_at: null,
+              updated_at: new Date().toISOString(),
+              full_name: fullName || null,
+            })
+            .eq('email', email);
+        }
+
+        return signUpData;
+      } else {
+        // Auth user exists, just reactivate the profile
+        console.log('🔄 Auth user exists, reactivating profile');
+        await supabase
+          .from('profiles')
+          .update({
+            status: 'active',
+            deleted_at: null,
+            updated_at: new Date().toISOString(),
+            full_name: fullName || null,
+          })
+          .eq('email', email);
+
+        return signInData;
+      }
+    } catch (error) {
+      console.error('❌ Reactivation failed:', error);
+      throw error;
+    }
+  }
+
+  // ✅ New soft delete method
+  static async softDeleteUser() {
+    try {
+      const user = await this.getCurrentUser();
+      if (!user) throw new Error('No authenticated user');
+
+      console.log('🗑️ Soft deleting user:', user.email);
+
+      // Soft delete the profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          status: 'inactive',
+          deleted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      // Sign out the user
+      await this.signOut();
+
+      console.log('✅ User soft deleted successfully');
+    } catch (error) {
+      console.error('❌ Soft delete failed:', error);
+      throw error;
+    }
+  }
+
+  // ✅ Check if user is active
+  static async isUserActive(): Promise<boolean> {
+    try {
+      const profile = await this.getProfile();
+      return profile?.status !== 'inactive';
+    } catch (error) {
+      return false;
     }
   }
 }

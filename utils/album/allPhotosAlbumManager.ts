@@ -53,7 +53,71 @@ export class AllPhotosAlbumManager {
 
       // Load current settings to get selected folders
       const settings = await MediaStorage.loadSettings();
-      const selectedFolders = settings.selectedFolders || ['all_photos'];
+      const selectedFolders = settings.selectedFolders || [];
+      
+      // If no folders selected, create empty album or delete existing one
+      if (selectedFolders.length === 0) {
+        console.log('📁 ensureAllPhotosAlbumExists: No folders selected, creating empty album');
+        
+        // Check if album exists
+        const { data: existingAlbums, error: loadError } = await supabase
+          .from('albums')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('is_all_photos_album', true)
+          .limit(1);
+
+        if (loadError) {
+          console.error('❌ ensureAllPhotosAlbumExists: Error loading existing album:', loadError);
+          return;
+        }
+
+        if (existingAlbums && existingAlbums.length > 0) {
+          // Update existing album to be empty
+          const { error: updateError } = await supabase
+            .from('albums')
+            .update({
+              image_ids: [],
+              count: 0,
+              thumbnail: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingAlbums[0].id);
+
+          if (updateError) {
+            console.error('❌ ensureAllPhotosAlbumExists: Error updating album:', updateError);
+          } else {
+            console.log('✅ ensureAllPhotosAlbumExists: Updated album to be empty');
+          }
+        } else {
+          // Create empty album
+          const newAlbum = {
+            id: generateUUID(),
+            user_id: user.id,
+            name: 'All Photos',
+            image_ids: [],
+            tags: ['all', 'photos', 'device'],
+            thumbnail: null,
+            count: 0,
+            is_locked: false,
+            is_all_photos_album: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+
+          const { error: insertError } = await supabase
+            .from('albums')
+            .insert([newAlbum]);
+
+          if (insertError) {
+            console.error('❌ ensureAllPhotosAlbumExists: Error creating empty album:', insertError);
+          } else {
+            console.log('✅ ensureAllPhotosAlbumExists: Created empty album');
+          }
+        }
+        return;
+      }
+
       console.log('📁 ensureAllPhotosAlbumExists: Selected folders:', selectedFolders);
 
       // Load existing albums

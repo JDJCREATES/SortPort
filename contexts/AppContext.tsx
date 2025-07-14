@@ -505,27 +505,41 @@ export function AppProvider({ children }: AppProviderProps) {
     
     const promise = (async () => {
       try {
-        const permissionResult = await PhotoLoader.checkAndRequestPermissions();
+        // Check if any folders are selected
+        const currentSettings = await MediaStorage.loadSettings();
+        const selectedFolders = currentSettings.selectedFolders || [];
         
-        if (!permissionResult.granted) {
-          console.warn('⚠️ refreshAlbums: Photo permissions not granted:', permissionResult.message);
-          dispatch({ type: 'SET_ALBUMS_ERROR', payload: permissionResult.message });
-          return; // Don't try to load albums without permissions
-        }
-        
-        // Only ensure All Photos album exists if we're not already doing it
-        if (!refreshPromises.current.allPhotosAlbum) {
-          console.log('📁 refreshAlbums: Ensuring All Photos album exists...');
-          refreshPromises.current.allPhotosAlbum = AlbumUtils.ensureAllPhotosAlbumExists();
-          await refreshPromises.current.allPhotosAlbum;
-          refreshPromises.current.allPhotosAlbum = null;
+        if (selectedFolders.length === 0) {
+          console.log('📁 refreshAlbums: No folders selected, skipping permission check');
+          // Still ensure All Photos album exists (but empty)
+          if (!refreshPromises.current.allPhotosAlbum) {
+            console.log('📁 refreshAlbums: Ensuring empty All Photos album exists...');
+            refreshPromises.current.allPhotosAlbum = AlbumUtils.ensureAllPhotosAlbumExists();
+            await refreshPromises.current.allPhotosAlbum;
+            refreshPromises.current.allPhotosAlbum = null;
+          }
+        } else {
+          // Only check permissions if folders are selected
+          const permissionResult = await PhotoLoader.checkAndRequestPermissions();
+          
+          if (!permissionResult.granted) {
+            console.warn('⚠️ refreshAlbums: Photo permissions not granted:', permissionResult.message);
+            dispatch({ type: 'SET_ALBUMS_ERROR', payload: permissionResult.message });
+            return;
+          }
+          
+          // Only ensure All Photos album exists if we're not already doing it
+          if (!refreshPromises.current.allPhotosAlbum) {
+            console.log('📁 refreshAlbums: Ensuring All Photos album exists...');
+            refreshPromises.current.allPhotosAlbum = AlbumUtils.ensureAllPhotosAlbumExists();
+            await refreshPromises.current.allPhotosAlbum;
+            refreshPromises.current.allPhotosAlbum = null;
+          }
         }
         
         console.log('📁 refreshAlbums: Loading albums from database...');
         let albums = await AlbumUtils.loadAlbums();
         
-        // Use current state instead of stale closure
-        const currentSettings = await MediaStorage.loadSettings();
         if (currentSettings.nsfwFilter && !currentSettings.showModeratedContent) {
           albums = albums.filter(album => !album.isModeratedAlbum);
         }

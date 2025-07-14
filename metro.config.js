@@ -97,4 +97,7 @@ if (process.env.EXPO_PLATFORM === 'web') {
   };
 }
 
+// Add support for TensorFlow.js
+config.resolver.assetExts.push('bin');
+
 module.exports = config;
