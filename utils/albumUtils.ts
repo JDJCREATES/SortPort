@@ -63,9 +63,15 @@ export class AlbumUtils {
   /**
    * Clear NSFW cache (useful for testing or manual refresh)
    */
-  static clearNsfwCache(): void {
-    NsfwImageCache.clear();
-    console.log('🔒 NSFW cache cleared');
+  static async clearNsfwCache(): Promise<void> {
+    try {
+      // Clear the NSFW image cache
+      NsfwImageCache.clear();
+      console.log('✅ NSFW cache cleared');
+    } catch (error) {
+      console.error('Error clearing NSFW cache:', error);
+      throw error;
+    }
   }
 
   // ===== Album Management =====

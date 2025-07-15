@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../contexts/AppContext';
-import { lightTheme } from '../utils/theme';
+import { getCurrentTheme, ThemeManager } from '../utils/theme';
+import { AppTheme } from '../types';
 
 interface AuthModalProps {
   visible: boolean;
@@ -20,6 +21,19 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState<AppTheme>(() => getCurrentTheme());
+
+  // Subscribe to theme changes
+  useEffect(() => {
+    const themeManager = ThemeManager.getInstance();
+    const unsubscribe = themeManager.subscribe((newTheme) => {
+      setCurrentTheme(newTheme);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Create styles with current theme
+  const styles = React.useMemo(() => createStyles(currentTheme), [currentTheme]);
 
   const handleSubmit = async () => {
     if (!email.trim() || !password.trim()) {
@@ -44,7 +58,37 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
       onClose();
       resetForm();
     } catch (error: any) {
-      Alert.alert('Authentication Error', error.message);
+      console.log('Auth error:', error);
+      
+      // Handle specific reactivation case
+      if (error.message?.includes('inactive') || error.message?.includes('deleted')) {
+        Alert.alert(
+          'Account Reactivation', 
+          'Your account was previously deactivated. Would you like to reactivate it?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Reactivate', 
+              onPress: async () => {
+                try {
+                  setLoading(true);
+                  // Try reactivation with the same credentials
+                  await signUp(email, password, fullName || ''); // This should trigger reactivation
+                  onSuccess();
+                  onClose();
+                  resetForm();
+                } catch (reactivationError: any) {
+                  Alert.alert('Reactivation Failed', reactivationError.message);
+                } finally {
+                  setLoading(false);
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Authentication Error', error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -74,17 +118,18 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
               {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
             </Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color={lightTheme.colors.textSecondary} />
+              <Ionicons name="close" size={24} color={currentTheme.colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           <Animated.View entering={FadeInDown.delay(200)} style={styles.form}>
             {mode === 'signup' && (
               <View style={styles.inputContainer}>
-                <Ionicons name="person" size={20} color={lightTheme.colors.textSecondary} style={styles.inputIcon} />
+                <Ionicons name="person" size={20} color={currentTheme.colors.textSecondary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Full Name"
+                  placeholderTextColor={currentTheme.colors.textSecondary}
                   value={fullName}
                   onChangeText={setFullName}
                   autoCapitalize="words"
@@ -94,10 +139,11 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
             )}
 
             <View style={styles.inputContainer}>
-              <Ionicons name="mail" size={20} color={lightTheme.colors.textSecondary} style={styles.inputIcon} />
+              <Ionicons name="mail" size={20} color={currentTheme.colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Email"
+                placeholderTextColor={currentTheme.colors.textSecondary}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -107,10 +153,11 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
             </View>
 
             <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed" size={20} color={lightTheme.colors.textSecondary} style={styles.inputIcon} />
+              <Ionicons name="lock-closed" size={20} color={currentTheme.colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Password"
+                placeholderTextColor={currentTheme.colors.textSecondary}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -121,9 +168,9 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
                 style={styles.eyeButton}
               >
                 {showPassword ? (
-                  <Ionicons name="eye-off" size={20} color={lightTheme.colors.textSecondary} />
+                  <Ionicons name="eye-off" size={20} color={currentTheme.colors.textSecondary} />
                 ) : (
-                  <Ionicons name="eye" size={20} color={lightTheme.colors.textSecondary} />
+                  <Ionicons name="eye" size={20} color={currentTheme.colors.textSecondary} />
                 )}
               </TouchableOpacity>
             </View>
@@ -155,17 +202,17 @@ export function AuthModal({ visible, onClose, onSuccess, initialMode = 'signin' 
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: lightTheme.spacing.lg,
+    padding: theme.spacing.lg,
   },
   container: {
-    backgroundColor: lightTheme.colors.background,
-    borderRadius: lightTheme.borderRadius.xl,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.xl,
     width: '100%',
     maxWidth: 400,
     elevation: 10,
@@ -178,58 +225,58 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: lightTheme.spacing.lg,
+    padding: theme.spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: lightTheme.colors.border,
+    borderBottomColor: theme.colors.border,
   },
   title: {
     fontSize: 24,
     fontFamily: 'Inter-Bold',
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
   },
   closeButton: {
-    padding: lightTheme.spacing.xs,
+    padding: theme.spacing.xs,
   },
   form: {
-    padding: lightTheme.spacing.lg,
+    padding: theme.spacing.lg,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: lightTheme.colors.surface,
-    borderRadius: lightTheme.borderRadius.md,
-    marginBottom: lightTheme.spacing.md,
-    paddingHorizontal: lightTheme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
     borderWidth: 1,
-    borderColor: lightTheme.colors.border,
+    borderColor: theme.colors.border,
   },
   inputIcon: {
-    marginRight: lightTheme.spacing.sm,
+    marginRight: theme.spacing.sm,
   },
   input: {
     flex: 1,
-    paddingVertical: lightTheme.spacing.md,
+    paddingVertical: theme.spacing.md,
     fontSize: 16,
-    color: lightTheme.colors.text,
+    color: theme.colors.text,
     fontFamily: 'Inter-Regular',
   },
   eyeButton: {
-    padding: lightTheme.spacing.xs,
+    padding: theme.spacing.xs,
   },
   submitButton: {
-    backgroundColor: lightTheme.colors.primary,
-    borderRadius: lightTheme.borderRadius.md,
-    paddingVertical: lightTheme.spacing.md,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    paddingVertical: theme.spacing.md,
     alignItems: 'center',
-    marginTop: lightTheme.spacing.md,
+    marginTop: theme.spacing.md,
     elevation: 2,
-    shadowColor: lightTheme.colors.primary,
+    shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
   },
   submitButtonDisabled: {
-    backgroundColor: lightTheme.colors.border,
+    backgroundColor: theme.colors.border,
     elevation: 0,
     shadowOpacity: 0,
   },
@@ -242,16 +289,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: lightTheme.spacing.lg,
+    marginTop: theme.spacing.lg,
   },
   footerText: {
     fontSize: 14,
-    color: lightTheme.colors.textSecondary,
+    color: theme.colors.textSecondary,
     fontFamily: 'Inter-Regular',
   },
   footerLink: {
     fontSize: 14,
-    color: lightTheme.colors.primary,
+    color: theme.colors.primary,
     fontFamily: 'Inter-SemiBold',
   },
 });

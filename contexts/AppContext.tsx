@@ -6,6 +6,7 @@ import { AlbumUtils } from '../utils/albumUtils';
 import { UserFlags, AppSettings, Album } from '../types';
 import { PhotoLoader } from '../utils/photoLoader';
 import { ThemeManager } from '../utils/theme';
+import  { supabase } from '../utils/supabase';
 
 // Define the state shape
 interface AppState {
@@ -179,6 +180,11 @@ interface AppContextActions {
   updateAlbum: (id: string, updates: Partial<Album>) => Promise<void>;
   removeAlbum: (id: string) => Promise<void>;
   ensureAllPhotosAlbum: () => Promise<void>;
+  
+  // Data management actions - ADD THESE
+  clearAllAppData: (skipStateReset?: boolean) => Promise<void>;
+  resetAppState: () => void;
+  deleteUserAccount: () => Promise<void>;
 }
 
 // Combined context type
@@ -598,6 +604,305 @@ export function AppProvider({ children }: AppProviderProps) {
     }
   }, [refreshAlbums]);
 
+  const deleteUserAccount = async () => {
+    if (!state.userProfile) {
+      throw new Error('No user profile found');
+    }
+
+    console.log('🗑️ Starting account deletion for user:', state.userProfile.id, state.userProfile.email);
+    
+    // Store user info before any operations
+    const userToDelete = { ...state.userProfile };
+    
+    try {
+      // Get current session for auth
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+      if (sessionError || !session) {
+        throw new Error('No active session found');
+      }
+
+      console.log('🗑️ Calling delete-user-account edge function...');
+    
+      // Call the edge function (this will sign out the user and delete everything)
+      const { data, error } = await supabase.functions.invoke('delete-user-account', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (error) {
+        console.error('❌ Edge function error:', error);
+        throw new Error(`Account deletion failed: ${error.message}`);
+      }
+
+      if (!data.success) {
+        console.error('❌ Edge function returned failure:', data);
+        throw new Error(`Account deletion failed: ${data.error}`);
+      }
+
+      console.log('✅ Edge function succeeded:', data);
+      console.log('📊 Deletion results:', data.results);
+
+      // Clear local data after successful server deletion
+      console.log('🗑️ Clearing local data...');
+      await MediaStorage.clearAllData();
+      await AlbumUtils.clearNsfwCache();
+      
+      // Reset app state
+      resetAppState();
+      
+      // Reset theme
+      const themeManager = ThemeManager.getInstance();
+      themeManager.setTheme(false, undefined);
+      
+      // The user should already be signed out by the edge function
+      // But let's make sure our local state reflects this
+      dispatch({
+        type: 'SET_AUTHENTICATED',
+        payload: { isAuthenticated: false, userProfile: null },
+      });
+      
+      dispatch({
+        type: 'SET_USER_FLAGS',
+        payload: {
+          creditBalance: 0,
+          hasPurchasedCredits: false,
+        },
+      });
+      
+      console.log('✅ User account deletion completed successfully');
+    
+    } catch (error) {
+      console.error('❌ Error during account deletion:', error);
+      throw error;
+    }
+  };
+
+  const clearAllAppData = async (skipStateReset: boolean = false) => {
+    console.log('🧹 Clearing all app data from context...');
+    
+    try {
+      // 1. Clear all local storage
+      await MediaStorage.clearAllData();
+      
+      // 2. Clear NSFW cache
+      await AlbumUtils.clearNsfwCache();
+      
+      // 3. Clear user-specific data from Supabase if authenticated
+      if (state.isAuthenticated && state.userProfile) {
+        try {
+          const { error: nsfwError } = await supabase
+            .from('nsfw_results')
+            .delete()
+            .eq('user_id', state.userProfile.id);
+          
+          if (nsfwError) console.warn('Failed to clear NSFW results:', nsfwError);
+
+          const { error: albumsError } = await supabase
+            .from('user_albums')
+            .delete()
+            .eq('user_id', state.userProfile.id);
+          
+          if (albumsError) console.warn('Failed to clear user albums:', albumsError);
+
+          const { error: jobsError } = await supabase
+            .from('nsfw_bulk_jobs')
+            .delete()
+            .eq('user_id', state.userProfile.id);
+          
+          if (jobsError) console.warn('Failed to clear bulk jobs:', jobsError);
+        } catch (error) {
+          console.warn('Error clearing remote data:', error);
+        }
+      }
+      
+      // 4. Reset app state only if not skipping
+      if (!skipStateReset) {
+        resetAppState();
+        
+        // 5. Reset theme to default
+        const themeManager = ThemeManager.getInstance();
+        themeManager.setTheme(false, undefined); // Reset to light theme, no custom colors
+      }
+      
+      console.log('✅ All app data cleared successfully');
+    } catch (error) {
+      console.error('❌ Error clearing app data:', error);
+      throw error;
+    }
+  };
+
+  const resetAppState = () => {
+    console.log('🔄 Resetting app state to defaults...');
+    
+    // Reset to initial state but keep authentication status
+    dispatch({
+      type: 'SET_USER_FLAGS',
+      payload: {
+        creditBalance: 0,
+        hasPurchasedCredits: false
+      }
+    });
+    
+    dispatch({
+      type: 'SET_SETTINGS',
+      payload: {
+        darkMode: false,
+        autoSort: false,
+        nsfwFilter: true,
+        notifications: true,
+        selectedFolders: ['all_photos'],
+        lastAutoSortTimestamp: 0,
+        showModeratedContent: false,
+        showModeratedInMainAlbums: false,
+      }
+    });
+    
+    dispatch({
+      type: 'SET_ALBUMS',
+      payload: []
+    });
+    
+    // Clear any error states
+    dispatch({
+      type: 'SET_ALBUMS_ERROR',
+      payload: null
+    });
+    
+    console.log('✅ App state reset to defaults');
+  };
+
+  const testDeleteOperations = async () => {
+    if (!state.userProfile) {
+      console.log('❌ No user profile found');
+      return;
+    }
+
+    const userId = state.userProfile.id;
+    console.log('🧪 Testing delete operations for user:', userId);
+
+    try {
+      // Test 1: Check what data exists
+      console.log('🔍 Checking existing data...');
+      
+      const { data: nsfwCheck, error: nsfwCheckError } = await supabase
+        .from('nsfw_results')
+        .select('*')
+        .eq('user_id', userId);
+      
+      console.log('NSFW results found:', nsfwCheck?.length || 0, 'records');
+      if (nsfwCheckError) console.log('NSFW check error:', nsfwCheckError);
+
+      const { data: nsfwBulkCheck, error: nsfwBulkCheckError } = await supabase
+        .from('nsfw_bulk_results')
+        .select('*')
+        .eq('user_id', userId);
+      
+      console.log('NSFW bulk results found:', nsfwBulkCheck?.length || 0, 'records');
+      if (nsfwBulkCheckError) console.log('NSFW bulk check error:', nsfwBulkCheckError);
+
+      const { data: sortSessionsCheck, error: sortSessionsCheckError } = await supabase
+        .from('sort_sessions')
+        .select('*')
+        .eq('user_id', userId);
+      
+      console.log('Sort sessions found:', sortSessionsCheck?.length || 0, 'records');
+      if (sortSessionsCheckError) console.log('Sort sessions check error:', sortSessionsCheckError);
+
+      const { data: moderatedFoldersCheck, error: moderatedFoldersCheckError } = await supabase
+        .from('moderated_folders')
+        .select('*')
+        .eq('user_id', userId);
+      
+      console.log('Moderated folders found:', moderatedFoldersCheck?.length || 0, 'records');
+      if (moderatedFoldersCheckError) console.log('Moderated folders check error:', moderatedFoldersCheckError);
+
+      const { data: moderatedImagesCheck, error: moderatedImagesCheckError } = await supabase
+        .from('moderated_images')
+        .select('*')
+        .eq('user_id', userId);
+      
+      console.log('Moderated images found:', moderatedImagesCheck?.length || 0, 'records');
+      if (moderatedImagesCheckError) console.log('Moderated images check error:', moderatedImagesCheckError);
+
+      // Test 2: Try to delete with detailed error reporting
+      console.log('🗑️ Testing NSFW results deletion...');
+      const { data: nsfwDeleteData, error: nsfwDeleteError, count: nsfwDeleteCount } = await supabase
+        .from('nsfw_results')
+        .delete({ count: 'exact' })
+        .eq('user_id', userId)
+        .select();
+
+      console.log('NSFW delete result:', {
+        data: nsfwDeleteData,
+        error: nsfwDeleteError,
+        count: nsfwDeleteCount
+      });
+
+      console.log('🗑️ Testing NSFW bulk results deletion...');
+      const { data: nsfwBulkDeleteData, error: nsfwBulkDeleteError, count: nsfwBulkDeleteCount } = await supabase
+        .from('nsfw_bulk_results')
+        .delete({ count: 'exact' })
+        .eq('user_id', userId)
+        .select();
+
+      console.log('NSFW bulk delete result:', {
+        data: nsfwBulkDeleteData,
+        error: nsfwBulkDeleteError,
+        count: nsfwBulkDeleteCount
+      });
+
+      console.log('🗑️ Testing sort sessions deletion...');
+      const { data: sortSessionsDeleteData, error: sortSessionsDeleteError, count: sortSessionsDeleteCount } = await supabase
+        .from('sort_sessions')
+        .delete({ count: 'exact' })
+        .eq('user_id', userId)
+        .select();
+
+      console.log('Sort sessions delete result:', {
+        data: sortSessionsDeleteData,
+        error: sortSessionsDeleteError,
+        count: sortSessionsDeleteCount
+      });
+
+      console.log('🗑️ Testing moderated folders deletion...');
+      const { data: moderatedFoldersDeleteData, error: moderatedFoldersDeleteError, count: moderatedFoldersDeleteCount } = await supabase
+        .from('moderated_folders')
+        .delete({ count: 'exact' })
+        .eq('user_id', userId)
+        .select();
+
+      console.log('Moderated folders delete result:', {
+        data: moderatedFoldersDeleteData,
+        error: moderatedFoldersDeleteError,
+        count: moderatedFoldersDeleteCount
+      });
+
+      console.log('🗑️ Testing moderated images deletion...');
+      const { data: moderatedImagesDeleteData, error: moderatedImagesDeleteError, count: moderatedImagesDeleteCount } = await supabase
+        .from('moderated_images')
+        .delete({ count: 'exact' })
+        .eq('user_id', userId)
+        .select();
+
+      console.log('Moderated images delete result:', {
+        data: moderatedImagesDeleteData,
+        error: moderatedImagesDeleteError,
+        count: moderatedImagesDeleteCount
+      });
+
+      // Test 3: Check current user permissions
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('Current auth user:', user?.id, user?.email);
+      console.log('Profile user:', userId);
+      console.log('Users match:', user?.id === userId);
+
+    } catch (error) {
+      console.error('❌ Test failed:', error);
+    }
+  };
+
   const contextValue: AppContextType = {
     ...state,
     signIn,
@@ -614,6 +919,9 @@ export function AppProvider({ children }: AppProviderProps) {
     updateAlbum,
     removeAlbum,
     ensureAllPhotosAlbum,
+    clearAllAppData,
+    resetAppState,
+    deleteUserAccount,
   };
 
   return (

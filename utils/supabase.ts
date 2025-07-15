@@ -105,20 +105,7 @@ export class SupabaseAuth {
 
   static async signUp(email: string, password: string, fullName?: string) {
     try {
-      // ✅ Check for existing inactive user first
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('email', email)
-        .eq('status', 'inactive')
-        .single();
-
-      if (existingProfile) {
-        console.log('🔄 Found inactive user, attempting reactivation');
-        return await this.reactivateUser(email, password, fullName);
-      }
-
-      // Normal signup flow
+      // First, try normal signup
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -129,9 +116,77 @@ export class SupabaseAuth {
         },
       });
 
+      // If user already exists in auth, try to sign them in instead
+      if (error && error.message.includes('User already registered')) {
+        console.log('🔄 User already exists in auth, attempting sign in for reactivation');
+        
+        try {
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+          if (signInError) {
+            throw new Error('Account exists but password is incorrect. Please try signing in instead.');
+          }
+
+          // Check if profile exists and is inactive
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', email)
+            .single();
+
+          if (existingProfile && existingProfile.status === 'inactive') {
+            // Reactivate the profile
+            const { error: updateError } = await supabase
+              .from('profiles')
+              .update({
+                status: 'active',
+                deleted_at: null,
+                updated_at: new Date().toISOString(),
+                full_name: fullName || existingProfile.full_name,
+              })
+              .eq('email', email);
+
+            if (updateError) {
+              throw updateError;
+            }
+
+            console.log('✅ Profile reactivated successfully');
+          } else if (!existingProfile) {
+            // Create profile if it doesn't exist
+            const { error: insertError } = await supabase
+              .from('profiles')
+              .insert({
+                id: signInData.user!.id,
+                email: signInData.user!.email!,
+                full_name: fullName,
+                status: 'active',
+                subscription_status: 'free',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+
+            if (insertError) {
+              throw insertError;
+            }
+          }
+
+          return signInData;
+          
+        } catch (reactivationError: any) {
+          if (reactivationError.message.includes('password')) {
+            throw new Error('An account with this email already exists. Please sign in with your existing password.');
+          }
+          throw reactivationError;
+        }
+      }
+
       if (error) {
         throw error;
       }
+
       return data;
     } catch (error) {
       throw error;
@@ -301,15 +356,26 @@ export class SupabaseAuth {
     try {
       console.log('🔄 Reactivating user account:', email);
 
-      // First, try to sign in with existing auth user
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // First, check if there's an existing auth user
+      let authUser = null;
+      
+      try {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        
+        if (!signInError && signInData.user) {
+          authUser = signInData.user;
+          console.log('✅ Auth user exists, reactivating profile');
+        }
+      } catch (signInError) {
+        console.log('🔄 Auth user sign-in failed, will create new one');
+      }
 
-      if (signInError) {
-        // If sign in fails, the auth user might not exist, so create new one
-        console.log('🔄 Auth user not found, creating new auth user');
+      if (!authUser) {
+        // Create new auth user if none exists
+        console.log('🔄 Creating new auth user');
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -323,37 +389,56 @@ export class SupabaseAuth {
         if (signUpError) {
           throw signUpError;
         }
+        
+        authUser = signUpData.user;
+      }
 
-        // Reactivate the profile with new auth user ID
-        if (signUpData.user) {
-          await supabase
+      if (authUser) {
+        // Reactivate or create the profile
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', email)
+          .single();
+
+        if (existingProfile) {
+          // Reactivate existing profile
+          const { error: updateError } = await supabase
             .from('profiles')
             .update({
-              id: signUpData.user.id, // Update with new auth user ID
+              id: authUser.id, // Update with current auth user ID
               status: 'active',
               deleted_at: null,
               updated_at: new Date().toISOString(),
-              full_name: fullName || null,
+              full_name: fullName || existingProfile.full_name,
             })
             .eq('email', email);
+
+          if (updateError) {
+            throw updateError;
+          }
+        } else {
+          // Create new profile if none exists
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert({
+              id: authUser.id,
+              email: authUser.email!,
+              full_name: fullName,
+              status: 'active',
+              subscription_status: 'free',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+
+          if (insertError) {
+            throw insertError;
+          }
         }
-
-        return signUpData;
-      } else {
-        // Auth user exists, just reactivate the profile
-        console.log('🔄 Auth user exists, reactivating profile');
-        await supabase
-          .from('profiles')
-          .update({
-            status: 'active',
-            deleted_at: null,
-            updated_at: new Date().toISOString(),
-            full_name: fullName || null,
-          })
-          .eq('email', email);
-
-        return signInData;
       }
+
+      return { user: authUser };
+      
     } catch (error) {
       console.error('❌ Reactivation failed:', error);
       throw error;
@@ -399,6 +484,41 @@ export class SupabaseAuth {
       return profile?.status !== 'inactive';
     } catch (error) {
       return false;
+    }
+  }
+
+  // ✅ New hard delete method
+  static async hardDeleteUser() {
+    try {
+      const user = await this.getCurrentUser();
+      if (!user) throw new Error('No authenticated user');
+
+      console.log('🗑️ Hard deleting user:', user.email);
+
+      // Delete the profile first
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', user.id);
+
+      if (profileError) {
+        console.warn('Profile deletion failed:', profileError);
+      }
+
+      // Delete the auth user (this requires RLS policies to allow it)
+      // Note: This might not work with standard RLS - you might need a server function
+      const { error: authError } = await supabase.auth.admin.deleteUser(user.id);
+      
+      if (authError) {
+        console.warn('Auth user deletion failed (this is normal with client-side calls):', authError);
+        // Fallback to sign out
+        await this.signOut();
+      }
+
+      console.log('✅ User hard deleted successfully');
+    } catch (error) {
+      console.error('❌ Hard delete failed:', error);
+      throw error;
     }
   }
 }

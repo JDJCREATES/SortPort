@@ -174,12 +174,18 @@ export class MediaStorage {
 
   static async clearAllData(): Promise<void> {
     try {
-      await AsyncStorage.multiRemove([
-        this.SETTINGS_KEY,
-        this.PROCESSED_IMAGES_KEY,
-      ]);
+      // Clear all AsyncStorage keys related to the app
+      const keys = await AsyncStorage.getAllKeys();
+      const appKeys = keys.filter(key => key.startsWith('@snapsort_'));
+      
+      if (appKeys.length > 0) {
+        await AsyncStorage.multiRemove(appKeys);
+      }
+      
+      console.log('✅ All local data cleared');
     } catch (error) {
-      console.error('Error clearing data:', error);
+      console.error('Error clearing all data:', error);
+      throw error;
     }
   }
 }
