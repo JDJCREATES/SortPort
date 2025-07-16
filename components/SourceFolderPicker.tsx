@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { PhotoLoader } from '../utils/photoLoader';
 import { useApp } from '../contexts/AppContext';
 import { getCurrentTheme } from '../utils/theme';
@@ -185,7 +185,7 @@ function SourceFolderPickerComponent({
         return;
       }
 
-      console.log(`🚀 Starting REAL bulk NSFW processing for ${allPhotos.length} photos`);
+   
 
       // ✅ SKIP LOCAL DETECTION - Go straight to AWS bulk processing
       setScanProgress({ 
@@ -194,7 +194,6 @@ function SourceFolderPickerComponent({
         message: `Submitting ${allPhotos.length} images for AWS bulk processing...` 
       });
 
-      console.log(`☁️ Submitting ${allPhotos.length} images for AWS bulk processing`);
 
       // ✅ Use REAL bulk processing - send ALL images to AWS
       const { BulkNSFWProcessor } = await import('../utils/bulkNsfwProcessor');
@@ -208,16 +207,15 @@ function SourceFolderPickerComponent({
       const bulkResults = await BulkNSFWProcessor.processBulkImages(
         imageUris,
         userProfile.id,
-        (progress: any) => {
-          const completed = progress.completed || progress.current || 0;
-          const total = progress.total || allPhotos.length;
+        (progress) => {
+          const completed = progress.current || 0;
+          const total = progress.total || 100;
           const status = progress.status || progress.message || 'Processing';
-          const progressPercentage = total > 0 ? Math.round((completed / total) * 100) : 0;
           
           setScanProgress({
             current: completed,
             total: total,
-            message: `AWS bulk processing: ${status} (${progressPercentage}%)`
+            message: `${status}: ${progress.message || 'Processing...'}`
           });
         }
       );
@@ -270,29 +268,33 @@ function SourceFolderPickerComponent({
       }
 
       // Update moderated folders
-      const folderNameMap: { [folderId: string]: string } = {};
-      allSelectedFolders.forEach(folder => {
-        folderNameMap[folder.id] = folder.name;
-      });
-      await AlbumUtils.updateModeratedFolders(newlySelectedFolderIds, folderNameMap);
+      const folderIds = newlySelectedFolderIds;
       
+      // Create folderNames mapping from selected folders
+      const folderNames: { [folderId: string]: string } = {};
+      allSelectedFolders.forEach(folder => {
+        if (newlySelectedFolderIds.includes(folder.id)) {
+          folderNames[folder.id] = folder.name;
+        }
+      });
+      
+      await AlbumUtils.updateModeratedFolders(folderIds, folderNames);
+
       onSelect(allSelectedFolders);
       onClose();
       
     } catch (error) {
-      console.error('AWS bulk moderation failed:', error);
+      console.error('❌ AWS bulk processing failed:', error);
       
-      // Show error to user and don't update selection if storage fails
-      if (error instanceof Error && error.message.includes('Storage not accessible')) {
-        setError(error.message);
-        // Don't update selection - let user fix storage issue first
-        return;
-      }
-      
-      // For other errors, fallback to no filtering
-      console.log('Proceeding with folder selection despite processing error');
-      onSelect(allSelectedFolders);
-      onClose();
+      // Show error to user
+      Alert.alert(
+        'Processing Error',
+        `Failed to process images: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        [
+          { text: 'Continue Anyway', onPress: () => { onSelect(allSelectedFolders); onClose(); } },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     } finally {
       setIsScanning(false);
       setScanProgress({ current: 0, total: 0, message: '' });
