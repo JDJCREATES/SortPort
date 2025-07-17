@@ -5,6 +5,9 @@ import {
   PutObjectCommand,
   CreateBucketCommand,
   HeadBucketCommand,
+  PutBucketPolicyCommand,
+  GetBucketPolicyCommand,
+  ListObjectsV2Command,
 } from "npm:@aws-sdk/client-s3@^3.840.0"
 
 /**
@@ -38,7 +41,8 @@ const CORS_HEADERS = {
 
 // AWS Client
 function getS3Client(): S3Client {
-  const region = Deno.env.get('AWS_REGION') || 'us-east-1';
+  const region = Deno.env.get('AWS_REGION') || 'us-east-2';
+  console.log(`🔧 Initializing S3 client in region: ${region}`);
   return new S3Client({
     region,
     credentials: {
@@ -60,6 +64,147 @@ function generateJobId(): string {
 // Generate a consistent temp bucket name for a user session
 function generateTempBucketName(userId: string): string {
   return `nsfw-temp-${userId.substring(0, 8)}-${Date.now().toString(36)}`
+}
+
+// ADD THIS NEW FUNCTION HERE - after the helper functions, before getOrCreateTempBucket
+function createBucketPolicyForRekognition(bucketName: string): string {
+  const accountId = Deno.env.get('AWS_ACCOUNT_ID');
+  
+  
+  if (!accountId) {
+    throw new Error('AWS_ACCOUNT_ID environment variable required');
+  }
+  
+  return JSON.stringify({
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AllowRekognitionServiceAccess",
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "rekognition.amazonaws.com"
+        },
+        "Action": [
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:PutObject"
+        ],
+        "Resource": [
+          `arn:aws:s3:::${bucketName}`,
+          `arn:aws:s3:::${bucketName}/*`
+        ]
+      },
+      {
+        "Sid": "AllowRekognitionServiceRoleAccess", 
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": `arn:aws:iam::${accountId}:role/RekognitionServiceRole`
+        },
+        "Action": [
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:PutObject"
+        ],
+        "Resource": [
+          `arn:aws:s3:::${bucketName}`,
+          `arn:aws:s3:::${bucketName}/*`
+        ]
+      }
+    ]
+  });
+}
+
+async function createManifestFile(
+  s3Client: S3Client,
+  bucketName: string,
+  objectKeys: string[],
+  requestId: string
+): Promise<string> {
+  console.log(`📝 [${requestId}] Creating manifest file for ${objectKeys.length} objects`);
+  
+  // Create JSONL manifest content
+  const manifestLines = objectKeys.map(key => 
+    JSON.stringify({ "source-ref": `s3://${bucketName}/${key}` })
+  );
+  const manifestContent = manifestLines.join('\n');
+  
+  const manifestKey = 'manifest.jsonl';
+  
+  try {
+    await s3Client.send(new PutObjectCommand({
+      Bucket: bucketName,
+      Key: manifestKey,
+      Body: manifestContent,
+      ContentType: 'application/jsonl',
+    }));
+    
+    console.log(`✅ [${requestId}] Created manifest file: ${manifestKey} with ${objectKeys.length} entries`);
+    console.log(`📄 [${requestId}] Manifest sample:`, manifestLines.slice(0, 3).join('\n'));
+    
+    return manifestKey;
+  } catch (error) {
+    console.error(`❌ [${requestId}] Failed to create manifest file:`, error);
+    throw error;
+  }
+}
+
+// Add this function after createManifestFile
+async function finalizeUploadSession(
+  s3Client: S3Client,
+  bucketName: string,
+  sessionJobId: string,
+  requestId: string
+): Promise<void> {
+  try {
+    console.log(`🏁 [${requestId}] Finalizing upload session: ${sessionJobId}`);
+    
+    // List all uploaded objects to create manifest
+    const listCommand = new ListObjectsV2Command({
+      Bucket: bucketName,
+      Prefix: 'input/',
+      MaxKeys: 1000
+    });
+    
+    const response = await s3Client.send(listCommand);
+    const objects = response.Contents || [];
+    const objectKeys = objects
+      .map(obj => obj.Key ?? '')
+      .filter(key => key.endsWith('.jpg') || key.endsWith('.jpeg') || key.endsWith('.png'));
+    
+    if (objectKeys.length === 0) {
+      throw new Error('No image objects found to create manifest');
+    }
+    
+    // Create manifest file
+    const manifestKey = await createManifestFile(s3Client, bucketName, objectKeys, requestId);
+    
+    // Update database with manifest info
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+    
+    const { error } = await supabase
+      .from('nsfw_bulk_jobs')
+      .update({
+        status: 'uploaded',
+        uploaded_at: new Date().toISOString(),
+        manifest_key: manifestKey, // Store manifest location
+        total_images: objectKeys.length, // Update with actual count
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', sessionJobId);
+    
+    if (error) {
+      console.error(`❌ [${requestId}] Failed to update job with manifest:`, error);
+    } else {
+      console.log(`✅ [${requestId}] Upload session finalized with manifest: ${manifestKey}`);
+    }
+    
+  } catch (error) {
+    console.error(`❌ [${requestId}] Error finalizing upload session:`, error);
+    throw error;
+  }
 }
 
 // Get or create a single temp bucket for the user session
@@ -109,24 +254,65 @@ async function getOrCreateTempBucket(
   // Create new bucket and job ID
   const bucketName = generateTempBucketName(userId);
   const jobId = generateJobId();
+  const region = Deno.env.get('AWS_REGION') || 'us-east-1';
   
-  console.log(`📦 [${requestId}] Creating new session: job=${jobId}, bucket=${bucketName}`);
+  console.log(`📦 [${requestId}] Creating new session: job=${jobId}, bucket=${bucketName}, region=${region}`);
   
   try {
-    await s3Client.send(new CreateBucketCommand({
+    // Create bucket
+    const createBucketParams = {
       Bucket: bucketName,
-    }));
-    console.log(`✅ [${requestId}] Created new session: job=${jobId}, bucket=${bucketName}`);
+      ...(region !== 'us-east-1' && {
+        CreateBucketConfiguration: {
+          LocationConstraint: region
+        }
+      })
+    };
+    
+    await s3Client.send(new CreateBucketCommand(createBucketParams));
+    console.log(`✅ [${requestId}] Created bucket: ${bucketName}`);
+    
+    // CRITICAL: Add bucket policy for Rekognition access
+    try {
+      const bucketPolicy = createBucketPolicyForRekognition(bucketName);
+      console.log(`🔐 [${requestId}] Applying bucket policy:`, bucketPolicy);
+      
+      await s3Client.send(new PutBucketPolicyCommand({
+        Bucket: bucketName,
+        Policy: bucketPolicy
+      }));
+      console.log(`✅ [${requestId}] Applied Rekognition access policy to bucket: ${bucketName}`);
+      
+      // VERIFY the policy was applied
+      try {
+        const verifyPolicy = await s3Client.send(new GetBucketPolicyCommand({
+          Bucket: bucketName
+        }));
+        console.log(`🔍 [${requestId}] Verified bucket policy applied:`, verifyPolicy.Policy);
+      } catch (verifyError) {
+        console.error(`❌ [${requestId}] Failed to verify bucket policy:`, verifyError);
+      }
+      
+    } catch (policyError) {
+      console.error(`❌ [${requestId}] Failed to apply bucket policy:`, policyError);
+      console.error(`❌ [${requestId}] Policy error details:`, JSON.stringify(policyError, null, 2));
+      // Don't fail bucket creation, but log the issue
+      console.warn(`⚠️ [${requestId}] Bucket created but Rekognition may not have access`);
+    }
+    
+    console.log(`✅ [${requestId}] Created new session: job=${jobId}, bucket=${bucketName} in region ${region}`);
     return {
       bucketName,
       jobId,
       isNewSession: true
     };
   } catch (error) {
-    console.error(`❌ [${requestId}] Failed to create temp bucket:`, error);
+    console.error(`❌ [${requestId}] Failed to create temp bucket in region ${region}:`, error);
     throw error;
   }
 }
+
+
 
 // Cleanup function
 async function cleanupTempBucket(bucketName: string): Promise<void> {
@@ -609,6 +795,19 @@ async function handleRequest(req: Request): Promise<Response> {
           500,
           bucketName
         );
+      }
+    }
+
+    // Check if this might be the final batch (you'll need to track this based on your batching logic)
+    const shouldFinalize = formData.get('isLastBatch') === 'true'; // Add this flag from client
+
+    if (shouldFinalize) {
+      try {
+        await finalizeUploadSession(s3Client, bucketName, sessionJobId, requestId);
+        console.log(`🏁 [${requestId}] Session finalized and ready for processing`);
+      } catch (finalizeError) {
+        console.error(`❌ [${requestId}] Failed to finalize session:`, finalizeError);
+        // Don't fail the upload, but log the issue
       }
     }
 

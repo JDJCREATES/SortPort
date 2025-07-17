@@ -24,7 +24,7 @@ export class BulkNSFWProcessor {
   private static readonly UPLOAD_TIMEOUT_MS = 180000;
   private static readonly MAX_RETRIES = 2;
   
-  // 🚀 AGGRESSIVE SETTINGS for native processing
+  // 🚀 AGGRESSIVE SETTINGS for native processing <__should be overwritten by hardware profiler
   private static currentSettings: ProcessingSettings = {
     compressionWorkers: 8,        // More workers with native
     uploadStreams: 4,             // More parallel uploads
@@ -346,7 +346,7 @@ export class BulkNSFWProcessor {
       try {
         console.log(`🚀 Processing batch ${i + 1}/${batches.length} (${compressedBatch.length} images)...`);
         
-        const result = await this.uploadBatchWithRetry(compressedBatch, userId, i);
+        const result = await this.uploadBatchWithRetry(compressedBatch, userId, i, batches.length);
         
         // FIXED: Establish or validate session
         if (sessionJobId === null) {
@@ -409,6 +409,7 @@ export class BulkNSFWProcessor {
     userId: string,
     expectedJobId: string,
     expectedBucketName: string,
+    totalBatches: number, // ADD THIS PARAMETER
     onComplete: (result: { jobId: string, bucketName: string, uploadedCount: number }) => void
   ): Promise<void> {
     console.log(`🚀 Enhanced upload worker ${workerId} started with session validation`);
@@ -436,7 +437,8 @@ export class BulkNSFWProcessor {
         
         console.log(`🚀 Worker ${workerId} uploading batch ${index + 1} (${compressedBatch.length} images)`);
         
-        const result = await this.uploadBatchWithRetry(compressedBatch, userId, index);
+        // NOW YOU CAN USE totalBatches
+        const result = await this.uploadBatchWithRetry(compressedBatch, userId, index, totalBatches);
         
         // FIXED: Validate session consistency
         if (result.jobId !== expectedJobId) {
@@ -521,6 +523,7 @@ export class BulkNSFWProcessor {
     batchUris: string[],
     userId: string,
     batchIndex: number,
+    totalBatches: number,
     retryCount = 0
   ): Promise<{ jobId: string; bucketName: string; uploadedCount: number }> {
     const maxRetries = 3; // Increased retries
@@ -532,6 +535,7 @@ export class BulkNSFWProcessor {
       formData.append('userId', userId);
       formData.append('batchIndex', batchIndex.toString());
       formData.append('totalImages', batchUris.length.toString());
+      formData.append('isLastBatch', (batchIndex === totalBatches - 1).toString());
 
       let successfulImages = 0;
       for (let i = 0; i < batchUris.length; i++) {
@@ -803,7 +807,7 @@ export class BulkNSFWProcessor {
 
       console.log(`🚀 NATIVE sequential processing complete: job=${jobId}, bucket=${bucketName}, uploaded=${totalUploaded}`);
 
-      // 🔥 PHASE 3: Submit for processing (single job)
+      // 🔥 PHASE 3: Submit for processing (single job) - ENHANCED ERROR HANDLING
       if (onProgress) {
         onProgress({
           current: 85,
@@ -813,19 +817,42 @@ export class BulkNSFWProcessor {
         });
       }
 
-      const { data, error } = await supabase.functions.invoke('bulk-nsfw-submit', {
-        body: {
-          jobId,
-          bucketName,
-          userId
+      try {
+        console.log(`🚀 Submitting job ${jobId} to AWS Rekognition...`);
+        
+        const { data, error } = await supabase.functions.invoke('bulk-nsfw-submit', {
+          body: {
+            jobId,
+            bucketName,
+            userId
+          }
+        });
+
+        if (error) {
+          console.error(`❌ Submit function error:`, error);
+          throw new Error(`Submit failed: ${error.message}`);
         }
-      });
 
-      if (error) {
-        throw new Error(`Submit failed: ${error.message}`);
+        if (!data) {
+          throw new Error('Submit failed: No response data');
+        }
+
+        console.log(`✅ Job ${jobId} submitted successfully:`, data);
+
+      } catch (submitError: unknown) {
+        console.error(`❌ Submit error details:`, submitError);
+        
+        // Enhanced error handling
+        const errorMessage = submitError instanceof Error ? submitError.message : String(submitError);
+        
+        if (errorMessage.includes('Edge Function returned a non-2xx status code')) {
+          // Try to get more details from the error
+          console.error(`❌ Edge function failed - this usually means AWS Rekognition error`);
+          throw new Error(`AWS Rekognition submission failed. Check server logs for details.`);
+        }
+        
+        throw new Error(`Submit failed: ${errorMessage}`);
       }
-
-      console.log(`⚡ Job ${jobId} submitted for processing`);
 
       if (onProgress) {
         onProgress({
