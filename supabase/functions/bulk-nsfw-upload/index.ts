@@ -67,19 +67,18 @@ async function getOrCreateTempBucket(
   s3Client: S3Client, 
   userId: string,
   requestId: string
-): Promise<string> {
-  // Try to get existing bucket from database first
+): Promise<{ bucketName: string; jobId: string; isNewSession: boolean }> {
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
   
-  // Look for existing active job with temp bucket
+  // FIXED: Look for ANY active job with temp bucket (not just 'uploading')
   const { data: existingJob } = await supabase
     .from('nsfw_bulk_jobs')
-    .select('aws_temp_bucket')
+    .select('id, aws_temp_bucket, status')
     .eq('user_id', userId)
-    .eq('status', 'uploading')
+    .in('status', ['uploading', 'uploaded']) // Include 'uploaded' status
     .order('created_at', { ascending: false })
     .limit(1)
     .single();
@@ -90,23 +89,39 @@ async function getOrCreateTempBucket(
       await s3Client.send(new HeadBucketCommand({
         Bucket: existingJob.aws_temp_bucket
       }));
-      console.log(`♻️ [${requestId}] Reusing existing temp bucket: ${existingJob.aws_temp_bucket}`);
-      return existingJob.aws_temp_bucket;
+      console.log(`♻️ [${requestId}] Reusing existing session: job=${existingJob.id}, bucket=${existingJob.aws_temp_bucket}, status=${existingJob.status}`);
+      return {
+        bucketName: existingJob.aws_temp_bucket,
+        jobId: existingJob.id,
+        isNewSession: false
+      };
     } catch (error) {
-      console.log(`⚠️ [${requestId}] Existing bucket not found, creating new one: ${error}`);
+      console.log(`⚠️ [${requestId}] Existing bucket ${existingJob.aws_temp_bucket} not accessible, creating new session: ${error}`);
+      
+      // Clean up the stale job record
+      await supabase
+        .from('nsfw_bulk_jobs')
+        .update({ status: 'failed', error_message: 'Bucket no longer accessible' })
+        .eq('id', existingJob.id);
     }
   }
   
-  // Create new bucket
+  // Create new bucket and job ID
   const bucketName = generateTempBucketName(userId);
-  console.log(`📦 [${requestId}] Creating new temp bucket: ${bucketName}`);
+  const jobId = generateJobId();
+  
+  console.log(`📦 [${requestId}] Creating new session: job=${jobId}, bucket=${bucketName}`);
   
   try {
     await s3Client.send(new CreateBucketCommand({
       Bucket: bucketName,
     }));
-    console.log(`✅ [${requestId}] Created temp bucket: ${bucketName}`);
-    return bucketName;
+    console.log(`✅ [${requestId}] Created new session: job=${jobId}, bucket=${bucketName}`);
+    return {
+      bucketName,
+      jobId,
+      isNewSession: true
+    };
   } catch (error) {
     console.error(`❌ [${requestId}] Failed to create temp bucket:`, error);
     throw error;
@@ -221,7 +236,7 @@ async function uploadBinaryFilesToS3(
   
   // CRITICAL FIX: Process in smaller parallel chunks to avoid timeout
   const CHUNK_SIZE = 3; // Process 3 images at a time
-  const chunks = [];
+  const chunks: Array<{ key: string; file: File }[]> = [];
   for (let i = 0; i < imageFiles.length; i += CHUNK_SIZE) {
     chunks.push(imageFiles.slice(i, i + CHUNK_SIZE));
   }
@@ -302,6 +317,8 @@ async function handleRequest(req: Request): Promise<Response> {
 
   const requestId = generateRequestId();
   let bucketName: string | undefined = undefined;
+  let sessionJobId: string | undefined = undefined;
+  let isNewSession: boolean = false;
   
   console.log(`🚀 [${requestId}] Received ${req.method} request to bulk-nsfw-upload`);
   
@@ -482,11 +499,10 @@ async function handleRequest(req: Request): Promise<Response> {
       );
     }
 
-    // Generate job ID and get or create temp bucket
-    const jobId = generateJobId();
-    
+    // FIXED: Get or create temp bucket with proper destructuring
     try {
-      bucketName = await getOrCreateTempBucket(s3Client, userId, requestId);
+      ({ bucketName, jobId: sessionJobId, isNewSession } = await getOrCreateTempBucket(s3Client, userId, requestId));
+      console.log(`🔗 [${requestId}] Session established: job=${sessionJobId}, bucket=${bucketName}, isNew=${isNewSession}`);
     } catch (error) {
       console.error(`❌ [${requestId}] Failed to get/create temp bucket:`, error);
       return createErrorResponse(
@@ -499,74 +515,14 @@ async function handleRequest(req: Request): Promise<Response> {
       );
     }
 
-    // Create or update database record
-    console.log(`💾 [${requestId}] Creating database record for job: ${jobId}`);
-    
-    // Check if there's an existing job with the same bucket (meaning same session)
-    const { data: existingJob } = await supabase
-      .from('nsfw_bulk_jobs')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('aws_temp_bucket', bucketName)
-      .eq('status', 'uploading')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-    
-    let dbError: any = null;
-    
-    if (existingJob) {
-      // Update existing job record
-      console.log(`🔄 [${requestId}] Updating existing job: ${existingJob.id}`);
-      const { error } = await supabase
-        .from('nsfw_bulk_jobs')
-        .update({
-          total_images: Math.max(existingJob.total_images, totalImages),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingJob.id);
-      
-      dbError = error;
-    } else {
-      // Create new job record
-      console.log(`🆕 [${requestId}] Creating new job record: ${jobId}`);
-      const { error } = await supabase
-        .from('nsfw_bulk_jobs')
-        .insert({
-          id: jobId,
-          user_id: userId,
-          status: 'uploading',
-          total_images: totalImages,
-          processed_images: 0,
-          nsfw_detected: 0,
-          aws_temp_bucket: bucketName,
-          bucket_path: `s3://${bucketName}/input/`,
-          created_at: new Date().toISOString(),
-        });
-      
-      dbError = error;
-    }
-
-    if (dbError) {
-      console.error(`❌ Database operation error:`, dbError);
-      return createErrorResponse(
-        'Database error',
-        dbError.message,
-        'DATABASE_ERROR',
-        requestId,
-        500,
-        bucketName
-      );
-    }
-
-    // Upload binary files to S3
-    console.log(`⚡ Starting binary upload to S3`);
+    // FIXED: Upload binary files to S3 - moved after bucket creation
+    console.log(`⚡ [${requestId}] Starting binary upload to S3 for session ${sessionJobId}`);
     let uploadResult: { successCount: number; failedCount: number };
-    
+
     try {
       uploadResult = await uploadBinaryFilesToS3(s3Client, bucketName, formData, batchIndex);
     } catch (error) {
-      console.error(`❌ Binary upload failed:`, error);
+      console.error(`❌ [${requestId}] Binary upload failed:`, error);
       return createErrorResponse(
         'Binary upload failed',
         error instanceof Error ? error.message : 'Unknown upload error',
@@ -588,28 +544,81 @@ async function handleRequest(req: Request): Promise<Response> {
       );
     }
 
-    console.log(`✅ Binary upload complete: ${uploadResult.successCount}/${imageCount} images uploaded`);
+    console.log(`✅ [${requestId}] Binary upload complete: ${uploadResult.successCount}/${imageCount} images uploaded to session ${sessionJobId}`);
 
-    // Update database with upload results
-    const finalJobId = existingJob ? existingJob.id : jobId;
-    const currentProcessedImages = existingJob ? existingJob.processed_images : 0;
-    
-    await supabase
-      .from('nsfw_bulk_jobs')
-      .update({
-        status: 'uploaded',
-        processed_images: currentProcessedImages + uploadResult.successCount,
-        uploaded_at: new Date().toISOString(),
-      })
-      .eq('id', finalJobId);
+    // FIXED: Database record management - always use sessionJobId
+    console.log(`💾 [${requestId}] Managing database record for session: ${sessionJobId}`);
 
-    // SUCCESS - return response
+    if (isNewSession) {
+      // Create new job record
+      console.log(`🆕 [${requestId}] Creating new job record: ${sessionJobId}`);
+      
+      const { error } = await supabase
+        .from('nsfw_bulk_jobs')
+        .insert({
+          id: sessionJobId,
+          user_id: userId,
+          status: 'uploading',
+          total_images: totalImages,
+          processed_images: uploadResult.successCount,
+          nsfw_detected: 0,
+          aws_temp_bucket: bucketName,
+          bucket_path: `s3://${bucketName}/input/`,
+          created_at: new Date().toISOString(),
+        });
+      
+      if (error) {
+        console.error(`❌ [${requestId}] Database insert error:`, error);
+        return createErrorResponse(
+          'Database error',
+          error.message,
+          'DATABASE_ERROR',
+          requestId,
+          500,
+          bucketName
+        );
+      }
+    } else {
+      // Update existing job record
+      console.log(`🔄 [${requestId}] Updating existing job: ${sessionJobId}`);
+      
+      // Get current job state first
+      const { data: currentJob } = await supabase
+        .from('nsfw_bulk_jobs')
+        .select('total_images, processed_images')
+        .eq('id', sessionJobId)
+        .single();
+      
+      const { error } = await supabase
+        .from('nsfw_bulk_jobs')
+        .update({
+          total_images: Math.max(currentJob?.total_images || 0, totalImages),
+          processed_images: (currentJob?.processed_images || 0) + uploadResult.successCount,
+          status: 'uploading', // Keep in uploading status
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sessionJobId);
+      
+      if (error) {
+        console.error(`❌ [${requestId}] Database update error:`, error);
+        return createErrorResponse(
+          'Database error',
+          error.message,
+          'DATABASE_ERROR',
+          requestId,
+          500,
+          bucketName
+        );
+      }
+    }
+
+    // SUCCESS - return response with consistent sessionJobId
     return new Response(JSON.stringify({
-      jobId: finalJobId,
+      jobId: sessionJobId, // Always return the session job ID
       bucketName,
       uploadedCount: uploadResult.successCount,
       failedCount: uploadResult.failedCount,
-      status: 'uploaded',
+      status: 'uploading',
       request_id: requestId
     } as BulkUploadResponse), {
       status: 200,

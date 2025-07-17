@@ -297,8 +297,8 @@ export class HardwareProfiler {
   ): ProcessingSettings {
     const baseSettings = {
       low: {
-        compressionWorkers: 2,
-        uploadStreams: 1,
+        compressionWorkers: 3,
+        uploadStreams: 2,
         batchSize: 5,
         compressionQuality: 0.6,
         maxImageSize: 600,

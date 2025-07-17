@@ -102,7 +102,7 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * ⚠️ Handle memory warnings by throttling processing
+   * ⚠️ Handle memory warnings by throttling processing - FIXED: Don't clear cache during active processing
    */
   private static handleMemoryWarning(availableMB: number): void {
     console.warn(`🚨 Memory warning: ${availableMB}MB available`);
@@ -115,11 +115,13 @@ export class BulkNSFWProcessor {
         compressionWorkers: Math.max(2, Math.floor(this.currentSettings.compressionWorkers / 3)),
         uploadStreams: 1,
         batchSize: Math.max(5, Math.floor(this.currentSettings.batchSize / 2)),
-        cacheSize: Math.max(20, Math.floor(this.currentSettings.cacheSize / 3))
+        cacheSize: Math.max(50, Math.floor(this.currentSettings.cacheSize / 2)) // FIXED: Don't reduce cache too much
       };
       
-      // Clear cache to free memory
-      this.clearOldCache();
+      // FIXED: Only clear cache if we're not actively processing
+      if (!this.isProcessing) {
+        this.clearOldCache();
+      }
       
       console.log('🚨 Emergency throttling activated:', this.currentSettings);
     } else if (availableMB < this.currentSettings.memoryWarningThreshold * 0.75) {
@@ -136,14 +138,18 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * 🧹 Clear old cache entries
+   * 🧹 Clear old cache entries - FIXED: More conservative clearing
    */
   private static clearOldCache(): void {
-    if (this.compressionCache.size > this.currentSettings.cacheSize) {
-      const keysToDelete = Array.from(this.compressionCache.keys())
-        .slice(0, this.compressionCache.size - this.currentSettings.cacheSize);
+    // FIXED: Only clear when significantly over limit to avoid clearing during active processing
+    const clearThreshold = this.currentSettings.cacheSize * 1.5; // 50% buffer
+    
+    if (this.compressionCache.size > clearThreshold) {
+      const entriesToClear = this.compressionCache.size - this.currentSettings.cacheSize;
+      const keysToDelete = Array.from(this.compressionCache.keys()).slice(0, entriesToClear);
+      
       keysToDelete.forEach(key => this.compressionCache.delete(key));
-      console.log(`🧹 Cleared ${keysToDelete.length} cache entries`);
+      console.log(`🧹 Cleared ${keysToDelete.length} cache entries (${this.compressionCache.size} remaining)`);
     }
   }
 
@@ -159,7 +165,7 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * 🚀 NATIVE: Ultra-fast image compression using react-native-image-resizer
+   * 🚀 NATIVE: Ultra-fast image compression using react-native-image-resizer - FIXED: Better cache management
    */
   private static async compressImageNative(uri: string): Promise<string> {
     const startTime = Date.now();
@@ -175,7 +181,7 @@ export class BulkNSFWProcessor {
         return uri;
       }
 
-      console.log(`🗜️ NATIVE compressing: ${uri}`);
+     
       
       // Use react-native-image-resizer for MUCH faster compression
       const result = await ImageResizer.createResizedImage(
@@ -200,24 +206,38 @@ export class BulkNSFWProcessor {
       this.compressionStats.totalTimeMs += processingTime;
       this.compressionStats.averageTimeMs = this.compressionStats.totalTimeMs / this.compressionStats.totalProcessed;
 
+      // FIXED: Cache the result BEFORE checking cache size
+      this.compressionCache.set(uri, result.uri);
+      
+      // FIXED: Only clear cache if we're significantly over limit and not actively uploading
+      if (this.compressionCache.size > this.currentSettings.cacheSize * 2) {
+        this.clearOldCache();
+      }
+
       console.log(`⚡ NATIVE compressed: ${uri} → ${result.uri} (${processingTime}ms, avg: ${this.compressionStats.averageTimeMs.toFixed(0)}ms)`);
       
       return result.uri;
       
     } catch (error) {
       console.warn('⚠️ Native compression failed, using original:', error);
+      // Cache the original URI to avoid repeated failures
+      this.compressionCache.set(uri, uri);
       return uri;
     }
   }
 
   /**
-   * 🚀 PARALLEL: Streaming compression with native processing
+   * 🚀 PARALLEL: Streaming compression with native processing - FIXED: Better coordination
    */
   private static async startNativeCompressionStream(
     imageUris: string[],
     onProgress?: (compressed: number, total: number) => void
   ): Promise<void> {
     console.log(`🔥 Starting NATIVE compression stream for ${imageUris.length} images`);
+    
+    // FIXED: Increase cache size to accommodate all images plus buffer
+    const requiredCacheSize = Math.max(imageUris.length * 1.2, this.currentSettings.cacheSize);
+    this.currentSettings.cacheSize = requiredCacheSize;
     
     this.compressionQueue = [...imageUris];
     let completedCount = 0;
@@ -291,58 +311,107 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * 🚀 PARALLEL: Enhanced upload stream with larger batches
+   * 🔥 Enhanced upload stream with single session tracking - FIXED
    */
   private static async startEnhancedUploadStream(
     imageUris: string[],
     userId: string,
     onProgress?: (uploaded: number, total: number) => void
-  ): Promise<{ jobIds: string[], bucketNames: string[], totalUploaded: number }> {
+  ): Promise<{ jobId: string, bucketName: string, totalUploaded: number }> {
     console.log(`🔥 Starting ENHANCED upload stream for ${imageUris.length} images`);
     
-    const allJobIds: string[] = [];
-    const allBucketNames: string[] = [];
+    // FIXED: Session tracking with validation
+    let sessionJobId: string | null = null;
+    let sessionBucketName: string | null = null;
     let totalUploaded = 0;
     let uploadedBatches = 0;
     
-    // Create larger batches for better efficiency
+    // Create batches
     const batches: string[][] = [];
     for (let i = 0; i < imageUris.length; i += this.currentSettings.batchSize) {
       batches.push(imageUris.slice(i, i + this.currentSettings.batchSize));
     }
     
-    this.uploadQueue = batches.map((batch, index) => ({ batch, index }));
-    
     console.log(`📦 Created ${batches.length} batches of ${this.currentSettings.batchSize} images each`);
     
-    // Start multiple upload streams
-    const uploadStreams = Array.from({ length: this.currentSettings.uploadStreams }, (_, i) =>
-      this.enhancedUploadWorker(i, userId, (result) => {
-        allJobIds.push(result.jobId);
-        allBucketNames.push(result.bucketName);
+    // FIXED: Process ALL batches sequentially to ensure session consistency
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      
+      // Wait for compression to be ready
+      await this.waitForCompressionReady(batch);
+      
+      const compressedBatch = batch.map(uri => this.compressionCache.get(uri) || uri);
+      
+      try {
+        console.log(`🚀 Processing batch ${i + 1}/${batches.length} (${compressedBatch.length} images)...`);
+        
+        const result = await this.uploadBatchWithRetry(compressedBatch, userId, i);
+        
+        // FIXED: Establish or validate session
+        if (sessionJobId === null) {
+          // First batch - establish session
+          sessionJobId = result.jobId;
+          sessionBucketName = result.bucketName;
+          console.log(`✅ Session established: job=${sessionJobId}, bucket=${sessionBucketName}`);
+        } else {
+          // Subsequent batches - validate session consistency
+          if (result.jobId !== sessionJobId) {
+            console.error(`❌ CRITICAL: Job ID changed mid-session! Expected ${sessionJobId}, got ${result.jobId}`);
+            throw new Error(`Session consistency error: Job ID changed from ${sessionJobId} to ${result.jobId}`);
+          }
+          if (result.bucketName !== sessionBucketName) {
+            console.error(`❌ CRITICAL: Bucket name changed mid-session! Expected ${sessionBucketName}, got ${result.bucketName}`);
+            throw new Error(`Session consistency error: Bucket changed from ${sessionBucketName} to ${result.bucketName}`);
+          }
+          console.log(`✅ Session validated: job=${sessionJobId}, bucket=${sessionBucketName}`);
+        }
+        
         totalUploaded += result.uploadedCount;
         uploadedBatches++;
         
         if (onProgress) {
           onProgress(uploadedBatches, batches.length);
         }
-      })
-    );
+        
+      } catch (error) {
+        console.error(`❌ Failed to upload batch ${i + 1}:`, error);
+        throw error;
+      }
+      
+      // Small delay between batches to avoid overwhelming the server
+      if (i < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
     
-    await Promise.all(uploadStreams);
+    if (!sessionJobId || !sessionBucketName) {
+      throw new Error('No successful uploads - session not established');
+    }
     
-    return { jobIds: allJobIds, bucketNames: allBucketNames, totalUploaded };
+    console.log(`✅ Upload session complete: job=${sessionJobId}, bucket=${sessionBucketName}, uploaded=${totalUploaded}`);
+    
+    // Mark session as ready for processing
+    await this.finalizeUploadSession(sessionJobId);
+    
+    return { 
+      jobId: sessionJobId, 
+      bucketName: sessionBucketName, 
+      totalUploaded 
+    };
   }
 
   /**
-   * 🔥 Enhanced upload worker with better error handling
+   * 🔥 Enhanced upload worker with session validation - NEW
    */
-  private static async enhancedUploadWorker(
+  private static async enhancedUploadWorkerWithSessionValidation(
     workerId: number,
     userId: string,
+    expectedJobId: string,
+    expectedBucketName: string,
     onComplete: (result: { jobId: string, bucketName: string, uploadedCount: number }) => void
   ): Promise<void> {
-    console.log(`🚀 Enhanced upload worker ${workerId} started`);
+    console.log(`🚀 Enhanced upload worker ${workerId} started with session validation`);
     
     while (this.uploadQueue.length > 0 && this.isProcessing) {
       // Dynamic throttling check
@@ -368,6 +437,15 @@ export class BulkNSFWProcessor {
         console.log(`🚀 Worker ${workerId} uploading batch ${index + 1} (${compressedBatch.length} images)`);
         
         const result = await this.uploadBatchWithRetry(compressedBatch, userId, index);
+        
+        // FIXED: Validate session consistency
+        if (result.jobId !== expectedJobId) {
+          console.warn(`⚠️ Worker ${workerId}: Job ID mismatch for batch ${index + 1}. Expected ${expectedJobId}, got ${result.jobId}. Using expected session.`);
+          // Override with expected values to maintain session consistency
+          result.jobId = expectedJobId;
+          result.bucketName = expectedBucketName;
+        }
+        
         onComplete(result);
         
       } catch (error) {
@@ -386,29 +464,54 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * 🔥 Wait for batch compression to be ready (optimized)
+   * 🔥 Wait for batch compression to be ready - FIXED: Better cache checking
    */
   private static async waitForCompressionReady(batch: string[]): Promise<void> {
-    const maxWait = 45000; // 45 seconds max wait (increased for larger batches)
+    const maxWait = 45000; // 45 seconds max wait
     const startTime = Date.now();
     
+    console.log(`⏳ Waiting for compression of ${batch.length} images...`);
+    
     while (Date.now() - startTime < maxWait) {
-      const readyCount = batch.filter(uri => this.compressionCache.has(uri)).length;
+      const readyCount = batch.filter(uri => {
+        const hasCache = this.compressionCache.has(uri);
+        if (!hasCache) {
+          console.log(`🔍 Missing cache for: ${uri.substring(uri.lastIndexOf('/') + 1)}`);
+        }
+        return hasCache;
+      }).length;
+      const readyPercent = Math.round((readyCount / batch.length) * 100);
       
-      // Allow partial batch processing if most images are ready
-      if (readyCount >= batch.length * 0.8) {
-        console.log(`⚡ Batch 80% ready (${readyCount}/${batch.length}), proceeding...`);
-        return;
-      }
-      
+      // FIXED: Wait for 100% completion to ensure consistency
       if (readyCount === batch.length) {
+        console.log(`✅ All ${batch.length} images compressed and ready (100%)`);
         return;
       }
       
-      await new Promise(resolve => setTimeout(resolve, 50)); // Faster polling
+      // Log progress every 5 seconds for batches that aren't ready
+      if ((Date.now() - startTime) % 5000 < 100) {
+        console.log(`⏳ Compression progress: ${readyCount}/${batch.length} (${readyPercent}%) ready...`);
+        
+        // FIXED: Debug missing cache entries
+        const missingUris = batch.filter(uri => !this.compressionCache.has(uri));
+        if (missingUris.length > 0) {
+          console.log(`🔍 Missing cache entries for: ${missingUris.map(uri => uri.substring(uri.lastIndexOf('/') + 1)).join(', ')}`);
+        }
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
     
-    console.warn('⚠️ Compression timeout, proceeding with available images');
+    const finalReadyCount = batch.filter(uri => this.compressionCache.has(uri)).length;
+    const finalPercent = Math.round((finalReadyCount / batch.length) * 100);
+    
+    if (finalReadyCount < batch.length) {
+      console.warn(`⚠️ Compression timeout after ${maxWait}ms. Only ${finalReadyCount}/${batch.length} (${finalPercent}%) images ready. Proceeding anyway...`);
+      
+      // FIXED: Log which specific images are missing
+      const missingUris = batch.filter(uri => !this.compressionCache.has(uri));
+      console.warn(`❌ Missing compressed images: ${missingUris.map(uri => uri.substring(uri.lastIndexOf('/') + 1)).join(', ')}`);
+    }
   }
 
   /**
@@ -516,7 +619,12 @@ export class BulkNSFWProcessor {
           throw new Error(`Invalid JSON response: ${errorMessage}`);
         }
 
-        console.log(`✅ Batch ${batchIndex + 1} uploaded successfully:`, result);
+        console.log(`✅ Batch ${batchIndex + 1} uploaded successfully to session ${result.jobId}:`, {
+          jobId: result.jobId,
+          bucketName: result.bucketName,
+          uploadedCount: result.uploadedCount,
+          status: result.status
+        });
         
         if (!result.jobId || !result.bucketName || typeof result.uploadedCount !== 'number') {
           throw new Error(`Invalid response structure: ${JSON.stringify(result)}`);
@@ -562,7 +670,44 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * 🚀 ULTIMATE NATIVE PERFORMANCE: Parallel streaming pipeline with native compression
+   * 🔥 Wait for first compression batch to be ready before starting uploads
+   */
+  private static async waitForFirstCompressionBatch(imageUris: string[], batchSize: number): Promise<void> {
+    const firstBatch = imageUris.slice(0, batchSize);
+    const maxWait = 30000; // 30 seconds max wait
+    const startTime = Date.now();
+    
+    console.log(`⏳ Waiting for first compression batch (${firstBatch.length} images) to complete...`);
+    
+    while (Date.now() - startTime < maxWait) {
+      const readyCount = firstBatch.filter(uri => this.compressionCache.has(uri)).length;
+      const readyPercent = (readyCount / firstBatch.length) * 100;
+      
+      // Start uploading when 80% of first batch is ready
+      if (readyCount >= firstBatch.length * 0.8) {
+        console.log(`✅ First batch 80% ready (${readyCount}/${firstBatch.length}), starting uploads...`);
+        return;
+      }
+      
+      if (readyCount === firstBatch.length) {
+        console.log(`✅ First batch 100% ready (${readyCount}/${firstBatch.length}), starting uploads...`);
+        return;
+      }
+      
+      // Log progress every 5 seconds
+      if ((Date.now() - startTime) % 5000 < 100) {
+        console.log(`⏳ First batch progress: ${readyCount}/${firstBatch.length} (${readyPercent.toFixed(0)}%) ready...`);
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    const finalReadyCount = firstBatch.filter(uri => this.compressionCache.has(uri)).length;
+    console.warn(`⚠️ First batch timeout after ${maxWait}ms, proceeding with ${finalReadyCount}/${firstBatch.length} ready images`);
+  }
+
+  /**
+   * 🚀 ULTIMATE NATIVE PERFORMANCE: Sequential upload pipeline for session consistency
    */
   static async processBulkImagesNative(
     imageUris: string[],
@@ -576,10 +721,11 @@ export class BulkNSFWProcessor {
       // Initialize hardware optimization
       await this.initializeHardwareOptimization();
       
-      console.log(`🚀🚀🚀 NATIVE ULTRA-FAST processing for ${imageUris.length} images`);
-      console.log(`⚡ Using ${this.currentSettings.compressionWorkers} native workers, ${this.currentSettings.uploadStreams} upload streams, ${this.currentSettings.batchSize} batch size`);
+      console.log(`🚀🚀🚀 NATIVE SEQUENTIAL processing for ${imageUris.length} images`);
+      console.log(`⚡ Using ${this.currentSettings.compressionWorkers} native workers, sequential uploads for session consistency`);
       
-      // Clear caches and reset stats
+      // FIXED: Clear caches and reset stats, but set appropriate cache size first
+      this.currentSettings.cacheSize = Math.max(imageUris.length * 1.5, 200); // Ensure cache can hold all images
       this.compressionCache.clear();
       this.compressionStats = { totalProcessed: 0, totalTimeMs: 0, averageTimeMs: 0 };
       
@@ -598,12 +744,12 @@ export class BulkNSFWProcessor {
         throw new Error('User not authenticated');
       }
 
-      // 🔥 PHASE 1: Start NATIVE compression stream immediately
+      // 🔥 PHASE 1: Start NATIVE compression stream
       let compressionProgress = 0;
       const compressionPromise = this.startNativeCompressionStream(
         imageUris,
         (compressed, total) => {
-          compressionProgress = Math.round((compressed / total) * 30); // 0-30% for compression
+          compressionProgress = Math.round((compressed / total) * 60); // 0-60% for compression
           if (onProgress) {
             onProgress({
               current: compressionProgress,
@@ -615,100 +761,88 @@ export class BulkNSFWProcessor {
         }
       );
 
-      // 🔥 PHASE 2: Start enhanced upload stream with shorter delay
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Just 1 second head start
+      // Wait for compression to complete
+      await compressionPromise;
       
+      // FIXED: Verify compression completed successfully
+      const compressedCount = imageUris.filter(uri => this.compressionCache.has(uri)).length;
+      console.log(`📊 Compression verification: ${compressedCount}/${imageUris.length} images in cache`);
+      
+      if (compressedCount === 0) {
+        throw new Error('No images were successfully compressed');
+      }
+      
+      if (onProgress) {
+        onProgress({
+          current: 60,
+          total: 100,
+          status: 'uploading',
+          message: `🚀 ${compressedCount}/${imageUris.length} images compressed, starting sequential uploads...`
+        });
+      }
+      
+      // 🔥 PHASE 2: Sequential upload stream for session consistency
       let uploadProgress = 0;
-      const uploadPromise = this.startEnhancedUploadStream(
+      const uploadResult = await this.startEnhancedUploadStream(
         imageUris,
         userId,
         (uploaded, total) => {
-          uploadProgress = 30 + Math.round((uploaded / total) * 40); // 30-70% for upload
+          uploadProgress = 60 + Math.round((uploaded / total) * 20); // 60-80% for upload
           if (onProgress) {
             onProgress({
               current: uploadProgress,
               total: 100,
               status: 'uploading',
-              message: `🚀 Uploaded ${uploaded}/${total} batches (${this.currentSettings.uploadStreams} streams, ${this.currentSettings.batchSize} per batch)`
+              message: `🚀 Uploaded ${uploaded}/${total} batches (sequential for session consistency)`
             });
           }
         }
       );
 
-      // Wait for both streams to complete
-      const [, uploadResults] = await Promise.all([compressionPromise, uploadPromise]);
-      
-      const { jobIds, bucketNames, totalUploaded } = uploadResults;
+      const { jobId, bucketName, totalUploaded } = uploadResult;
 
-      if (jobIds.length === 0) {
-        throw new Error('All uploads failed');
-      }
+      console.log(`🚀 NATIVE sequential processing complete: job=${jobId}, bucket=${bucketName}, uploaded=${totalUploaded}`);
 
-      console.log(`🚀 NATIVE stream processing complete: ${jobIds.length} batches, ${totalUploaded} images`);
-      console.log(`📊 Compression stats: ${this.compressionStats.totalProcessed} images, avg ${this.compressionStats.averageTimeMs.toFixed(0)}ms per image`);
-
-      // 🔥 PHASE 3: Parallel submission (SAME AS BEFORE)
+      // 🔥 PHASE 3: Submit for processing (single job)
       if (onProgress) {
         onProgress({
-          current: 75,
+          current: 85,
           total: 100,
           status: 'submitting',
-          message: `⚡ Submitting ${jobIds.length} batches for AWS analysis...`
+          message: `⚡ Submitting job ${jobId} for AWS analysis...`
         });
       }
 
-      // Submit all batches in parallel
-      const submitPromises = jobIds.map(async (jobId, index) => {
-        try {
-          const { data, error } = await supabase.functions.invoke('bulk-nsfw-submit', {
-            body: {
-              jobId,
-              bucketName: bucketNames[index],
-              userId
-            }
-          });
-
-          if (error) {
-            throw new Error(`Submit failed: ${error.message}`);
-          }
-
-          return data;
-        } catch (error) {
-          console.error(`❌ Failed to submit job ${jobId}:`, error);
-          return null;
+      const { data, error } = await supabase.functions.invoke('bulk-nsfw-submit', {
+        body: {
+          jobId,
+          bucketName,
+          userId
         }
       });
 
-      const submitResults = await Promise.allSettled(submitPromises);
-      const successfulSubmits = submitResults
-        .filter(result => result.status === 'fulfilled' && result.value)
-        .map(result => (result as PromiseFulfilledResult<any>).value);
-
-      if (successfulSubmits.length === 0) {
-        throw new Error('All batch submissions failed');
+      if (error) {
+        throw new Error(`Submit failed: ${error.message}`);
       }
 
-      console.log(`⚡ Submitted ${successfulSubmits.length} batches for processing`);
+      console.log(`⚡ Job ${jobId} submitted for processing`);
 
       if (onProgress) {
         onProgress({
-          current: 80,
+          current: 90,
           total: 100,
           status: 'processing',
-          message: `🔥 AWS processing ${successfulSubmits.length} batches...`
+          message: `🔥 AWS processing job ${jobId}...`
         });
       }
 
-      // Monitor all jobs (SAME AS BEFORE)
-      const results = await this.monitorAllJobs(
-        successfulSubmits.map(submit => submit.jobId),
-        onProgress
-      );
+      // Monitor single job
+      const results = await this.monitorAllJobs([jobId], onProgress);
 
       const processingTime = Date.now() - startTime;
 
       return {
-        jobId: `native_optimized_${Date.now()}`,
+        jobId: `native_sequential_${Date.now()}`,
         totalImages: totalUploaded,
         nsfwDetected: results.totalNsfwDetected,
         results: results.allResults,
@@ -716,7 +850,7 @@ export class BulkNSFWProcessor {
       };
 
     } catch (error) {
-      console.error('❌ Native-optimized processing failed:', error);
+      console.error('❌ Native-sequential processing failed:', error);
       throw error;
     } finally {
       this.isProcessing = false;
@@ -1184,5 +1318,29 @@ export class BulkNSFWProcessor {
       },
       currentSettings: this.currentSettings
     };
+  }
+
+  /**
+   * Finalize upload session - mark as ready for processing
+   */
+  private static async finalizeUploadSession(jobId: string): Promise<void> {
+    try {
+      // FIXED: Use the existing supabase client, not Deno imports
+      const { error } = await supabase
+        .from('nsfw_bulk_jobs')
+        .update({
+          status: 'uploaded',
+          uploaded_at: new Date().toISOString(),
+        })
+        .eq('id', jobId);
+      
+      if (error) {
+        console.error('❌ Failed to finalize upload session:', error);
+      } else {
+        console.log(`✅ Upload session finalized: ${jobId}`);
+      }
+    } catch (error) {
+      console.error('❌ Error finalizing upload session:', error);
+    }
   }
 }
