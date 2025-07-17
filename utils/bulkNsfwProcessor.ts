@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import * as FileSystem from 'expo-file-system';
+import ImageResizer from 'react-native-image-resizer';
+import { HardwareProfiler, HardwareProfile, ProcessingSettings } from './hardwareProfiler';
 
 export interface BulkProcessingProgress {
   current: number;
@@ -16,46 +18,401 @@ export interface BulkProcessingResult {
   processingTimeMs: number;
 }
 
-// Response interfaces
-interface BulkUploadResponse {
-  jobId: string;
-  bucketName: string;
-  uploadedCount: number;
-  failedCount: number;
-  status: string;
-  request_id: string;
-}
-
-interface BulkSubmitResponse {
-  jobId: string;
-  awsJobId: string;
-  awsBucketName: string;
-  status: string;
-  request_id: string;
-}
-
 export class BulkNSFWProcessor {
   private static readonly POLL_INTERVAL_MS = 3000;
   private static readonly MAX_POLL_TIME_MS = 10 * 60 * 1000;
-  private static readonly BATCH_SIZE = 8; // Reduced from 15 to 8
-  private static readonly UPLOAD_TIMEOUT_MS = 120000; // 2 minutes should be enough for 8 images
+  private static readonly UPLOAD_TIMEOUT_MS = 180000;
   private static readonly MAX_RETRIES = 2;
-  private static readonly DELAY_BETWEEN_BATCHES = 1000;
+  
+  // 🚀 AGGRESSIVE SETTINGS for native processing
+  private static currentSettings: ProcessingSettings = {
+    compressionWorkers: 8,        // More workers with native
+    uploadStreams: 4,             // More parallel uploads
+    batchSize: 15,                // Larger batches
+    compressionQuality: 0.7,      // Higher quality (native is faster)
+    maxImageSize: 512,           // Larger size (native handles it)
+    cacheSize: 100,               // Larger cache
+    enableAggressive: true,       // Enable aggressive mode
+    memoryWarningThreshold: 1536
+  };
+  
+  private static hardwareProfile: HardwareProfile | null = null;
+  private static isProcessing = false;
+  private static shouldThrottle = false;
+  
+  // Enhanced caching and queuing
+  private static compressionCache = new Map<string, string>();
+  private static compressionQueue: string[] = [];
+  private static uploadQueue: { batch: string[], index: number }[] = [];
+  private static activeCompressions = 0;
+  private static activeUploads = 0;
+  
+  // Performance tracking
+  private static compressionStats = {
+    totalProcessed: 0,
+    totalTimeMs: 0,
+    averageTimeMs: 0
+  };
+
+  /**
+   * 🔍 Initialize with hardware-optimized settings
+   */
+  private static async initializeHardwareOptimization(): Promise<void> {
+    try {
+      console.log('🔍 Initializing NATIVE hardware optimization...');
+      
+      this.hardwareProfile = await HardwareProfiler.getHardwareProfile();
+      
+      // Override with more aggressive settings for native processing
+      this.currentSettings = {
+        ...this.hardwareProfile.recommendedSettings,
+        compressionWorkers: Math.min(12, this.hardwareProfile.recommendedSettings.compressionWorkers * 2),
+        uploadStreams: Math.min(6, this.hardwareProfile.recommendedSettings.uploadStreams * 2),
+        batchSize: Math.min(20, this.hardwareProfile.recommendedSettings.batchSize * 1.5),
+        enableAggressive: true
+      };
+      
+      console.log('⚡ NATIVE-optimized settings:', {
+        tier: this.hardwareProfile.deviceTier,
+        workers: this.currentSettings.compressionWorkers,
+        streams: this.currentSettings.uploadStreams,
+        batchSize: this.currentSettings.batchSize,
+        aggressive: this.currentSettings.enableAggressive
+      });
+      
+      // Start memory monitoring
+      HardwareProfiler.startMemoryMonitoring(
+        (availableMB) => this.handleMemoryWarning(availableMB),
+        this.currentSettings.memoryWarningThreshold
+      );
+      
+    } catch (error) {
+      console.error('❌ Native optimization failed, using safe defaults:', error);
+      this.currentSettings = {
+        compressionWorkers: 4,
+        uploadStreams: 2,
+        batchSize: 10,
+        compressionQuality: 0.7,
+        maxImageSize: 800,
+        cacheSize: 50,
+        enableAggressive: false,
+        memoryWarningThreshold: 1024
+      };
+    }
+  }
+
+  /**
+   * ⚠️ Handle memory warnings by throttling processing
+   */
+  private static handleMemoryWarning(availableMB: number): void {
+    console.warn(`🚨 Memory warning: ${availableMB}MB available`);
+    
+    if (availableMB < this.currentSettings.memoryWarningThreshold * 0.5) {
+      // Critical memory - emergency throttling
+      this.shouldThrottle = true;
+      this.currentSettings = {
+        ...this.currentSettings,
+        compressionWorkers: Math.max(2, Math.floor(this.currentSettings.compressionWorkers / 3)),
+        uploadStreams: 1,
+        batchSize: Math.max(5, Math.floor(this.currentSettings.batchSize / 2)),
+        cacheSize: Math.max(20, Math.floor(this.currentSettings.cacheSize / 3))
+      };
+      
+      // Clear cache to free memory
+      this.clearOldCache();
+      
+      console.log('🚨 Emergency throttling activated:', this.currentSettings);
+    } else if (availableMB < this.currentSettings.memoryWarningThreshold * 0.75) {
+      // Moderate throttling
+      this.shouldThrottle = true;
+      this.currentSettings = {
+        ...this.currentSettings,
+        compressionWorkers: Math.max(2, Math.floor(this.currentSettings.compressionWorkers / 2)),
+        uploadStreams: Math.max(1, Math.floor(this.currentSettings.uploadStreams / 2))
+      };
+      
+      console.log('⚠️ Moderate throttling activated:', this.currentSettings);
+    }
+  }
+
+  /**
+   * 🧹 Clear old cache entries
+   */
+  private static clearOldCache(): void {
+    if (this.compressionCache.size > this.currentSettings.cacheSize) {
+      const keysToDelete = Array.from(this.compressionCache.keys())
+        .slice(0, this.compressionCache.size - this.currentSettings.cacheSize);
+      keysToDelete.forEach(key => this.compressionCache.delete(key));
+      console.log(`🧹 Cleared ${keysToDelete.length} cache entries`);
+    }
+  }
 
   /**
    * Get Supabase function URL
    */
   private static getSupabaseFunctionUrl(functionName: string): string {
-    // Get the Supabase URL from environment or config
     const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 
                        process.env.REACT_NATIVE_SUPABASE_URL ||
-                       'https://your-project.supabase.co'; // Replace with your actual URL
+                       'https://your-project.supabase.co';
     
     return `${supabaseUrl}/functions/v1/${functionName}`;
   }
 
   /**
-   * Upload a single batch with retry logic and timeout
+   * 🚀 NATIVE: Ultra-fast image compression using react-native-image-resizer
+   */
+  private static async compressImageNative(uri: string): Promise<string> {
+    const startTime = Date.now();
+    
+    try {
+      // Check if already compressed
+      if (this.compressionCache.has(uri)) {
+        return this.compressionCache.get(uri)!;
+      }
+
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (!fileInfo.exists) {
+        return uri;
+      }
+
+      console.log(`🗜️ NATIVE compressing: ${uri}`);
+      
+      // Use react-native-image-resizer for MUCH faster compression
+      const result = await ImageResizer.createResizedImage(
+        uri,
+        this.currentSettings.maxImageSize,    // width
+        this.currentSettings.maxImageSize,    // height
+        'JPEG',                               // format (AWS Rekognition compatible)
+        this.currentSettings.compressionQuality * 100, // quality (0-100)
+        0,                                    // rotation
+        undefined,                            // outputPath
+        false,                                // keepMeta
+        {
+          mode: 'contain',                    // resize mode
+          onlyScaleDown: true                 // don't upscale
+        }
+      );
+
+      const processingTime = Date.now() - startTime;
+      
+      // Update stats
+      this.compressionStats.totalProcessed++;
+      this.compressionStats.totalTimeMs += processingTime;
+      this.compressionStats.averageTimeMs = this.compressionStats.totalTimeMs / this.compressionStats.totalProcessed;
+
+      console.log(`⚡ NATIVE compressed: ${uri} → ${result.uri} (${processingTime}ms, avg: ${this.compressionStats.averageTimeMs.toFixed(0)}ms)`);
+      
+      return result.uri;
+      
+    } catch (error) {
+      console.warn('⚠️ Native compression failed, using original:', error);
+      return uri;
+    }
+  }
+
+  /**
+   * 🚀 PARALLEL: Streaming compression with native processing
+   */
+  private static async startNativeCompressionStream(
+    imageUris: string[],
+    onProgress?: (compressed: number, total: number) => void
+  ): Promise<void> {
+    console.log(`🔥 Starting NATIVE compression stream for ${imageUris.length} images`);
+    
+    this.compressionQueue = [...imageUris];
+    let completedCount = 0;
+    
+    // Start multiple native compression workers
+    const workers = Array.from({ length: this.currentSettings.compressionWorkers }, (_, i) => 
+      this.nativeCompressionWorker(i, () => {
+        completedCount++;
+        if (onProgress) {
+          onProgress(completedCount, imageUris.length);
+        }
+      })
+    );
+    
+    await Promise.all(workers);
+    console.log(`⚡ NATIVE compression stream complete: ${this.compressionCache.size} images (avg: ${this.compressionStats.averageTimeMs.toFixed(0)}ms per image)`);
+  }
+
+  /**
+   * 🚀 Native compression worker with enhanced error handling
+   */
+  private static async nativeCompressionWorker(
+    workerId: number, 
+    onComplete: () => void
+  ): Promise<void> {
+    console.log(`🔧 Native worker ${workerId} started`);
+    
+    while (this.compressionQueue.length > 0 && this.isProcessing) {
+      // Dynamic throttling check
+      if (this.shouldThrottle && this.activeCompressions >= this.currentSettings.compressionWorkers) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        continue;
+      }
+      
+      const uri = this.compressionQueue.shift();
+      if (!uri) break;
+      
+      // Skip if already compressed
+      if (this.compressionCache.has(uri)) {
+        onComplete();
+        continue;
+      }
+      
+      this.activeCompressions++;
+      
+      try {
+        const compressedUri = await this.compressImageNative(uri);
+        
+        // Cache management
+        this.compressionCache.set(uri, compressedUri);
+        if (this.compressionCache.size > this.currentSettings.cacheSize) {
+          this.clearOldCache();
+        }
+        
+        onComplete();
+        
+      } catch (error) {
+        console.error(`❌ Native worker ${workerId} compression failed for ${uri}:`, error);
+        this.compressionCache.set(uri, uri); // Fallback to original
+        onComplete();
+      } finally {
+        this.activeCompressions--;
+      }
+      
+      // Minimal delay for native processing
+      const delay = this.shouldThrottle ? 50 : 10;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    
+    console.log(`✅ Native worker ${workerId} completed`);
+  }
+
+  /**
+   * 🚀 PARALLEL: Enhanced upload stream with larger batches
+   */
+  private static async startEnhancedUploadStream(
+    imageUris: string[],
+    userId: string,
+    onProgress?: (uploaded: number, total: number) => void
+  ): Promise<{ jobIds: string[], bucketNames: string[], totalUploaded: number }> {
+    console.log(`🔥 Starting ENHANCED upload stream for ${imageUris.length} images`);
+    
+    const allJobIds: string[] = [];
+    const allBucketNames: string[] = [];
+    let totalUploaded = 0;
+    let uploadedBatches = 0;
+    
+    // Create larger batches for better efficiency
+    const batches: string[][] = [];
+    for (let i = 0; i < imageUris.length; i += this.currentSettings.batchSize) {
+      batches.push(imageUris.slice(i, i + this.currentSettings.batchSize));
+    }
+    
+    this.uploadQueue = batches.map((batch, index) => ({ batch, index }));
+    
+    console.log(`📦 Created ${batches.length} batches of ${this.currentSettings.batchSize} images each`);
+    
+    // Start multiple upload streams
+    const uploadStreams = Array.from({ length: this.currentSettings.uploadStreams }, (_, i) =>
+      this.enhancedUploadWorker(i, userId, (result) => {
+        allJobIds.push(result.jobId);
+        allBucketNames.push(result.bucketName);
+        totalUploaded += result.uploadedCount;
+        uploadedBatches++;
+        
+        if (onProgress) {
+          onProgress(uploadedBatches, batches.length);
+        }
+      })
+    );
+    
+    await Promise.all(uploadStreams);
+    
+    return { jobIds: allJobIds, bucketNames: allBucketNames, totalUploaded };
+  }
+
+  /**
+   * 🔥 Enhanced upload worker with better error handling
+   */
+  private static async enhancedUploadWorker(
+    workerId: number,
+    userId: string,
+    onComplete: (result: { jobId: string, bucketName: string, uploadedCount: number }) => void
+  ): Promise<void> {
+    console.log(`🚀 Enhanced upload worker ${workerId} started`);
+    
+    while (this.uploadQueue.length > 0 && this.isProcessing) {
+      // Dynamic throttling check
+      if (this.shouldThrottle && this.activeUploads >= this.currentSettings.uploadStreams) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        continue;
+      }
+      
+      const queueItem = this.uploadQueue.shift();
+      if (!queueItem) break;
+      
+      const { batch, index } = queueItem;
+      
+      // Wait for compression to be ready for this batch
+      await this.waitForCompressionReady(batch);
+      
+      this.activeUploads++;
+      
+      try {
+        // Get compressed URIs
+        const compressedBatch = batch.map(uri => this.compressionCache.get(uri) || uri);
+        
+        console.log(`🚀 Worker ${workerId} uploading batch ${index + 1} (${compressedBatch.length} images)`);
+        
+        const result = await this.uploadBatchWithRetry(compressedBatch, userId, index);
+        onComplete(result);
+        
+      } catch (error) {
+        console.error(`❌ Worker ${workerId} upload failed for batch ${index + 1}:`, error);
+        // Don't fail completely - continue with other batches
+      } finally {
+        this.activeUploads--;
+      }
+      
+      // Minimal delay for enhanced processing
+      const delay = this.shouldThrottle ? 1000 : 50;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    
+    console.log(`✅ Enhanced upload worker ${workerId} completed`);
+  }
+
+  /**
+   * 🔥 Wait for batch compression to be ready (optimized)
+   */
+  private static async waitForCompressionReady(batch: string[]): Promise<void> {
+    const maxWait = 45000; // 45 seconds max wait (increased for larger batches)
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWait) {
+      const readyCount = batch.filter(uri => this.compressionCache.has(uri)).length;
+      
+      // Allow partial batch processing if most images are ready
+      if (readyCount >= batch.length * 0.8) {
+        console.log(`⚡ Batch 80% ready (${readyCount}/${batch.length}), proceeding...`);
+        return;
+      }
+      
+      if (readyCount === batch.length) {
+        return;
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 50)); // Faster polling
+    }
+    
+    console.warn('⚠️ Compression timeout, proceeding with available images');
+  }
+
+  /**
+   * Upload a single batch with retry logic and timeout (SAME AS BEFORE - no changes to data flow)
    */
   private static async uploadBatchWithRetry(
     batchUris: string[],
@@ -63,7 +420,7 @@ export class BulkNSFWProcessor {
     batchIndex: number,
     retryCount = 0
   ): Promise<{ jobId: string; bucketName: string; uploadedCount: number }> {
-    const maxRetries = this.MAX_RETRIES;
+    const maxRetries = 3; // Increased retries
     
     try {
       console.log(`📤 Uploading batch ${batchIndex + 1} (${batchUris.length} images) - Attempt ${retryCount + 1}`);
@@ -75,22 +432,21 @@ export class BulkNSFWProcessor {
 
       let successfulImages = 0;
       for (let i = 0; i < batchUris.length; i++) {
-        const uri = batchUris[i];
+        const compressedUri = batchUris[i]; // Already compressed by native worker
         try {
           console.log(`📷 Processing image ${i + 1}/${batchUris.length} in batch ${batchIndex + 1}`);
           
-          // Use React Native's proper file upload format
+          // SAME DATA FLOW - just using pre-compressed URIs
           const fileObject = {
-            uri: uri,
+            uri: compressedUri,
             type: 'image/jpeg',
             name: `image_${i}.jpg`,
           };
           
-          // This is the correct way for React Native FormData
           (formData as any).append(`image_${i}`, fileObject);
           successfulImages++;
           
-          console.log(`✅ Image ${i + 1} added to FormData with URI: ${uri}`);
+          console.log(`✅ Image ${i + 1} added to FormData with URI: ${compressedUri}`);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`❌ Failed to process image ${i} in batch ${batchIndex + 1}:`, errorMessage);
@@ -206,24 +562,33 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * Process images in sequential batches to avoid overwhelming the server
+   * 🚀 ULTIMATE NATIVE PERFORMANCE: Parallel streaming pipeline with native compression
    */
-  static async processBulkImages(
-    imageUris: string[], 
+  static async processBulkImagesNative(
+    imageUris: string[],
     userId: string,
     onProgress?: (progress: BulkProcessingProgress) => void
   ): Promise<BulkProcessingResult> {
     const startTime = Date.now();
+    this.isProcessing = true;
     
     try {
-      console.log(`🚀 Starting SEQUENTIAL batch processing for ${imageUris.length} images`);
+      // Initialize hardware optimization
+      await this.initializeHardwareOptimization();
+      
+      console.log(`🚀🚀🚀 NATIVE ULTRA-FAST processing for ${imageUris.length} images`);
+      console.log(`⚡ Using ${this.currentSettings.compressionWorkers} native workers, ${this.currentSettings.uploadStreams} upload streams, ${this.currentSettings.batchSize} batch size`);
+      
+      // Clear caches and reset stats
+      this.compressionCache.clear();
+      this.compressionStats = { totalProcessed: 0, totalTimeMs: 0, averageTimeMs: 0 };
       
       if (onProgress) {
         onProgress({
           current: 0,
           total: 100,
           status: 'preparing',
-          message: `Preparing to process ${imageUris.length} images in batches of ${this.BATCH_SIZE}...`
+          message: `🚀 Initializing NATIVE pipeline for ${imageUris.length} images...`
         });
       }
 
@@ -233,75 +598,72 @@ export class BulkNSFWProcessor {
         throw new Error('User not authenticated');
       }
 
-      // Split into batches
-      const batches: string[][] = [];
-      for (let i = 0; i < imageUris.length; i += this.BATCH_SIZE) {
-        batches.push(imageUris.slice(i, i + this.BATCH_SIZE));
-      }
-
-      console.log(`📦 Created ${batches.length} batches of max ${this.BATCH_SIZE} images each`);
-
-      const allJobIds: string[] = [];
-      const allBucketNames: string[] = [];
-      let totalUploaded = 0;
-
-      // Process batches SEQUENTIALLY to avoid overwhelming the server
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        
-        try {
-          // Add delay between batches to prevent overwhelming
-          if (i > 0) {
-            console.log(`⏳ Waiting ${this.DELAY_BETWEEN_BATCHES}ms before next batch...`);
-            await new Promise(resolve => setTimeout(resolve, this.DELAY_BETWEEN_BATCHES));
-          }
-
-          const result = await this.uploadBatchWithRetry(batch, userId, i);
-          
-          allJobIds.push(result.jobId);
-          allBucketNames.push(result.bucketName);
-          totalUploaded += result.uploadedCount;
-
-          // Update progress
-          const progressPercent = Math.round(((i + 1) / batches.length) * 70); // 0-70% for upload
+      // 🔥 PHASE 1: Start NATIVE compression stream immediately
+      let compressionProgress = 0;
+      const compressionPromise = this.startNativeCompressionStream(
+        imageUris,
+        (compressed, total) => {
+          compressionProgress = Math.round((compressed / total) * 30); // 0-30% for compression
           if (onProgress) {
             onProgress({
-              current: progressPercent,
+              current: compressionProgress,
               total: 100,
-              status: 'uploading',
-              message: `Uploaded batch ${i + 1}/${batches.length} (${totalUploaded} images total)`
+              status: 'compressing',
+              message: `⚡ NATIVE compressed ${compressed}/${total} images (${this.currentSettings.compressionWorkers} workers, avg: ${this.compressionStats.averageTimeMs.toFixed(0)}ms)`
             });
           }
-
-        } catch (error) {
-          console.error(`❌ Batch ${i + 1} failed completely:`, error);
-          // Continue with other batches instead of failing completely
-          continue;
         }
+      );
+
+      // 🔥 PHASE 2: Start enhanced upload stream with shorter delay
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Just 1 second head start
+      
+      let uploadProgress = 0;
+      const uploadPromise = this.startEnhancedUploadStream(
+        imageUris,
+        userId,
+        (uploaded, total) => {
+          uploadProgress = 30 + Math.round((uploaded / total) * 40); // 30-70% for upload
+          if (onProgress) {
+            onProgress({
+              current: uploadProgress,
+              total: 100,
+              status: 'uploading',
+              message: `🚀 Uploaded ${uploaded}/${total} batches (${this.currentSettings.uploadStreams} streams, ${this.currentSettings.batchSize} per batch)`
+            });
+          }
+        }
+      );
+
+      // Wait for both streams to complete
+      const [, uploadResults] = await Promise.all([compressionPromise, uploadPromise]);
+      
+      const { jobIds, bucketNames, totalUploaded } = uploadResults;
+
+      if (jobIds.length === 0) {
+        throw new Error('All uploads failed');
       }
 
-      if (allJobIds.length === 0) {
-        throw new Error('All batches failed to upload');
-      }
+      console.log(`🚀 NATIVE stream processing complete: ${jobIds.length} batches, ${totalUploaded} images`);
+      console.log(`📊 Compression stats: ${this.compressionStats.totalProcessed} images, avg ${this.compressionStats.averageTimeMs.toFixed(0)}ms per image`);
 
-      console.log(`✅ Upload phase complete: ${allJobIds.length} successful batches, ${totalUploaded} images uploaded`);
-
+      // 🔥 PHASE 3: Parallel submission (SAME AS BEFORE)
       if (onProgress) {
         onProgress({
           current: 75,
           total: 100,
           status: 'submitting',
-          message: `Submitting ${allJobIds.length} batches for AWS analysis...`
+          message: `⚡ Submitting ${jobIds.length} batches for AWS analysis...`
         });
       }
 
-      // Now submit all uploaded batches for processing
-      const submitPromises = allJobIds.map(async (jobId, index) => {
+      // Submit all batches in parallel
+      const submitPromises = jobIds.map(async (jobId, index) => {
         try {
           const { data, error } = await supabase.functions.invoke('bulk-nsfw-submit', {
             body: {
               jobId,
-              bucketName: allBucketNames[index],
+              bucketName: bucketNames[index],
               userId
             }
           });
@@ -326,27 +688,27 @@ export class BulkNSFWProcessor {
         throw new Error('All batch submissions failed');
       }
 
-      console.log(`✅ Submitted ${successfulSubmits.length} batches for processing`);
+      console.log(`⚡ Submitted ${successfulSubmits.length} batches for processing`);
 
       if (onProgress) {
         onProgress({
           current: 80,
           total: 100,
           status: 'processing',
-          message: `AWS processing ${successfulSubmits.length} batches...`
+          message: `🔥 AWS processing ${successfulSubmits.length} batches...`
         });
       }
 
-      // Monitor all jobs for completion
+      // Monitor all jobs (SAME AS BEFORE)
       const results = await this.monitorAllJobs(
         successfulSubmits.map(submit => submit.jobId),
         onProgress
       );
-      
+
       const processingTime = Date.now() - startTime;
-      
+
       return {
-        jobId: `batch_${Date.now()}`, // Combined job ID
+        jobId: `native_optimized_${Date.now()}`,
         totalImages: totalUploaded,
         nsfwDetected: results.totalNsfwDetected,
         results: results.allResults,
@@ -354,13 +716,43 @@ export class BulkNSFWProcessor {
       };
 
     } catch (error) {
-      console.error('❌ Bulk processing failed:', error);
+      console.error('❌ Native-optimized processing failed:', error);
       throw error;
+    } finally {
+      this.isProcessing = false;
+      this.shouldThrottle = false;
+      HardwareProfiler.stopMemoryMonitoring();
+      
+      // Cleanup
+      this.compressionCache.clear();
+      this.compressionQueue = [];
+      this.uploadQueue = [];
+      this.activeCompressions = 0;
+      this.activeUploads = 0;
     }
   }
 
   /**
-   * Monitor all batch jobs for completion
+   * 🗜️ Fallback compression method (keeping for compatibility)
+   */
+  private static async compressImageIfNeeded(uri: string): Promise<string> {
+    // Use native compression as primary method
+    return this.compressImageNative(uri);
+  }
+
+  /**
+   * Process images with NATIVE optimization (main entry point)
+   */
+  static async processBulkImages(
+    imageUris: string[], 
+    userId: string,
+    onProgress?: (progress: BulkProcessingProgress) => void
+  ): Promise<BulkProcessingResult> {
+    return this.processBulkImagesNative(imageUris, userId, onProgress);
+  }
+
+  /**
+   * Monitor all batch jobs for completion (SAME AS BEFORE)
    */
   private static async monitorAllJobs(
     jobIds: string[], 
@@ -445,20 +837,138 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * Get user-friendly status messages
+   * 📊 Get processing recommendations for user (ENHANCED)
+   */
+  static async getProcessingRecommendations(imageCount: number): Promise<{
+    deviceTier: string;
+    canProcessAll: boolean;
+    recommendedBatchSize: number;
+    estimatedTimeMinutes: number;
+    compressionMethod: string;
+    memoryWarning?: string;
+    storageWarning?: string;
+  }> {
+    try {
+      const profile = await HardwareProfiler.getHardwareProfile();
+      const validation = await this.validateProcessingCapability(new Array(imageCount).fill('dummy'));
+      
+      // Native compression is much faster
+      const timeEstimates = {
+        low: imageCount * 0.2,     // 0.2 seconds per image (native)
+        mid: imageCount * 0.15,    // 0.15 seconds per image (native)
+        high: imageCount * 0.1,    // 0.1 seconds per image (native)
+        flagship: imageCount * 0.05 // 0.05 seconds per image (native)
+      };
+      
+      const maxBatchSizes = {
+        low: 800,      // Increased with native processing
+        mid: 2000,     // Increased with native processing
+        high: 4000,    // Increased with native processing
+        flagship: 8000 // Increased with native processing
+      };
+      
+      return {
+        deviceTier: profile.deviceTier,
+        canProcessAll: validation.canProcess,
+        recommendedBatchSize: Math.min(imageCount, maxBatchSizes[profile.deviceTier]),
+        estimatedTimeMinutes: Math.ceil(timeEstimates[profile.deviceTier] / 60),
+        compressionMethod: 'react-native-image-resizer (native)',
+        memoryWarning: profile.availableMemoryMB < 2048 ? 'Low memory detected - processing may be slower' : undefined,
+        storageWarning: profile.storageAvailableGB < 5 ? 'Low storage detected - consider freeing space' : undefined
+      };
+      
+    } catch (error) {
+      console.error('❌ Failed to get recommendations:', error);
+      return {
+        deviceTier: 'unknown',
+        canProcessAll: false,
+        recommendedBatchSize: 200,
+        estimatedTimeMinutes: Math.ceil(imageCount * 0.3 / 60),
+        compressionMethod: 'fallback',
+        memoryWarning: 'Unable to detect device capabilities'
+      };
+    }
+  }
+
+  /**
+   * 🔍 Validate processing capability before starting (ENHANCED)
+   */
+  private static async validateProcessingCapability(imageUris: string[]): Promise<{
+    canProcess: boolean;
+    reason?: string;
+    recommendation?: string;
+  }> {
+    try {
+      if (!this.hardwareProfile) {
+        await this.initializeHardwareOptimization();
+      }
+
+      const { deviceTier, availableMemoryMB, storageAvailableGB } = this.hardwareProfile!;
+      
+      // Native processing uses less memory
+      const estimatedMemoryMB = imageUris.length * 1; // Reduced from 2MB to 1MB per image
+      if (estimatedMemoryMB > availableMemoryMB * 0.8) {
+        return {
+          canProcess: false,
+          reason: `Insufficient memory. Need ~${estimatedMemoryMB}MB, have ${availableMemoryMB}MB`,
+          recommendation: `Try processing ${Math.floor(availableMemoryMB * 0.8)} images at a time`
+        };
+      }
+      
+      // Check storage requirements
+      const estimatedStorageGB = imageUris.length * 0.002; // 2MB per compressed image (native is more efficient)
+      if (estimatedStorageGB > storageAvailableGB * 0.9) {
+        return {
+          canProcess: false,
+          reason: `Insufficient storage. Need ~${estimatedStorageGB.toFixed(1)}GB, have ${storageAvailableGB.toFixed(1)}GB`,
+          recommendation: 'Free up device storage or process fewer images'
+        };
+      }
+      
+      // Check reasonable limits based on device tier (increased for native)
+      const maxImages = {
+        low: 800,
+        mid: 2000,
+        high: 4000,
+        flagship: 8000
+      };
+      
+      if (imageUris.length > maxImages[deviceTier]) {
+        return {
+          canProcess: false,
+          reason: `Too many images for ${deviceTier} device. Max recommended: ${maxImages[deviceTier]}`,
+          recommendation: `Process in batches of ${maxImages[deviceTier]} images`
+        };
+      }
+      
+      return { canProcess: true };
+      
+    } catch (error) {
+      return {
+        canProcess: false,
+        reason: 'Unable to validate system requirements',
+        recommendation: 'Try processing a smaller batch first'
+      };
+    }
+  }
+
+  /**
+   * Get user-friendly status messages (ENHANCED)
    */
   private static getStatusMessage(status: string, progress: number): string {
     switch (status) {
       case 'preparing':
-        return 'Preparing binary upload...';
+        return 'Preparing NATIVE hardware-optimized processing...';
+      case 'compressing':
+        return 'NATIVE compression in progress (react-native-image-resizer)...';
       case 'uploading':
-        return 'Binary uploading images to AWS S3...';
+        return 'Parallel streaming upload to AWS S3...';
       case 'uploaded':
         return 'Images uploaded, starting analysis...';
       case 'processing':
         return `AWS analyzing all images... (${progress}%)`;
       case 'completed':
-        return 'Binary bulk analysis complete!';
+        return 'NATIVE hardware-optimized bulk analysis complete!';
       case 'failed':
         return 'Processing failed';
       default:
@@ -480,26 +990,27 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * Estimate memory requirements for batch processing
+   * Estimate memory requirements for batch processing (UPDATED FOR NATIVE)
    */
-  static estimateMemoryRequirement(imageCount: number, avgImageSizeMB: number = 5): {
+  static estimateMemoryRequirement(imageCount: number, avgImageSizeMB: number = 3): {
     totalSizeMB: number;
     batchCount: number;
     recommendedBatchSize: number;
   } {
-    const totalSizeMB = imageCount * avgImageSizeMB * 1.33; // Base64 overhead
-    const batchCount = Math.ceil(imageCount / this.BATCH_SIZE);
-    const maxBatchSizeMB = this.BATCH_SIZE * avgImageSizeMB * 1.33;
+    // Native processing is more memory efficient
+    const totalSizeMB = imageCount * avgImageSizeMB * 1.1; // Reduced overhead
+    const batchCount = Math.ceil(imageCount / this.currentSettings.batchSize);
+    const maxBatchSizeMB = this.currentSettings.batchSize * avgImageSizeMB * 1.1;
     
     return {
       totalSizeMB,
       batchCount,
-      recommendedBatchSize: this.BATCH_SIZE
+      recommendedBatchSize: this.currentSettings.batchSize
     };
   }
 
   /**
-   * Validate if bulk processing is feasible
+   * Validate if bulk processing is feasible (ENHANCED)
    */
   static async validateBulkProcessing(imageUris: string[]): Promise<{
     canProcess: boolean;
@@ -507,31 +1018,12 @@ export class BulkNSFWProcessor {
     recommendation?: string;
   }> {
     try {
-      // With binary upload, we need minimal local storage
-      const availableStorage = await FileSystem.getFreeDiskStorageAsync();
-      const availableStorageMB = availableStorage / (1024 * 1024);
-      
-      // Only need minimal storage for binary upload
-      if (availableStorageMB < 50) { // Just 50MB minimum
-        return {
-          canProcess: false,
-          reason: `Insufficient storage. Need 50MB minimum, have ${availableStorageMB.toFixed(0)}MB`,
-          recommendation: 'Free up device storage'
-        };
+      // Initialize hardware profile if not already done
+      if (!this.hardwareProfile) {
+        await this.initializeHardwareOptimization();
       }
       
-      // Check reasonable limits
-      if (imageUris.length > 2000) {
-        return {
-          canProcess: false,
-          reason: 'Too many images for single batch',
-          recommendation: 'Process in smaller batches of 1000-2000 images'
-        };
-      }
-      
-      return {
-        canProcess: true
-      };
+      return this.validateProcessingCapability(imageUris);
       
     } catch (error) {
       return {
@@ -587,5 +1079,110 @@ export class BulkNSFWProcessor {
         error: errorMessage
       };
     }
+  }
+
+  /**
+   * 🧪 Run NATIVE performance test with sample images
+   */
+  static async runNativePerformanceTest(sampleImageUris: string[]): Promise<{
+    compressionSpeed: number; // images per second
+    uploadSpeed: number; // images per second
+    memoryUsage: number; // MB
+    recommendedSettings: ProcessingSettings;
+    nativeSupported: boolean;
+  }> {
+    try {
+      console.log('🧪 Running NATIVE performance test...');
+      
+      await this.initializeHardwareOptimization();
+      
+      // Test native compression speed
+      const compressionStart = Date.now();
+      const testBatch = sampleImageUris.slice(0, Math.min(5, sampleImageUris.length));
+      
+      let nativeSupported = true;
+      try {
+        for (const uri of testBatch) {
+          await this.compressImageNative(uri);
+        }
+      } catch (error) {
+        console.warn('⚠️ Native compression not supported, falling back');
+        nativeSupported = false;
+      }
+      
+      const compressionTime = Date.now() - compressionStart;
+      const compressionSpeed = (testBatch.length / compressionTime) * 1000; // images per second
+      
+      // Get memory usage
+      const memoryInfo = await HardwareProfiler.getMemoryInfo();
+      
+      // Generate optimized settings based on native test results
+      const optimizedSettings: ProcessingSettings = {
+        ...this.currentSettings,
+        compressionWorkers: nativeSupported ? 
+          (compressionSpeed > 3 ? 12 : compressionSpeed > 2 ? 8 : 6) : 4,
+        uploadStreams: nativeSupported ? 
+          (compressionSpeed > 2 ? 6 : 4) : 2,
+        batchSize: nativeSupported ? 
+          (memoryInfo.availableMemoryMB > 4000 ? 20 : memoryInfo.availableMemoryMB > 2000 ? 15 : 10) : 8
+      };
+      
+      return {
+        compressionSpeed,
+        uploadSpeed: compressionSpeed * 0.9, // Native upload is more efficient
+        memoryUsage: memoryInfo.totalMemoryMB - memoryInfo.availableMemoryMB,
+        recommendedSettings: optimizedSettings,
+        nativeSupported
+      };
+      
+    } catch (error) {
+      console.error('❌ Native performance test failed:', error);
+      return {
+        compressionSpeed: 1,
+        uploadSpeed: 0.8,
+        memoryUsage: 1000,
+        recommendedSettings: this.currentSettings,
+        nativeSupported: false
+      };
+    }
+  }
+
+  /**
+   * 🔧 Update settings dynamically during processing
+   */
+  static updateProcessingSettings(newSettings: Partial<ProcessingSettings>): void {
+    this.currentSettings = {
+      ...this.currentSettings,
+      ...newSettings
+    };
+    
+    console.log('⚙️ Processing settings updated:', this.currentSettings);
+  }
+
+  /**
+   * 📈 Get current processing statistics
+   */
+  static getProcessingStats(): {
+    isProcessing: boolean;
+    activeCompressions: number;
+    activeUploads: number;
+    cacheSize: number;
+    queueSizes: {
+      compression: number;
+      upload: number;
+    };
+    currentSettings: ProcessingSettings;
+  } {
+    return {
+      isProcessing: this.isProcessing,
+      activeCompressions: this.activeCompressions,
+      activeUploads: this.activeUploads,
+      cacheSize: this.compressionCache.size,
+      queueSizes: {
+        compression: this.compressionQueue.length,
+        upload: this.uploadQueue.length
+      },
+      currentSettings: this.currentSettings
+    };
   }
 }

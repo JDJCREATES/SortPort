@@ -4,10 +4,11 @@ import {
   S3Client, 
   PutObjectCommand,
   CreateBucketCommand,
+  HeadBucketCommand,
 } from "npm:@aws-sdk/client-s3@^3.840.0"
 
 /**
- * Bulk upload images to S3
+ * Bulk upload images to a temp S3 before AWS Rekognition can scan them
  */
 
 // Interfaces
@@ -54,6 +55,62 @@ function generateRequestId(): string {
 
 function generateJobId(): string {
   return crypto.randomUUID()
+}
+
+// Generate a consistent temp bucket name for a user session
+function generateTempBucketName(userId: string): string {
+  return `nsfw-temp-${userId.substring(0, 8)}-${Date.now().toString(36)}`
+}
+
+// Get or create a single temp bucket for the user session
+async function getOrCreateTempBucket(
+  s3Client: S3Client, 
+  userId: string,
+  requestId: string
+): Promise<string> {
+  // Try to get existing bucket from database first
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+  
+  // Look for existing active job with temp bucket
+  const { data: existingJob } = await supabase
+    .from('nsfw_bulk_jobs')
+    .select('aws_temp_bucket')
+    .eq('user_id', userId)
+    .eq('status', 'uploading')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+  
+  if (existingJob?.aws_temp_bucket) {
+    try {
+      // Check if bucket still exists
+      await s3Client.send(new HeadBucketCommand({
+        Bucket: existingJob.aws_temp_bucket
+      }));
+      console.log(`♻️ [${requestId}] Reusing existing temp bucket: ${existingJob.aws_temp_bucket}`);
+      return existingJob.aws_temp_bucket;
+    } catch (error) {
+      console.log(`⚠️ [${requestId}] Existing bucket not found, creating new one: ${error}`);
+    }
+  }
+  
+  // Create new bucket
+  const bucketName = generateTempBucketName(userId);
+  console.log(`📦 [${requestId}] Creating new temp bucket: ${bucketName}`);
+  
+  try {
+    await s3Client.send(new CreateBucketCommand({
+      Bucket: bucketName,
+    }));
+    console.log(`✅ [${requestId}] Created temp bucket: ${bucketName}`);
+    return bucketName;
+  } catch (error) {
+    console.error(`❌ [${requestId}] Failed to create temp bucket:`, error);
+    throw error;
+  }
 }
 
 // Cleanup function
@@ -117,6 +174,11 @@ async function createErrorResponse(
   });
 }
 
+// Add at the top after imports
+const PROCESSING_TIMEOUT = 240000; // 4 minutes instead of default 2 minutes
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
+
 // Parse multipart/form-data and upload binary files to S3
 async function uploadBinaryFilesToS3(
   s3Client: S3Client,
@@ -128,22 +190,19 @@ async function uploadBinaryFilesToS3(
   
   let successCount = 0;
   let failedCount = 0;
-  let imageIndex = 0;
   
-  // Collect all image files using sequential key checking
+  // Collect all image files
   const imageFiles: Array<{ key: string; file: File }> = [];
   
-  console.log(`🔍 Scanning for image files in FormData...`);
-  
-  // Check for images with sequential keys - OPTIMIZED: reduce scan range
-  for (let i = 0; i < 50; i++) { // Reduced from 1000 to 50
+  // Reduced scan range for faster processing
+  for (let i = 0; i < 25; i++) { // Reduced from 50 to 25
     const key = `image_${i}`;
     try {
       const file = formData.get(key);
       if (file && typeof file === 'object' && 'arrayBuffer' in file) {
         console.log(`✅ Found ${key}: ${file.name || 'unknown'} (${file.size || 0} bytes, type: ${file.type || 'unknown'})`);
         imageFiles.push({ key, file: file as File });
-      } else if (i > 5 && imageFiles.length === 0) { // Reduced from 10 to 5
+      } else if (i > 3 && imageFiles.length === 0) { // Early exit
         console.log(`⏹️ No images found after checking ${i} keys, stopping scan`);
         break;
       }
@@ -160,50 +219,61 @@ async function uploadBinaryFilesToS3(
     return { successCount: 0, failedCount: 0 };
   }
   
-  // MAJOR OPTIMIZATION: Process uploads in parallel instead of sequential
-  const uploadPromises = imageFiles.map(async ({ key, file }, index) => {
-    try {
-      console.log(`📤 Processing ${key}: ${file.name || 'unknown'} (${file.size || 0} bytes)`);
-      
-      // Validate file size (max 50MB per image)
-      if (file.size > 50 * 1024 * 1024) {
-        console.error(`❌ File ${key} too large: ${file.size} bytes`);
+  // CRITICAL FIX: Process in smaller parallel chunks to avoid timeout
+  const CHUNK_SIZE = 3; // Process 3 images at a time
+  const chunks = [];
+  for (let i = 0; i < imageFiles.length; i += CHUNK_SIZE) {
+    chunks.push(imageFiles.slice(i, i + CHUNK_SIZE));
+  }
+  
+  console.log(`🔄 Processing ${chunks.length} chunks of ${CHUNK_SIZE} images each`);
+  
+  // Process chunks sequentially to avoid overwhelming S3
+  for (const chunk of chunks) {
+    const uploadPromises = chunk.map(async ({ key, file }, index) => {
+      try {
+        console.log(`📤 Processing ${key}: ${file.name || 'unknown'} (${file.size || 0} bytes)`);
+        
+        // Validate file size (max 10MB per image - reduced)
+        if (file.size > 10 * 1024 * 1024) {
+          console.error(`❌ File ${key} too large: ${file.size} bytes`);
+          return { success: false, key };
+        }
+        
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        
+        const s3Key = `input/batch-${batchIndex}-image-${(chunks.indexOf(chunk) * CHUNK_SIZE + index).toString().padStart(4, '0')}.jpg`;
+        
+        console.log(`☁️ Uploading ${key} to S3: ${s3Key}`);
+        
+        await s3Client.send(new PutObjectCommand({
+          Bucket: bucketName,
+          Key: s3Key,
+          Body: uint8Array,
+          ContentType: file.type || 'image/jpeg',
+          ContentLength: uint8Array.length,
+        }));
+        
+        console.log(`✅ Uploaded ${key} to S3: ${s3Key} (${uint8Array.length} bytes)`);
+        return { success: true, key };
+        
+      } catch (error) {
+        console.error(`❌ Failed to upload ${key}:`, error);
         return { success: false, key };
       }
-      
-      // Read file as ArrayBuffer (raw binary data) - OPTIMIZED: remove extra logging
-      const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      
-      // Generate S3 key
-      const s3Key = `input/batch-${batchIndex}-image-${index.toString().padStart(4, '0')}.jpg`;
-      
-      console.log(`☁️ Uploading ${key} to S3: ${s3Key}`);
-      
-      // Upload raw binary data to S3
-      await s3Client.send(new PutObjectCommand({
-        Bucket: bucketName,
-        Key: s3Key,
-        Body: uint8Array,
-        ContentType: file.type || 'image/jpeg',
-        ContentLength: uint8Array.length,
-      }));
-      
-      console.log(`✅ Uploaded ${key} to S3: ${s3Key} (${uint8Array.length} bytes)`);
-      return { success: true, key };
-      
-    } catch (error) {
-      console.error(`❌ Failed to upload ${key}:`, error);
-      return { success: false, key };
+    });
+    
+    // Wait for chunk to complete before next
+    const results = await Promise.all(uploadPromises);
+    successCount += results.filter(r => r.success).length;
+    failedCount += results.filter(r => !r.success).length;
+    
+    // Small delay between chunks
+    if (chunks.indexOf(chunk) < chunks.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
-  });
-  
-  // Wait for all uploads to complete
-  const results = await Promise.all(uploadPromises);
-  
-  // Count results
-  successCount = results.filter(r => r.success).length;
-  failedCount = results.filter(r => !r.success).length;
+  }
   
   console.log(`✅ Batch ${batchIndex} upload complete: ${successCount} success, ${failedCount} failed`);
   return { successCount, failedCount };
@@ -215,8 +285,8 @@ function isHealthCheck(req: Request): boolean {
   return url.pathname.includes('/health') || url.searchParams.has('health');
 }
 
-// Main handler
-serve(async (req: Request): Promise<Response> => {
+// Main handler with timeout
+async function handleRequest(req: Request): Promise<Response> {
   // Handle health check requests
   if (isHealthCheck(req)) {
     console.log('🏥 Health check request received');
@@ -412,20 +482,13 @@ serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    // Generate job ID and bucket name
+    // Generate job ID and get or create temp bucket
     const jobId = generateJobId();
-    bucketName = `nsfw-binary-${userId.substring(0, 8)}-${Date.now()}`;
-
-    console.log(`📦 [${requestId}] Creating S3 bucket: ${bucketName} for job: ${jobId}`);
-
-    // Create S3 bucket
+    
     try {
-      await s3Client.send(new CreateBucketCommand({
-        Bucket: bucketName,
-      }));
-      console.log(`✅ [${requestId}] Created S3 bucket: ${bucketName}`);
+      bucketName = await getOrCreateTempBucket(s3Client, userId, requestId);
     } catch (error) {
-      console.error(`❌ [${requestId}] Failed to create S3 bucket:`, error);
+      console.error(`❌ [${requestId}] Failed to get/create temp bucket:`, error);
       return createErrorResponse(
         'Failed to create S3 bucket',
         error instanceof Error ? error.message : 'Unknown S3 error',
@@ -436,25 +499,56 @@ serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    // Create database record
+    // Create or update database record
     console.log(`💾 [${requestId}] Creating database record for job: ${jobId}`);
     
-    const { error: dbError } = await supabase
+    // Check if there's an existing job with the same bucket (meaning same session)
+    const { data: existingJob } = await supabase
       .from('nsfw_bulk_jobs')
-      .insert({
-        id: jobId,
-        user_id: userId,
-        status: 'uploading',
-        total_images: totalImages,
-        processed_images: 0,
-        nsfw_detected: 0,
-        aws_temp_bucket: bucketName,
-        bucket_path: `s3://${bucketName}/input/`,
-        created_at: new Date().toISOString(),
-      });
+      .select('*')
+      .eq('user_id', userId)
+      .eq('aws_temp_bucket', bucketName)
+      .eq('status', 'uploading')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    let dbError: any = null;
+    
+    if (existingJob) {
+      // Update existing job record
+      console.log(`🔄 [${requestId}] Updating existing job: ${existingJob.id}`);
+      const { error } = await supabase
+        .from('nsfw_bulk_jobs')
+        .update({
+          total_images: Math.max(existingJob.total_images, totalImages),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingJob.id);
+      
+      dbError = error;
+    } else {
+      // Create new job record
+      console.log(`🆕 [${requestId}] Creating new job record: ${jobId}`);
+      const { error } = await supabase
+        .from('nsfw_bulk_jobs')
+        .insert({
+          id: jobId,
+          user_id: userId,
+          status: 'uploading',
+          total_images: totalImages,
+          processed_images: 0,
+          nsfw_detected: 0,
+          aws_temp_bucket: bucketName,
+          bucket_path: `s3://${bucketName}/input/`,
+          created_at: new Date().toISOString(),
+        });
+      
+      dbError = error;
+    }
 
     if (dbError) {
-      console.error(`❌ Database insert error:`, dbError);
+      console.error(`❌ Database operation error:`, dbError);
       return createErrorResponse(
         'Database error',
         dbError.message,
@@ -497,18 +591,21 @@ serve(async (req: Request): Promise<Response> => {
     console.log(`✅ Binary upload complete: ${uploadResult.successCount}/${imageCount} images uploaded`);
 
     // Update database with upload results
+    const finalJobId = existingJob ? existingJob.id : jobId;
+    const currentProcessedImages = existingJob ? existingJob.processed_images : 0;
+    
     await supabase
       .from('nsfw_bulk_jobs')
       .update({
         status: 'uploaded',
-        processed_images: uploadResult.successCount,
+        processed_images: currentProcessedImages + uploadResult.successCount,
         uploaded_at: new Date().toISOString(),
       })
-      .eq('id', jobId);
+      .eq('id', finalJobId);
 
     // SUCCESS - return response
     return new Response(JSON.stringify({
-      jobId,
+      jobId: finalJobId,
       bucketName,
       uploadedCount: uploadResult.successCount,
       failedCount: uploadResult.failedCount,
@@ -529,5 +626,37 @@ serve(async (req: Request): Promise<Response> => {
       500,
       bucketName
     );
+  }
+}
+
+// Serve with timeout protection
+serve(async (req: Request): Promise<Response> => {
+  try {
+    // Create a timeout promise
+    const timeoutPromise = new Promise<Response>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Request timeout'));
+      }, PROCESSING_TIMEOUT);
+    });
+
+    // Race between actual request and timeout
+    const response = await Promise.race([
+      handleRequest(req),
+      timeoutPromise
+    ]);
+
+    return response;
+  } catch (error) {
+    console.error(`❌ Request timeout or error:`, error);
+    
+    return new Response(JSON.stringify({
+      error: 'Request timeout',
+      details: error instanceof Error ? error.message : 'Unknown timeout error',
+      type: 'TIMEOUT_ERROR',
+      request_id: generateRequestId()
+    }), {
+      status: 504,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    });
   }
 });

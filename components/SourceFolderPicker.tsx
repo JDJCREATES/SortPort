@@ -7,7 +7,6 @@ import { PhotoLoader } from '../utils/photoLoader';
 import { useApp } from '../contexts/AppContext';
 import { getCurrentTheme } from '../utils/theme';
 import { AlbumUtils } from '../utils/albumUtils';
-import { LocalNSFWDetector } from '../utils/localNsfwDetection';
 
 /**
  * Handles the selection of photo sources.
