@@ -196,12 +196,28 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
   const results: any[] = []
   
   awsResults.forEach((item, index) => {
-    const moderationLabels = item.ModerationLabels || []
-    const imagePath = item.ImagePath || `image-${index}`
+    // Handle AWS Rekognition batch job result format
+    let moderationLabels: any[] = []
+    let imagePath: string = `image-${index}`
+    
+    if (item['detect-moderation-labels']) {
+      // AWS batch job format: { "source-ref": "...", "detect-moderation-labels": { ... } }
+      moderationLabels = item['detect-moderation-labels'].ModerationLabels || []
+      imagePath = item['source-ref'] || `image-${index}`
+    } else if (item.ModerationLabels) {
+      // Direct AWS format: { "ModerationLabels": [...] }
+      moderationLabels = item.ModerationLabels || []
+      imagePath = item.ImagePath || `image-${index}`
+    } else if (item.ImagePath && item.ModerationLabels) {
+      // Converted format: { "ImagePath": "...", "ModerationLabels": [...] }
+      moderationLabels = item.ModerationLabels || []
+      imagePath = item.ImagePath || `image-${index}`
+    }
     
     let isNsfw = false
     let maxConfidence = 0
     
+    // Process moderation labels to determine NSFW status
     for (const label of moderationLabels) {
       const confidence = label.Confidence || 0
       maxConfidence = Math.max(maxConfidence, confidence)
@@ -210,8 +226,11 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
         const labelName = label.Name || ''
         const parentName = label.ParentName || ''
         
+        // FIXED: Better category matching with case-insensitive partial matching
         if (NSFW_CATEGORIES.some(category => 
-          labelName.includes(category) || parentName.includes(category)
+          labelName.toLowerCase().includes(category.toLowerCase()) || 
+          parentName.toLowerCase().includes(category.toLowerCase()) ||
+          category.toLowerCase().includes(labelName.toLowerCase())
         )) {
           isNsfw = true
           break
@@ -219,14 +238,19 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
       }
     }
     
-    // Extract image ID from the S3 path
-    const imageId = imagePath.split('/').pop()?.replace(/\.(jpg|jpeg|png|gif)$/i, '') || `image-${index}`
+    // Extract image ID from the S3 path or use index
+    let imageId = `image-${index}`
+    if (imagePath.includes('/')) {
+      const pathParts = imagePath.split('/')
+      const filename = pathParts[pathParts.length - 1]
+      imageId = filename.replace(/\.(jpg|jpeg|png|gif)$/i, '')
+    }
     
     results.push({
       image_path: imagePath,
       image_id: imageId,
       is_nsfw: isNsfw,
-      confidence_score: maxConfidence / 100,
+      confidence_score: maxConfidence / 100, // Convert to 0-1 scale
       moderation_labels: moderationLabels.map((label: any) => ({
         Name: label.Name || '',
         Confidence: label.Confidence || 0,
@@ -244,6 +268,13 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
       })),
       processing_time_ms: 0,
     })
+  })
+  
+  logWithContext('INFO', 'Processed AWS moderation results', {
+    totalResults: results.length,
+    nsfwCount: results.filter(r => r.is_nsfw).length,
+    sampleNsfwResult: results.find(r => r.is_nsfw) || null,
+    sampleLabels: results.length > 0 ? results[0].moderation_labels : []
   })
   
   return results
@@ -452,14 +483,11 @@ serve(async (req: Request): Promise<Response> => {
             requestId
           })
           
-          // Now look for result files - try multiple patterns
+          // Now look for result files - only process actual results
           const resultFiles = listAllResponse.Contents?.filter(obj => 
             obj.Key && (
-              obj.Key.includes('result') || 
-              obj.Key.includes('output') || 
-              obj.Key.endsWith('.json') ||
-              obj.Key.endsWith('.jsonl') ||  // ADD THIS
-              obj.Key.includes('moderation')
+              obj.Key.includes('results.jsonl') ||  // AWS batch job results
+              (obj.Key.includes('result') && obj.Key.endsWith('.json') && !obj.Key.includes('manifest'))
             )
           ) || []
           

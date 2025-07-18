@@ -22,7 +22,6 @@ export class AlbumUtils {
     // Check cache first
     const cachedIds = NsfwImageCache.get();
     if (cachedIds) {
-      console.log(`🔒 Using cached NSFW image IDs: ${cachedIds.size} images`);
       return Array.from(cachedIds);
     }
 
@@ -67,9 +66,8 @@ export class AlbumUtils {
     try {
       // Clear the NSFW image cache
       NsfwImageCache.clear();
-      console.log('✅ NSFW cache cleared');
+   
     } catch (error) {
-      console.error('Error clearing NSFW cache:', error);
       throw error;
     }
   }
