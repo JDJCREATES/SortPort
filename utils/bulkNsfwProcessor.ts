@@ -26,13 +26,13 @@ export class BulkNSFWProcessor {
   
   // 🚀 AGGRESSIVE SETTINGS for native processing <__should be overwritten by hardware profiler
   private static currentSettings: ProcessingSettings = {
-    compressionWorkers: 8,        // More workers with native
-    uploadStreams: 4,             // More parallel uploads
-    batchSize: 15,                // Larger batches
-    compressionQuality: 0.7,      // Higher quality (native is faster)
-    maxImageSize: 512,           // Larger size (native handles it)
-    cacheSize: 100,               // Larger cache
-    enableAggressive: true,       // Enable aggressive mode
+    compressionWorkers: 8,
+    uploadStreams: 12,            // 3x more parallel uploads
+    batchSize: 25,                // Larger batches
+    compressionQuality: 0.7,
+    maxImageSize: 512,
+    cacheSize: 100,
+    enableAggressive: true,
     memoryWarningThreshold: 1536
   };
   
@@ -1368,6 +1368,31 @@ export class BulkNSFWProcessor {
       }
     } catch (error) {
       console.error('❌ Error finalizing upload session:', error);
+    }
+  }
+
+  /**
+   * 🎯 Dynamic performance adjustment based on real-time metrics
+   */
+  private static adjustSettingsBasedOnPerformance(): void {
+    const avgCompressionTime = this.compressionStats.averageTimeMs;
+    
+    // If compression is very fast, increase workers
+    if (avgCompressionTime < 100 && this.currentSettings.compressionWorkers < 16) {
+      this.currentSettings.compressionWorkers += 2;
+      console.log(`⚡ Performance boost: Increased workers to ${this.currentSettings.compressionWorkers}`);
+    }
+    
+    // If compression is slow, reduce workers
+    if (avgCompressionTime > 500 && this.currentSettings.compressionWorkers > 4) {
+      this.currentSettings.compressionWorkers -= 1;
+      console.log(`⚠️ Performance throttle: Reduced workers to ${this.currentSettings.compressionWorkers}`);
+    }
+    
+    // Adjust batch size based on memory usage
+    if (this.compressionCache.size > this.currentSettings.cacheSize * 0.9) {
+      this.currentSettings.batchSize = Math.max(5, this.currentSettings.batchSize - 2);
+      console.log(`🧠 Memory optimization: Reduced batch size to ${this.currentSettings.batchSize}`);
     }
   }
 }

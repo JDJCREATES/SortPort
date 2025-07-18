@@ -2,6 +2,10 @@ import * as Device from 'expo-device';
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 
+/*
+* This Script was made for the bulknsfwprocessor but acan easily be adapted for other purposes <-- ensure it doesn't break the processing script
+*/ 
+
 export interface HardwareProfile {
   deviceTier: 'low' | 'mid' | 'high' | 'flagship';
   cpuCores: number;

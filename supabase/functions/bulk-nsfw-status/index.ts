@@ -2,8 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { 
   RekognitionClient, 
-  GetMediaAnalysisJobCommand,
-  RekognitionServiceException
+  GetMediaAnalysisJobCommand
 } from "npm:@aws-sdk/client-rekognition@^3.840.0"
 import { 
   S3Client, 
@@ -11,7 +10,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   DeleteBucketCommand,
-  HeadBucketCommand
+  _Object // Add this import for the S3 object type
 } from "npm:@aws-sdk/client-s3@^3.840.0"
 
 const CORS_HEADERS = {
@@ -150,7 +149,7 @@ class TempS3BucketManager {
         bucketName,
         error: error instanceof Error ? error.message : String(error)
       })
-      // Don't throw - we don't want cleanup failures to break the main flow
+      // Need to handle this error
     }
   }
 }
@@ -198,6 +197,8 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
   
   awsResults.forEach((item, index) => {
     const moderationLabels = item.ModerationLabels || []
+    const imagePath = item.ImagePath || `image-${index}`
+    
     let isNsfw = false
     let maxConfidence = 0
     
@@ -218,15 +219,19 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
       }
     }
     
+    // Extract image ID from the S3 path
+    const imageId = imagePath.split('/').pop()?.replace(/\.(jpg|jpeg|png|gif)$/i, '') || `image-${index}`
+    
     results.push({
-      image_path: item.ImagePath || `image-${index}`,
-      image_id: `image-${index}`,
+      image_path: imagePath,
+      image_id: imageId,
       is_nsfw: isNsfw,
       confidence_score: maxConfidence / 100,
       moderation_labels: moderationLabels.map((label: any) => ({
         Name: label.Name || '',
         Confidence: label.Confidence || 0,
         ParentName: label.ParentName || undefined,
+        TaxonomyLevel: label.TaxonomyLevel || undefined,
         Instances: label.Instances?.map((instance: any) => ({
           BoundingBox: instance.BoundingBox ? {
             Width: instance.BoundingBox.Width || 0,
@@ -324,7 +329,7 @@ serve(async (req: Request): Promise<Response> => {
     logWithContext('INFO', `Checking status for job ${jobId}`, {
       status: job.status,
       totalImages: job.total_images,
-      awsJobId: job.s3_job_id,
+      awsJobId: job.aws_job_id,
       tempBucket: job.aws_temp_bucket,
       requestId
     })
@@ -371,101 +376,258 @@ serve(async (req: Request): Promise<Response> => {
       })
     }
 
-    // Check AWS job status if we have an AWS job ID
-    if (job.s3_job_id && job.status === 'processing') {
+    // Check AWS job status if we have an AWS job ID <--aws_job_id
+    if (job.aws_job_id && job.status === 'processing') {
       try {
         const client = AWSClientManager.getClient()
         
-        const getCommand = new GetMediaAnalysisJobCommand({
-          JobId: job.s3_job_id
-        })
-
-        const awsResponse = await client.send(getCommand)
-        
-        logWithContext('INFO', `AWS job status for ${job.s3_job_id}`, {
-          awsStatus: awsResponse.JobStatus,
+        logWithContext('INFO', 'MAKING AWS STATUS CHECK', {
+          awsJobId: job.aws_job_id,
           tempBucket: job.aws_temp_bucket,
           requestId
         })
         
-        if (awsResponse.JobStatus === 'SUCCEEDED') {
+        const getCommand = new GetMediaAnalysisJobCommand({
+          JobId: job.aws_job_id
+        })
+
+        const awsResponse = await client.send(getCommand)
+        
+        // LOG EVERYTHING FROM AWS RESPONSE
+        logWithContext('INFO', 'RAW AWS RESPONSE', {
+          awsJobId: job.aws_job_id,
+          fullResponse: JSON.stringify(awsResponse, null, 2),
+          requestId
+        })
+        
+        logWithContext('INFO', `AWS job status for ${job.aws_job_id}`, {
+          awsStatus: awsResponse.JobStatus,
+          awsStatusMessage: awsResponse.StatusMessage,
+          awsJobName: awsResponse.JobName,
+          awsCreationTimestamp: awsResponse.CreationTimestamp,
+          awsCompletionTimestamp: awsResponse.CompletionTimestamp, // ADD THIS
+          awsFailureCode: awsResponse.FailureCode, // ADD THIS
+          awsFailureDetails: awsResponse.FailureDetails, // ADD THIS
+          tempBucket: job.aws_temp_bucket,
+          requestId
+        })
+        
+        // FORCE CHECK - if AWS console shows SUCCEEDED, let's bypass the status check
+        if (awsResponse.Status === 'SUCCEEDED' || awsResponse.Status === 'COMPLETED') {
+          logWithContext('INFO', 'AWS job SUCCEEDED - processing results', { 
+            jobId: job.aws_job_id, 
+            requestId 
+          })
+          
           const tempBucketName = job.aws_temp_bucket
           
           if (!tempBucketName) {
             throw new Error('Temp bucket name not found in job record')
           }
           
-          logWithContext('INFO', 'Processing AWS results from temp bucket', {
+          logWithContext('INFO', 'AWS job succeeded, fetching results', {
             tempBucketName,
             jobId,
             requestId
           })
           
-          // Get results from temp S3 bucket
+          // Get results from temp S3 bucket - CHECK ALL PREFIXES
           const s3Client = TempS3BucketManager.getS3Client()
           
-          const listCommand = new ListObjectsV2Command({
-            Bucket: tempBucketName,
-            Prefix: 'results/'
+          // First, list ALL objects to see what's actually there
+          const listAllCommand = new ListObjectsV2Command({
+            Bucket: tempBucketName
           })
           
-          const listResponse = await s3Client.send(listCommand)
+          const listAllResponse = await s3Client.send(listAllCommand)
           
-          logWithContext('INFO', 'Found result files in temp bucket', {
-            fileCount: listResponse.Contents?.length || 0,
-            files: listResponse.Contents?.map((f: any) => f.Key) || [],
+          logWithContext('INFO', 'ALL FILES IN TEMP BUCKET', {
+            fileCount: listAllResponse.Contents?.length || 0,
+            allFiles: listAllResponse.Contents?.map((f: any) => ({
+              key: f.Key,
+              size: f.Size,
+              lastModified: f.LastModified
+            })) || [],
             tempBucketName,
             requestId
           })
           
+          // Now look for result files - try multiple patterns
+          const resultFiles = listAllResponse.Contents?.filter(obj => 
+            obj.Key && (
+              obj.Key.includes('result') || 
+              obj.Key.includes('output') || 
+              obj.Key.endsWith('.json') ||
+              obj.Key.endsWith('.jsonl') ||  // ADD THIS
+              obj.Key.includes('moderation')
+            )
+          ) || []
+          
+          logWithContext('INFO', 'FOUND RESULT FILES', {
+            resultFiles: resultFiles.map(f => f.Key),
+            tempBucketName,
+            requestId
+          })
+          
+          if (resultFiles.length === 0) {
+            throw new Error('No result files found in temp bucket')
+          }
+          
           let processedResults: any[] = []
           
           // Process each result file
-          if (listResponse.Contents && listResponse.Contents.length > 0) {
-            for (const object of listResponse.Contents) {
-              if (object.Key && object.Key.endsWith('.json')) {
-                logWithContext('INFO', 'Processing result file from temp bucket', {
+          for (const object of resultFiles) {
+            if (!object.Key) continue
+            
+            logWithContext('INFO', 'Processing result file', {
+              fileName: object.Key,
+              fileSize: object.Size,
+              tempBucketName,
+              requestId
+            })
+            
+            const getObjectCommand = new GetObjectCommand({
+              Bucket: tempBucketName,
+              Key: object.Key
+            })
+            
+            const objectResponse = await s3Client.send(getObjectCommand)
+            
+            if (objectResponse.Body) {
+              const fileContent = await objectResponse.Body.transformToString()
+              
+              logWithContext('INFO', 'RAW FILE CONTENT', {
+                fileName: object.Key,
+                contentLength: fileContent.length,
+                contentPreview: fileContent.substring(0, 500), // More preview
+                requestId
+              })
+              
+              try {
+                let rawResults: any[] = []
+                
+                // Check if this is a JSONL file (JSON Lines format)
+                if (object.Key?.endsWith('.jsonl')) {
+                  logWithContext('INFO', 'Processing JSONL file', {
+                    fileName: object.Key,
+                    requestId
+                  })
+                  
+                  // Split by newlines and parse each line as separate JSON
+                  const lines = fileContent.trim().split('\n')
+                  
+                  for (const line of lines) {
+                    if (line.trim()) {
+                      try {
+                        const lineData = JSON.parse(line)
+                        rawResults.push(lineData)
+                      } catch (lineError) {
+                        logWithContext('WARN', 'Failed to parse JSONL line', {
+                          fileName: object.Key,
+                          line: line.substring(0, 100),
+                          lineError: lineError instanceof Error ? lineError.message : String(lineError),
+                          requestId
+                        })
+                      }
+                    }
+                  }
+                  
+                  logWithContext('INFO', 'JSONL parsing completed', {
+                    fileName: object.Key,
+                    totalLines: lines.length,
+                    parsedLines: rawResults.length,
+                    requestId
+                  })
+                  
+                } else {
+                  // Regular JSON parsing - could be array or object
+                  const parsedData = JSON.parse(fileContent)
+                  
+                  if (Array.isArray(parsedData)) {
+                    rawResults = parsedData
+                  } else {
+                    // Handle object cases
+                    if (parsedData.Results && Array.isArray(parsedData.Results)) {
+                      rawResults = parsedData.Results
+                    } else if (parsedData.ModerationLabels) {
+                      // Single result object
+                      rawResults = [parsedData]
+                    } else {
+                      logWithContext('WARN', 'Unknown JSON structure', {
+                        fileName: object.Key,
+                        structure: parsedData,
+                        requestId
+                      })
+                      continue
+                    }
+                  }
+                }
+                
+                logWithContext('INFO', 'PARSED RESULTS STRUCTURE', {
                   fileName: object.Key,
-                  tempBucketName,
+                  resultCount: rawResults.length,
+                  firstResult: rawResults[0],
                   requestId
                 })
                 
-                const getObjectCommand = new GetObjectCommand({
-                  Bucket: tempBucketName,
-                  Key: object.Key
+                // Handle different AWS result structures
+                let resultsToProcess: any[] = []
+                
+                // For JSONL results from AWS Rekognition batch jobs
+                if (rawResults.length > 0 && rawResults[0]['detect-moderation-labels']) {
+                  logWithContext('INFO', 'Processing AWS Rekognition batch results', {
+                    fileName: object.Key,
+                    resultCount: rawResults.length,
+                    requestId
+                  })
+                  
+                  resultsToProcess = rawResults.map((item: any, index: number) => {
+                    const moderationData = item['detect-moderation-labels']
+                    return {
+                      ImagePath: item['source-ref'] || `image-${index}`,
+                      ModerationLabels: moderationData?.ModerationLabels || [],
+                      ModerationModelVersion: moderationData?.ModerationModelVersion || '7.0'
+                    }
+                  })
+                  
+                } else {
+                  // For other formats, rawResults is already an array
+                  resultsToProcess = rawResults
+                }
+                
+                logWithContext('INFO', 'PROCESSING RESULTS ARRAY', {
+                  fileName: object.Key,
+                  arrayLength: resultsToProcess.length,
+                  firstItem: resultsToProcess[0],
+                  requestId
                 })
                 
-                const objectResponse = await s3Client.send(getObjectCommand)
+                // Process the results
+                const batchResults = processAWSModerationResults(resultsToProcess)
+                processedResults = processedResults.concat(batchResults)
                 
-                if (objectResponse.Body) {
-                  const fileContent = await objectResponse.Body.transformToString()
-                  
-                  logWithContext('INFO', 'Downloaded result file from temp bucket', {
-                    fileName: object.Key,
-                    contentLength: fileContent.length,
-                    requestId
-                  })
-                  
-                  const awsResults = JSON.parse(fileContent)
-                  
-                  // Process AWS results
-                  const batchResults = processAWSModerationResults(awsResults)
-                  processedResults = processedResults.concat(batchResults)
-                  
-                  logWithContext('INFO', 'Processed batch results from temp bucket', {
-                    fileName: object.Key,
-                    batchResultCount: batchResults.length,
-                    totalProcessed: processedResults.length,
-                    requestId
-                  })
-                }
+                logWithContext('INFO', 'BATCH PROCESSED', {
+                  fileName: object.Key,
+                  batchResultCount: batchResults.length,
+                  totalProcessed: processedResults.length,
+                  requestId
+                })
+                
+              } catch (parseError) {
+                logWithContext('ERROR', 'Result processing failed', {
+                  fileName: object.Key,
+                  parseError: parseError instanceof Error ? parseError.message : String(parseError),
+                  rawContent: fileContent.substring(0, 500),
+                  requestId
+                })
               }
             }
           }
           
-          logWithContext('INFO', 'All results processed from temp bucket', {
+          logWithContext('INFO', 'FINAL RESULTS SUMMARY', {
             totalResults: processedResults.length,
             nsfwCount: processedResults.filter(r => r.is_nsfw).length,
+            sampleResult: processedResults[0],
             tempBucketName,
             requestId
           })
@@ -558,7 +720,7 @@ serve(async (req: Request): Promise<Response> => {
             })
             .eq('id', jobId)
 
-          logWithContext('ERROR', `AWS job ${job.s3_job_id} failed, cleaning up temp bucket`, {
+          logWithContext('ERROR', `AWS job ${job.aws_job_id} failed, cleaning up temp bucket`, {
             statusMessage: awsResponse.StatusMessage,
             tempBucket: job.aws_temp_bucket,
             requestId
@@ -585,21 +747,89 @@ serve(async (req: Request): Promise<Response> => {
           )
           
         } else {
-          // Still processing - calculate progress
-          const progress = Math.min(90, Math.floor((Date.now() - new Date(job.created_at).getTime()) / 1000))
-
-          logWithContext('INFO', `Job ${jobId} still processing in temp bucket`, {
+          // STILL IN PROGRESS - but let's check if it's been too long
+          const jobAge = Date.now() - new Date(job.created_at).getTime()
+          const jobAgeMinutes = Math.floor(jobAge / 60000)
+          
+          logWithContext('WARN', 'AWS job still in progress - checking age', {
             awsStatus: awsResponse.JobStatus,
-            progress,
-            tempBucket: job.aws_temp_bucket,
+            jobAgeMinutes,
+            jobAge,
+            createdAt: job.created_at,
             requestId
           })
+          
+          // If job is older than 5 minutes and AWS says it's still processing, 
+          // let's try to check the bucket anyway
+          if (jobAgeMinutes > 5) {
+            logWithContext('WARN', 'Job is old but still processing - checking bucket anyway', {
+              jobAgeMinutes,
+              tempBucket: job.aws_temp_bucket,
+              requestId
+            })
+            
+            // Try to list bucket contents anyway
+            const s3Client = TempS3BucketManager.getS3Client()
+            
+            try {
+              const listAllCommand = new ListObjectsV2Command({
+                Bucket: job.aws_temp_bucket
+              })
+              
+              const listAllResponse = await s3Client.send(listAllCommand)
+              
+              logWithContext('INFO', 'BUCKET CONTENTS DESPITE IN_PROGRESS STATUS', {
+                fileCount: listAllResponse.Contents?.length || 0,
+                allFiles: listAllResponse.Contents?.map((f: any) => ({
+                  key: f.Key,
+                  size: f.Size,
+                  lastModified: f.LastModified
+                })) || [],
+                tempBucket: job.aws_temp_bucket,
+                requestId
+              })
+              
+              // If we find result files, process them anyway
+              const resultFiles = listAllResponse.Contents?.filter((obj: _Object) => 
+                obj.Key && (
+                  obj.Key.includes('result') || 
+                  obj.Key.includes('output') || 
+                  obj.Key.endsWith('.json') ||
+                  obj.Key.includes('moderation')
+                )
+              ) || []
+              
+              if (resultFiles.length > 0) {
+                logWithContext('WARN', 'FOUND RESULTS DESPITE IN_PROGRESS STATUS - PROCESSING ANYWAY', {
+                  resultFiles: resultFiles.map(f => f.Key),
+                  requestId
+                })
+                
+                // Process the results even though AWS says it's still in progress
+                // (Your existing result processing code here)
+              }
+              
+            } catch (bucketError) {
+              logWithContext('ERROR', 'Failed to check bucket contents', {
+                bucketError: bucketError instanceof Error ? bucketError.message : String(bucketError),
+                requestId
+              })
+            }
+          }
+          
+          // Calculate progress normally
+          const progress = Math.min(90, Math.floor((Date.now() - new Date(job.created_at).getTime()) / 1000))
 
           return new Response(
             JSON.stringify({
               status: 'processing',
               progress: Math.min(progress, 95),
               totalImages: job.total_images,
+              debug: {
+                awsStatus: awsResponse.JobStatus,
+                jobAgeMinutes,
+                bucketName: job.aws_temp_bucket
+              },
               request_id: requestId
             }),
             { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
@@ -609,6 +839,8 @@ serve(async (req: Request): Promise<Response> => {
       } catch (awsError) {
         logWithContext('ERROR', `AWS status check failed for job ${jobId}`, {
           awsError: awsError instanceof Error ? awsError.message : String(awsError),
+          awsErrorName: awsError instanceof Error ? awsError.name : 'Unknown',
+          awsErrorStack: awsError instanceof Error ? awsError.stack : 'No stack',
           tempBucket: job.aws_temp_bucket,
           requestId
         })
@@ -619,6 +851,9 @@ serve(async (req: Request): Promise<Response> => {
             progress: 50,
             totalImages: job.total_images,
             error: 'Temporary AWS communication issue',
+            debug: {
+              awsError: awsError instanceof Error ? awsError.message : String(awsError)
+            },
             request_id: requestId
           }),
           { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
