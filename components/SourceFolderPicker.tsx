@@ -257,9 +257,10 @@ function SourceFolderPickerComponent({
           await AlbumUtils.createCategorizedModeratedAlbums(finalNsfwImages, awsResults);
         }
 
+        // FIXED: Use the correct count from bulkResults instead of finalNsfwImages.length
         console.log(`🏁 AWS bulk processing complete:`, {
           totalPhotos: allPhotos.length,
-          awsConfirmed: finalNsfwImages.length,
+          awsConfirmed: bulkResults.nsfwDetected, // Use this instead of finalNsfwImages.length
           processingTime: bulkResults.processingTimeMs
         });
       } else {

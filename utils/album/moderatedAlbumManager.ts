@@ -23,6 +23,9 @@ export class ModeratedAlbumManager {
     moderationResults: { [imageId: string]: ModerationResult }
   ): Promise<void> {
     try {
+      console.log(`🔒 createCategorizedModeratedAlbums called with ${nsfwImages.length} images`);
+      console.log(`🔒 Moderation results keys: ${Object.keys(moderationResults).length}`);
+    
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         console.log('🔒 createCategorizedModeratedAlbums: User not authenticated, skipping');
@@ -33,6 +36,14 @@ export class ModeratedAlbumManager {
         console.log('🔒 createCategorizedModeratedAlbums: No NSFW images provided');
         return;
       }
+
+      // Add detailed logging here
+      console.log('🔒 NSFW Images:', nsfwImages.map(img => ({ id: img.id, folderId: img.folderId })));
+      console.log('🔒 Moderation Results:', Object.entries(moderationResults).map(([id, result]) => ({ 
+        id, 
+        confidence: result.confidence_score,
+        labels: result.moderation_labels?.length || 0
+      })));
 
       // Prepare moderation data for album generation
       const imagesModerationData = nsfwImages.map((image: any) => ({

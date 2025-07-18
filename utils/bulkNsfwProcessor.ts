@@ -913,7 +913,7 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * Monitor all batch jobs for completion (SAME AS BEFORE)
+   * Monitor all batch jobs for completion (FIXED - remove duplicate logging)
    */
   private static async monitorAllJobs(
     jobIds: string[], 
