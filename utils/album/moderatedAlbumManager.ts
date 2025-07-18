@@ -37,33 +37,32 @@ export class ModeratedAlbumManager {
         return;
       }
 
-      // Add detailed logging here
-      console.log('🔒 NSFW Images:', nsfwImages.map(img => ({ id: img.id, folderId: img.folderId })));
-      console.log('🔒 Moderation Results:', Object.entries(moderationResults).map(([id, result]) => ({ 
-        id, 
-        confidence: result.confidence_score,
-        labels: result.moderation_labels?.length || 0
-      })));
+      // ✅ FIXED: Prepare moderation data in the correct format for NsfwAlbumNaming
+      const imagesModerationData = nsfwImages.map((image: any) => {
+        const moderationResult = moderationResults[image.id];
+        
+        return {
+          imageId: image.id,
+          moderationLabels: moderationResult?.moderation_labels || [],
+          confidence: moderationResult?.confidence_score || 0,
+        };
+      });
 
-      // Prepare moderation data for album generation
-      const imagesModerationData = nsfwImages.map((image: any) => ({
-        imageId: image.id,
-        moderationLabels: moderationResults[image.id]?.moderation_labels || [],
-        confidence: moderationResults[image.id]?.confidence_score || 0,
-      }));
+      console.log(`🎯 Prepared moderation data for ${imagesModerationData.length} images`);
+      console.log(`🎯 Sample moderation data:`, imagesModerationData[0]);
 
-      // Generate intelligent album categories
+      // ✅ Use NsfwAlbumNaming for intelligent categorization
       const albumCategories = NsfwAlbumNaming.generateMultipleAlbumNames(imagesModerationData);
 
       console.log(`🎯 Generated ${albumCategories.length} categorized albums:`, 
         albumCategories.map((cat: AlbumCategory) => `${cat.name} (${cat.imageIds.length} images)`));
 
-      // Create or update albums for each category
+      // ✅ ModeratedAlbumManager handles database operations
       for (const albumCategory of albumCategories) {
         await this.createOrUpdateCategorizedAlbum(user.id, albumCategory, nsfwImages, moderationResults);
       }
 
-      // Also insert detailed moderation records
+      // ✅ ModeratedAlbumManager handles detailed records
       await this.insertDetailedModeratedImages(user.id, nsfwImages, moderationResults);
 
     } catch (error) {

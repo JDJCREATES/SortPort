@@ -26,7 +26,14 @@ export const MODERATION_CATEGORIES: ModerationCategory[] = [
     description: 'Images with partial nudity or revealing clothing',
     icon: '👙',
     priority: 8,
-    keywords: ['Partial Nudity', 'Female Swimwear Or Underwear', 'Male Swimwear Or Underwear', 'Barechested Male', 'Revealing Clothes'],
+    keywords: [
+      'Partial Nudity', 
+      'Female Swimwear Or Underwear', 
+      'Male Swimwear Or Underwear', 
+      'Swimwear or Underwear', // ✅ ADD THIS - matches AWS format
+      'Barechested Male', 
+      'Revealing Clothes'
+    ],
   },
   {
     id: 'suggestive_content',
@@ -150,16 +157,22 @@ export class NsfwAlbumNaming {
 
     for (const category of MODERATION_CATEGORIES) {
       for (const label of moderationLabels) {
+        // ✅ FIXED: Handle both AWS format and our format
         const labelName = label.Name || label.name || '';
         const parentName = label.ParentName || label.parent_name || '';
         
+        // ✅ IMPROVED: Better matching logic
         const matchesKeyword = category.keywords.some(keyword => 
-          labelName.includes(keyword) || parentName.includes(keyword)
+          labelName.toLowerCase().includes(keyword.toLowerCase()) || 
+          parentName.toLowerCase().includes(keyword.toLowerCase()) ||
+          keyword.toLowerCase().includes(labelName.toLowerCase())
         );
 
         if (matchesKeyword && category.priority > highestPriority) {
           bestMatch = category;
           highestPriority = category.priority;
+        
+          console.log(`🎯 Matched label "${labelName}" to category "${category.displayName}" (priority: ${category.priority})`);
         }
       }
     }
@@ -174,6 +187,8 @@ export class NsfwAlbumNaming {
     }
 
     // Fallback for unmatched labels
+    console.log(`⚠️ No category match found for labels:`, moderationLabels.map(l => l.Name || l.name));
+    
     return {
       name: 'Sensitive Content',
       description: 'Content flagged as potentially sensitive',

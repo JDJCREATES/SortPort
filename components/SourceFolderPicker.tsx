@@ -227,15 +227,29 @@ function SourceFolderPickerComponent({
 
       // ✅ Process AWS results and create albums
       if (bulkResults.nsfwDetected > 0 && bulkResults.results) {
+        console.log(`🔍 Processing ${bulkResults.results.length} AWS results for ${allPhotos.length} photos`);
+        
+        // Import the new NSFW detection utility
+        const { NsfwDetection } = await import('../utils/moderation/nsfwDetection');
+        
+        // Analyze all results using the sophisticated detection logic
+        const analyzedResults = NsfwDetection.batchAnalyze(bulkResults.results);
+        
         const finalNsfwImages: any[] = [];
         const awsResults: { [imageId: string]: any } = {};
-
-        // Map AWS results back to our image data
-        bulkResults.results.forEach((result: any, index: number) => {
-          if (result.is_nsfw && index < allPhotos.length) {
+        
+        // Process analyzed results
+        analyzedResults.forEach((analyzed, index) => {
+          if (analyzed.nsfwResult.isNsfw && index < allPhotos.length) {
             const originalImage = allPhotos[index];
             
-            awsResults[originalImage.id] = result;
+            awsResults[originalImage.id] = {
+              confidence_score: analyzed.nsfwResult.confidence,
+              moderation_labels: analyzed.rawResult.moderation_labels,
+              categories: analyzed.nsfwResult.categories,
+              primaryCategory: analyzed.nsfwResult.primaryCategory,
+              severity: analyzed.nsfwResult.severity
+            };
             
             finalNsfwImages.push({
               id: originalImage.id,
@@ -246,23 +260,21 @@ function SourceFolderPickerComponent({
               height: 0,
               creationTime: Date.now(),
               modificationTime: Date.now(),
-              awsConfidence: result.confidence_score || 0,
+              awsConfidence: analyzed.nsfwResult.confidence,
             });
+            
+            console.log(`🔒 NSFW detected for image ${index}: ${analyzed.nsfwResult.primaryCategory} (${analyzed.nsfwResult.severity})`);
           }
         });
 
-        // Create categorized albums with AWS results
+        console.log(`🔒 Final NSFW images to process: ${finalNsfwImages.length}`);
+        console.log(`🔒 AWS results keys: ${Object.keys(awsResults).length}`);
+
+        // Create categorized albums with enhanced AWS results
         if (finalNsfwImages.length > 0) {
           console.log(`🔒 Creating albums for ${finalNsfwImages.length} confirmed NSFW images`);
           await AlbumUtils.createCategorizedModeratedAlbums(finalNsfwImages, awsResults);
         }
-
-        // FIXED: Use the correct count from bulkResults instead of finalNsfwImages.length
-        console.log(`🏁 AWS bulk processing complete:`, {
-          totalPhotos: allPhotos.length,
-          awsConfirmed: bulkResults.nsfwDetected, // Use this instead of finalNsfwImages.length
-          processingTime: bulkResults.processingTimeMs
-        });
       } else {
         console.log(`✅ No NSFW content confirmed by AWS bulk processing`);
       }

@@ -687,17 +687,6 @@ export class BulkNSFWProcessor {
       const readyCount = firstBatch.filter(uri => this.compressionCache.has(uri)).length;
       const readyPercent = (readyCount / firstBatch.length) * 100;
       
-      // Start uploading when 80% of first batch is ready
-      if (readyCount >= firstBatch.length * 0.8) {
-        console.log(`✅ First batch 80% ready (${readyCount}/${firstBatch.length}), starting uploads...`);
-        return;
-      }
-      
-      if (readyCount === firstBatch.length) {
-        console.log(`✅ First batch 100% ready (${readyCount}/${firstBatch.length}), starting uploads...`);
-        return;
-      }
-      
       // Log progress every 5 seconds
       if ((Date.now() - startTime) % 5000 < 100) {
         console.log(`⏳ First batch progress: ${readyCount}/${firstBatch.length} (${readyPercent.toFixed(0)}%) ready...`);
@@ -940,7 +929,6 @@ export class BulkNSFWProcessor {
             totalNsfwDetected += status.nsfwDetected || 0;
             allResults = allResults.concat(status.results || []);
             
-            console.log(`✅ Job ${jobId} completed. Progress: ${completedJobs.length}/${jobIds.length}`);
           } else if (status.status === 'failed') {
             console.error(`❌ Job ${jobId} failed:`, status.error_message);
             // Mark as completed to avoid infinite loop
@@ -992,7 +980,6 @@ export class BulkNSFWProcessor {
       return data;
 
     } catch (error) {
-      console.error('❌ Failed to check job status:', error);
       throw error instanceof Error ? error : new Error('Unknown error during status check');
     }
   }
@@ -1253,8 +1240,7 @@ export class BulkNSFWProcessor {
     nativeSupported: boolean;
   }> {
     try {
-      console.log('🧪 Running NATIVE performance test...');
-      
+  
       await this.initializeHardwareOptimization();
       
       // Test native compression speed
@@ -1267,7 +1253,6 @@ export class BulkNSFWProcessor {
           await this.compressImageNative(uri);
         }
       } catch (error) {
-        console.warn('⚠️ Native compression not supported, falling back');
         nativeSupported = false;
       }
       
@@ -1297,7 +1282,6 @@ export class BulkNSFWProcessor {
       };
       
     } catch (error) {
-      console.error('❌ Native performance test failed:', error);
       return {
         compressionSpeed: 1,
         uploadSpeed: 0.8,
