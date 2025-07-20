@@ -280,8 +280,9 @@ export function DataManagementSection({ handleClearData }: DataManagementSection
 • NSFW filter results  
 • App settings and preferences
 • Cached image data
+• Sort sessions
 
-Your photos will remain in your device gallery.
+Your photos and credits will remain safe.
 
 This action cannot be undone."
         icon="trash"
@@ -303,9 +304,11 @@ This action cannot be undone."
 • Delete all your sorted albums
 • Clear all NSFW filter results
 • Remove all app settings
+• Delete sort sessions
 • Sign you out immediately
 
-Your photos will remain in your device gallery.
+Your photos and credits will remain safe.
+Credits can be used if you create a new account with the same email.
 
 ⚠️ THIS ACTION CANNOT BE UNDONE"
         icon="person-remove"

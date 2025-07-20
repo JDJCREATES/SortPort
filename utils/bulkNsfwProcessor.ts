@@ -3,6 +3,10 @@ import * as FileSystem from 'expo-file-system';
 import ImageResizer from 'react-native-image-resizer';
 import { HardwareProfiler, HardwareProfile, ProcessingSettings } from './hardwareProfiler';
 
+/**
+ *  🌐 Handles preparing and sending files through edge functions on supabase, into AWS Rekognition, 
+ */
+
 export interface BulkProcessingProgress {
   current: number;
   total: number;
@@ -1345,11 +1349,7 @@ export class BulkNSFWProcessor {
         })
         .eq('id', jobId);
       
-      if (error) {
-        console.error('❌ Failed to finalize upload session:', error);
-      } else {
-        console.log(`✅ Upload session finalized: ${jobId}`);
-      }
+     
     } catch (error) {
       console.error('❌ Error finalizing upload session:', error);
     }

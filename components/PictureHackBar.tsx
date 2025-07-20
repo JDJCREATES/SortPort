@@ -11,6 +11,10 @@ import { CREDIT_COSTS } from '../utils/creditPurchaseManager';
 import { getCurrentTheme } from '../utils/theme';
 import { LangChainAgent } from '../utils/langchainAgent';
 
+/**
+ * This is the main chatbar for the AI Sorting feature. This is the main entry point for the user to sort their images through natural language.
+ */
+
 interface PictureHackBarProps {
   onSubmit: (prompt: string) => void;
   placeholder?: string;

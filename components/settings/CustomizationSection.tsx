@@ -92,9 +92,9 @@ export function CustomizationSection({
       await updateSetting('customColors', updatedColors);
       setShowColorPickerModal(false);
       
-      console.log(`🎨 Updated ${colorPickerType} color to:`, color);
+      //console.log(`🎨 Updated ${colorPickerType} color to:`, color);
     } catch (error) {
-      console.error('Error updating color:', error);
+     // console.error('Error updating color:', error);
       Alert.alert('Error', 'Failed to update color. Please try again.');
     }
   }, [settings.customColors, updateSetting, colorPickerType]);
@@ -112,7 +112,7 @@ export function CustomizationSection({
       
       Alert.alert('Reset Complete', `${colorType === 'primary' ? 'Accent' : 'Background'} color has been reset to default.`);
     } catch (error) {
-      console.error('Error resetting color:', error);
+      //console.error('Error resetting color:', error);
       Alert.alert('Error', 'Failed to reset color. Please try again.');
     }
   };
@@ -133,7 +133,7 @@ export function CustomizationSection({
               await updateSetting('customColors', undefined);
               Alert.alert('Reset Complete', 'All colors have been reset to default.');
             } catch (error) {
-              console.error('Error resetting all colors:', error);
+              //console.error('Error resetting all colors:', error);
               Alert.alert('Error', 'Failed to reset colors. Please try again.');
             }
           }
@@ -173,7 +173,6 @@ export function CustomizationSection({
       ? ACCENT_COLORS 
       : BACKGROUND_COLORS;
     
-    console.log('Available colors:', colors.length, 'Type:', colorPickerType);
     
     const currentColor = colorPickerType === 'primary' ? currentPrimaryColor : currentSecondaryColor;
     

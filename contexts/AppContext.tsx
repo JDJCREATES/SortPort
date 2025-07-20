@@ -6,7 +6,8 @@ import { AlbumUtils } from '../utils/albumUtils';
 import { UserFlags, AppSettings, Album } from '../types';
 import { PhotoLoader } from '../utils/photoLoader';
 import { ThemeManager } from '../utils/theme';
-import  { supabase } from '../utils/supabase';
+import { supabase } from '../utils/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Define the state shape
 interface AppState {
@@ -123,7 +124,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         albumsError: null // Clear error on successful load
       };
     
-    case 'SET_ALBUMS_ERROR': // ADD THIS CASE
+    case 'SET_ALBUMS_ERROR':
       return { 
         ...state, 
         albumsError: action.payload,
@@ -181,7 +182,7 @@ interface AppContextActions {
   removeAlbum: (id: string) => Promise<void>;
   ensureAllPhotosAlbum: () => Promise<void>;
   
-  // Data management actions - ADD THESE
+  // Data management actions
   clearAllAppData: (skipStateReset?: boolean) => Promise<void>;
   resetAppState: () => void;
   deleteUserAccount: () => Promise<void>;
@@ -347,7 +348,7 @@ export function AppProvider({ children }: AppProviderProps) {
           payload: { isAuthenticated: false, userProfile: null },
         });
       }
-      console.log('✅ checkAuthStatus: Complete');
+      
     } catch (error: any) {
       console.error('❌ checkAuthStatus: Error:', error);
       // Don't throw the error, just set unauthenticated state
@@ -383,7 +384,7 @@ export function AppProvider({ children }: AppProviderProps) {
   const refreshUserProfile = async () => {
     if (!state.isAuthenticated) return;
     
-    console.log('👤 refreshUserProfile: Starting...');
+
     try {
       const profile = await SupabaseAuth.getProfile();
       dispatch({
@@ -516,10 +517,10 @@ export function AppProvider({ children }: AppProviderProps) {
         const selectedFolders = currentSettings.selectedFolders || [];
         
         if (selectedFolders.length === 0) {
-          console.log('📁 refreshAlbums: No folders selected, skipping permission check');
+    
           // Still ensure All Photos album exists (but empty)
           if (!refreshPromises.current.allPhotosAlbum) {
-            console.log('📁 refreshAlbums: Ensuring empty All Photos album exists...');
+      
             refreshPromises.current.allPhotosAlbum = AlbumUtils.ensureAllPhotosAlbumExists();
             await refreshPromises.current.allPhotosAlbum;
             refreshPromises.current.allPhotosAlbum = null;
@@ -529,32 +530,32 @@ export function AppProvider({ children }: AppProviderProps) {
           const permissionResult = await PhotoLoader.checkAndRequestPermissions();
           
           if (!permissionResult.granted) {
-            console.warn('⚠️ refreshAlbums: Photo permissions not granted:', permissionResult.message);
+      
             dispatch({ type: 'SET_ALBUMS_ERROR', payload: permissionResult.message });
             return;
           }
           
           // Only ensure All Photos album exists if we're not already doing it
           if (!refreshPromises.current.allPhotosAlbum) {
-            console.log('📁 refreshAlbums: Ensuring All Photos album exists...');
+
             refreshPromises.current.allPhotosAlbum = AlbumUtils.ensureAllPhotosAlbumExists();
             await refreshPromises.current.allPhotosAlbum;
             refreshPromises.current.allPhotosAlbum = null;
           }
         }
         
-        console.log('📁 refreshAlbums: Loading albums from database...');
+  
         let albums = await AlbumUtils.loadAlbums();
         
         if (currentSettings.nsfwFilter && !currentSettings.showModeratedContent) {
           albums = albums.filter(album => !album.isModeratedAlbum);
         }
         
-        console.log('📁 refreshAlbums: Loaded', albums.length, 'albums');
+        
         dispatch({ type: 'SET_ALBUMS', payload: albums });
-        console.log('✅ refreshAlbums: Complete');
+       
       } catch (error) {
-        console.error('❌ refreshAlbums: Error:', error);
+       
         dispatch({ type: 'SET_ALBUMS_ERROR', payload: error instanceof Error ? error.message : 'Failed to load albums' });
       } finally {
         dispatch({ type: 'SET_ALBUMS_LOADING', payload: false });
@@ -584,12 +585,12 @@ export function AppProvider({ children }: AppProviderProps) {
   const ensureAllPhotosAlbum = useCallback(async () => {
     // Prevent concurrent executions
     if (refreshPromises.current.allPhotosAlbum) {
-      console.log('📁 ensureAllPhotosAlbum: Already running, waiting for completion...');
+   
       return refreshPromises.current.allPhotosAlbum;
     }
 
     try {
-      console.log('📁 ensureAllPhotosAlbum: Starting...');
+    
       refreshPromises.current.allPhotosAlbum = AlbumUtils.ensureAllPhotosAlbumExists();
       await refreshPromises.current.allPhotosAlbum;
       
@@ -604,27 +605,18 @@ export function AppProvider({ children }: AppProviderProps) {
     }
   }, [refreshAlbums]);
 
-  const deleteUserAccount = async () => {
+  const deleteUserAccount = async (): Promise<void> => {
     if (!state.userProfile) {
       throw new Error('No user profile found');
     }
-
-    console.log('🗑️ Starting account deletion for user:', state.userProfile.id, state.userProfile.email);
-    
-    // Store user info before any operations
-    const userToDelete = { ...state.userProfile };
     
     try {
-      // Get current session for auth
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
       if (sessionError || !session) {
         throw new Error('No active session found');
       }
-
-      console.log('🗑️ Calling delete-user-account edge function...');
     
-      // Call the edge function (this will sign out the user and delete everything)
       const { data, error } = await supabase.functions.invoke('delete-user-account', {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -632,37 +624,26 @@ export function AppProvider({ children }: AppProviderProps) {
       });
 
       if (error) {
-        console.error('❌ Edge function error:', error);
         throw new Error(`Account deletion failed: ${error.message}`);
       }
 
       if (!data.success) {
-        console.error('❌ Edge function returned failure:', data);
         throw new Error(`Account deletion failed: ${data.error}`);
       }
 
-      console.log('✅ Edge function succeeded:', data);
-      console.log('📊 Deletion results:', data.results);
-
-      // Clear local data after successful server deletion
-      console.log('🗑️ Clearing local data...');
-      await MediaStorage.clearAllData();
+      await clearLocalData();
       await AlbumUtils.clearNsfwCache();
-      
-      // Reset app state
+    
       resetAppState();
-      
-      // Reset theme
+    
       const themeManager = ThemeManager.getInstance();
       themeManager.setTheme(false, undefined);
-      
-      // The user should already be signed out by the edge function
-      // But let's make sure our local state reflects this
+    
       dispatch({
         type: 'SET_AUTHENTICATED',
         payload: { isAuthenticated: false, userProfile: null },
       });
-      
+    
       dispatch({
         type: 'SET_USER_FLAGS',
         payload: {
@@ -670,73 +651,100 @@ export function AppProvider({ children }: AppProviderProps) {
           hasPurchasedCredits: false,
         },
       });
-      
-      console.log('✅ User account deletion completed successfully');
-    
     } catch (error) {
-      console.error('❌ Error during account deletion:', error);
+      console.error('Error during account deletion:', error);
       throw error;
     }
   };
 
-  const clearAllAppData = async (skipStateReset: boolean = false) => {
-    console.log('🧹 Clearing all app data from context...');
-    
+  const clearAllAppData = async (skipStateReset: boolean = false): Promise<void> => {
     try {
-      // 1. Clear all local storage
-      await MediaStorage.clearAllData();
-      
-      // 2. Clear NSFW cache
+      await clearLocalData();
       await AlbumUtils.clearNsfwCache();
-      
-      // 3. Clear user-specific data from Supabase if authenticated
+    
       if (state.isAuthenticated && state.userProfile) {
-        try {
-          const { error: nsfwError } = await supabase
-            .from('nsfw_results')
-            .delete()
-            .eq('user_id', state.userProfile.id);
-          
-          if (nsfwError) console.warn('Failed to clear NSFW results:', nsfwError);
-
-          const { error: albumsError } = await supabase
-            .from('user_albums')
-            .delete()
-            .eq('user_id', state.userProfile.id);
-          
-          if (albumsError) console.warn('Failed to clear user albums:', albumsError);
-
-          const { error: jobsError } = await supabase
-            .from('nsfw_bulk_jobs')
-            .delete()
-            .eq('user_id', state.userProfile.id);
-          
-          if (jobsError) console.warn('Failed to clear bulk jobs:', jobsError);
-        } catch (error) {
-          console.warn('Error clearing remote data:', error);
-        }
+        await clearUserDatabaseData(state.userProfile.id);
       }
-      
-      // 4. Reset app state only if not skipping
+    
       if (!skipStateReset) {
         resetAppState();
-        
-        // 5. Reset theme to default
         const themeManager = ThemeManager.getInstance();
-        themeManager.setTheme(false, undefined); // Reset to light theme, no custom colors
+        themeManager.setTheme(false, undefined);
       }
-      
-      console.log('✅ All app data cleared successfully');
     } catch (error) {
-      console.error('❌ Error clearing app data:', error);
+      console.error('Error clearing app data:', error);
+      throw error;
+    }
+  };
+
+  const clearUserDatabaseData = async (userId: string): Promise<void> => {
+    const tablesToClear = [
+      { table: 'albums', userColumn: 'user_id' },
+      { table: 'moderated_folders', userColumn: 'user_id' }, 
+      { table: 'moderated_images', userColumn: 'user_id' },
+      { table: 'nsfw_bulk_jobs', userColumn: 'user_id' },
+      { table: 'sort_sessions', userColumn: 'user_id' }
+    ];
+
+    for (const { table, userColumn } of tablesToClear) {
+      try {
+        const { error } = await supabase
+          .from(table)
+          .delete()
+          .eq(userColumn, userId);
+
+        if (error && error.code !== '42P01') {
+          console.error(`Failed to clear ${table}:`, error);
+        }
+      } catch (error) {
+        console.error(`Error clearing ${table}:`, error);
+      }
+    }
+
+    // Handle nsfw_bulk_results separately
+    try {
+      const { data: userJobs } = await supabase
+        .from('nsfw_bulk_jobs')
+        .select('id')
+        .eq('user_id', userId);
+
+      if (userJobs && userJobs.length > 0) {
+        const jobIds = userJobs.map(job => job.id);
+        
+        const { error } = await supabase
+          .from('nsfw_bulk_results')
+          .delete()
+          .in('job_id', jobIds);
+
+        if (error && error.code !== '42P01') {
+          console.error(`Failed to clear nsfw_bulk_results:`, error);
+        }
+      }
+    } catch (error) {
+      console.error(`Error clearing nsfw_bulk_results:`, error);
+    }
+  };
+
+  const clearLocalData = async (): Promise<void> => {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const snapSortKeys = keys.filter(key => 
+        key.startsWith('@snapsort_') || 
+        key.startsWith('@SnapSort_') ||
+        key.includes('snapsort') ||
+        key.includes('SnapSort')
+      );
+    
+      if (snapSortKeys.length > 0) {
+        await AsyncStorage.multiRemove(snapSortKeys);
+      }
+    } catch (error) {
+      console.error('Error clearing local data:', error);
       throw error;
     }
   };
 
   const resetAppState = () => {
-    console.log('🔄 Resetting app state to defaults...');
-    
-    // Reset to initial state but keep authentication status
     dispatch({
       type: 'SET_USER_FLAGS',
       payload: {
@@ -752,7 +760,8 @@ export function AppProvider({ children }: AppProviderProps) {
         autoSort: false,
         nsfwFilter: true,
         notifications: true,
-        selectedFolders: ['all_photos'],
+        customColors: undefined,
+        selectedFolders: [],
         lastAutoSortTimestamp: 0,
         showModeratedContent: false,
         showModeratedInMainAlbums: false,
@@ -764,13 +773,10 @@ export function AppProvider({ children }: AppProviderProps) {
       payload: []
     });
     
-    // Clear any error states
     dispatch({
       type: 'SET_ALBUMS_ERROR',
       payload: null
     });
-    
-    console.log('✅ App state reset to defaults');
   };
 
   const testDeleteOperations = async () => {
