@@ -9,6 +9,10 @@ import {
   DeleteObjectCommand
 } from "npm:@aws-sdk/client-s3@^3.840.0"
 
+/**
+ *  Cleans up Temp buckets in AWS S3 after processing is complete
+ */
+
 // Interfaces
 interface CleanupRequest {
   bucketName?: string // Clean specific bucket

@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Platform, Alert } from 'react-native';
 import { PhotoLoader } from '../utils/photoLoader';
 import { useApp } from '../contexts/AppContext';
 import { getCurrentTheme } from '../utils/theme';
 import { AlbumUtils } from '../utils/albumUtils';
+import { supabase } from '../utils/supabase';
 
 /**
  * Handles the selection of photo sources.
@@ -19,6 +21,7 @@ interface SourceFolder {
   count: number;
   icon: React.ReactNode;
   description: string;
+  isScanned?: boolean;
 }
 
 interface SourceFolderPickerProps {
@@ -78,36 +81,55 @@ function SourceFolderPickerComponent({
         return;
       }
       
-      const folderData: SourceFolder[] = availableFolders.map((folder) => {
-        let icon = <Ionicons name="folder" size={20} color={theme.colors.primary} />;
-        let description = `${folder.count} photos`;
+      const folderData: SourceFolder[] = await Promise.all(
+        availableFolders.map(async (folder) => {
+          let icon = <Ionicons name="folder" size={20} color={theme.colors.primary} />;
+          let description = `${folder.count} photos`;
 
-        // Assign specific icons based on folder name
-        if (folder.name.toLowerCase().includes('camera')) {
-          icon = <Ionicons name="camera" size={20} color={theme.colors.secondary} />;
-          description = 'Photos taken with camera';
-        } else if (folder.name.toLowerCase().includes('download')) {
-          icon = <Ionicons name="download" size={20} color={theme.colors.warning} />;
-          description = 'Downloaded images';
-        } else if (folder.name.toLowerCase().includes('screenshot')) {
-          icon = <Ionicons name="phone-portrait" size={20} color={theme.colors.success} />;
-          description = 'Screen captures';
-        } else if (folder.name.toLowerCase().includes('whatsapp')) {
-          icon = <MaterialIcons name="chat" size={20} color="#25D366" />;
-          description = 'WhatsApp images';
-        } else if (folder.name.toLowerCase().includes('instagram')) {
-          icon = <MaterialIcons name="photo-camera" size={20} color="#E4405F" />;
-          description = 'Instagram images';
-        }
+          // Check if folder has been scanned
+          let isScanned = false;
+          if (userProfile) {
+            try {
+              const { data } = await supabase
+                .from('moderated_folders')
+                .select('folder_id')
+                .eq('user_id', userProfile.id)
+                .eq('folder_id', folder.id)
+                .single();
+              isScanned = !!data;
+            } catch (error) {
+              // Folder not scanned, isScanned remains false
+            }
+          }
 
-        return {
-          id: folder.id,
-          name: folder.name,
-          count: folder.count,
-          icon,
-          description,
-        };
-      });
+          // Assign specific icons based on folder name
+          if (folder.name.toLowerCase().includes('camera')) {
+            icon = <Ionicons name="camera" size={20} color={theme.colors.secondary} />;
+            description = 'Photos taken with camera';
+          } else if (folder.name.toLowerCase().includes('download')) {
+            icon = <Ionicons name="download" size={20} color={theme.colors.warning} />;
+            description = 'Downloaded images';
+          } else if (folder.name.toLowerCase().includes('screenshot')) {
+            icon = <Ionicons name="phone-portrait" size={20} color={theme.colors.success} />;
+            description = 'Screen captures';
+          } else if (folder.name.toLowerCase().includes('whatsapp')) {
+            icon = <MaterialIcons name="chat" size={20} color="#25D366" />;
+            description = 'WhatsApp images';
+          } else if (folder.name.toLowerCase().includes('instagram')) {
+            icon = <MaterialIcons name="photo-camera" size={20} color="#E4405F" />;
+            description = 'Instagram images';
+          }
+
+          return {
+            id: folder.id,
+            name: folder.name,
+            count: folder.count,
+            icon,
+            description,
+            isScanned, // Add this property
+          };
+        })
+      );
 
       // Sort folders by count (descending) for better UX
       folderData.sort((a, b) => b.count - a.count);
@@ -467,6 +489,15 @@ function SourceFolderPickerComponent({
                         {folder.count > 999 ? '999+' : folder.count}
                       </Text>
                     </View>
+                    {folder.isScanned && (
+                      <View style={styles.scannedIndicator}>
+                        <MaterialCommunityIcons 
+                          name="sticker-check" 
+                          size={20} 
+                          color={theme.colors.primary} 
+                        />
+                      </View>
+                    )}
                     {tempSelected.includes(folder.id) && (
                       <View style={styles.checkmark}>
                         <Ionicons name="checkmark" size={20} color="white" />
@@ -858,5 +889,9 @@ const createStyles = (theme: any) => StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
     opacity: 0.8,
+  },
+  scannedIndicator: {
+    marginRight: theme.spacing.xs,
+    padding: 2,
   },
 });
