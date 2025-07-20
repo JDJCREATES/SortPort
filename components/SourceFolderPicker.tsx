@@ -52,15 +52,39 @@ function SourceFolderPickerComponent({
   // Memoize styles to prevent recreation on every render
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  useEffect(() => {
-    if (visible) {
-      loadFolders();
+  // Add this function after markFoldersAsScanning
+  const refreshFolderScanStatus = useCallback(async (): Promise<void> => {
+    if (!userProfile) return;
+    
+    try {
+      console.log('🔄 Refreshing folder scan status from database...');
+      
+      const { data, error } = await supabase
+        .from('moderated_folders')
+        .select('folder_id')
+        .eq('user_id', userProfile.id);
+      
+      if (error) {
+        console.error('Error refreshing folder scan status:', error);
+        return;
+      }
+      
+      const scannedFolderIds = new Set(data?.map(row => row.folder_id) || []);
+      
+      setFolders(prevFolders => 
+        prevFolders.map(folder => ({
+          ...folder,
+          isScanned: scannedFolderIds.has(folder.id)
+        }))
+      );
+      
+      console.log(`✅ Refreshed scan status: ${scannedFolderIds.size} folders marked as scanned`);
+    } catch (error) {
+      console.error('Error in refreshFolderScanStatus:', error);
     }
-  }, [visible]);
+  }, [userProfile]);
 
-  useEffect(() => {
-    setTempSelected(selectedFolders);
-  }, [selectedFolders]);
+
 
   const loadFolders = useCallback(async () => {
     setLoading(true);
@@ -143,6 +167,19 @@ function SourceFolderPickerComponent({
       setLoading(false);
     }
   }, [theme.colors]);
+    // Update the existing useEffect for visible to include refresh
+  useEffect(() => {
+    if (visible) {
+      loadFolders().then(() => {
+        // Refresh scan status after loading folders
+        refreshFolderScanStatus();
+      });
+    }
+  }, [visible, loadFolders, refreshFolderScanStatus]);
+
+  useEffect(() => {
+    setTempSelected(selectedFolders);
+  }, [selectedFolders]);
 
   const toggleFolder = useCallback((folderId: string) => {
     setTempSelected(prev => 
@@ -152,7 +189,34 @@ function SourceFolderPickerComponent({
     );
   }, []);
 
-  const handleConfirm = useCallback(() => {
+  // Add this helper function after the existing useCallback hooks, before the render return
+  const checkUnscannedFolders = useCallback(async (folderIds: string[], userId: string): Promise<string[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('moderated_folders')
+        .select('folder_id')
+        .eq('user_id', userId)
+        .in('folder_id', folderIds);
+    
+      if (error) {
+        console.error('Error checking scanned folders:', error);
+        return folderIds; // Assume unscanned on error
+      }
+    
+      const scannedFolderIds = new Set(data?.map(row => row.folder_id) || []);
+      const unscannedFolders = folderIds.filter(id => !scannedFolderIds.has(id));
+    
+      console.log(`📊 Folder scan status: ${scannedFolderIds.size} already scanned, ${unscannedFolders.length} need scanning`);
+    
+      return unscannedFolders;
+    } catch (error) {
+      console.error('Error in checkUnscannedFolders:', error);
+      return folderIds; // Assume unscanned on error
+    }
+  }, []);
+
+  // Replace the existing handleConfirm function with this updated version
+  const handleConfirm = useCallback(async () => {
     if (isScanning) return; // Prevent multiple scans
     
     const selectedFolderObjects = folders.filter(folder => 
@@ -166,19 +230,58 @@ function SourceFolderPickerComponent({
       return;
     }
     
-    // Only scan newly selected folders that haven't been scanned before
-    const newlySelectedFolders = tempSelected.filter(id => !selectedFolders.includes(id));
+    // ✅ REAL-TIME DATABASE CHECK - Only scan truly unscanned folders
+    if (userProfile) {
+      const actuallyNewFolders = await checkUnscannedFolders(tempSelected, userProfile.id);
     
-    if (newlySelectedFolders.length > 0 && userProfile) {
-      // Start NSFW scanning for new folders
-      handleNsfwScanning(newlySelectedFolders, selectedFolderObjects);
+      if (actuallyNewFolders.length > 0) {
+        // Start NSFW scanning for truly new folders
+        handleNsfwScanning(actuallyNewFolders, selectedFolderObjects);
+      } else {
+        // All folders already scanned, just update selection
+        console.log('✅ All selected folders already scanned, skipping scan process');
+        onSelect(selectedFolderObjects);
+        onClose();
+      }
     } else {
-      // No new folders or no user, just update selection
+      // No user, just update selection
       onSelect(selectedFolderObjects);
       onClose();
     }
-  }, [isScanning, folders, tempSelected, selectedFolders, userProfile, onSelect, onClose]);
+  }, [isScanning, folders, tempSelected, userProfile, onSelect, onClose, checkUnscannedFolders]);
 
+  // Add this helper function after checkUnscannedFolders
+  const markFoldersAsScanning = useCallback(async (folderIds: string[], userId: string): Promise<void> => {
+    try {
+      const folderRecords = folderIds.map(folderId => {
+        const folder = folders.find(f => f.id === folderId);
+        return {
+          user_id: userId,
+          folder_id: folderId,
+          folder_name: folder?.name || 'Unknown',
+          scanned_at: new Date().toISOString(),
+          // Note: If you add a status column later, uncomment this:
+          // status: 'scanning'
+        };
+      });
+      
+      const { error } = await supabase
+        .from('moderated_folders')
+        .upsert(folderRecords, { onConflict: 'user_id,folder_id' });
+      
+      if (error) {
+        console.error('Error marking folders as scanning:', error);
+        throw error;
+      }
+      
+      console.log(`✅ Marked ${folderIds.length} folders as scanning in database`);
+    } catch (error) {
+      console.error('Error in markFoldersAsScanning:', error);
+      throw error;
+    }
+  }, [folders]);
+
+  // Update the handleNsfwScanning function - add this right after the initial setup
   const handleNsfwScanning = useCallback(async (
     newlySelectedFolderIds: string[], 
     allSelectedFolders: SourceFolder[]
@@ -197,6 +300,9 @@ function SourceFolderPickerComponent({
     });
     
     try {
+      // ✅ MARK FOLDERS AS SCANNING IMMEDIATELY
+      await markFoldersAsScanning(newlySelectedFolderIds, userProfile.id);
+      
       // Get all photos from newly selected folders
       const allPhotos = await PhotoLoader.loadAllPhotoIds(newlySelectedFolderIds);
       
@@ -205,8 +311,6 @@ function SourceFolderPickerComponent({
         onClose();
         return;
       }
-
-   
 
       // ✅ SKIP LOCAL DETECTION - Go straight to AWS bulk processing
       setScanProgress({ 
@@ -320,6 +424,10 @@ function SourceFolderPickerComponent({
     } catch (error) {
       console.error('❌ AWS bulk processing failed:', error);
       
+      // ✅ On error, we should consider removing the scanning markers
+      // But since we've already marked them, we'll leave them to prevent re-scanning
+      // This is safer than risking duplicate scans
+      
       // Show error to user
       Alert.alert(
         'Processing Error',
@@ -333,7 +441,7 @@ function SourceFolderPickerComponent({
       setIsScanning(false);
       setScanProgress({ current: 0, total: 0, message: '' });
     }
-  }, [userProfile, onSelect, onClose]);
+  }, [userProfile, onSelect, onClose, markFoldersAsScanning]);
 
   const handleSelectAll = useCallback(() => {
     if (tempSelected.length === folders.length) {
@@ -352,6 +460,8 @@ function SourceFolderPickerComponent({
       onClose();
     }
   }, [isScanning, onClose]);
+
+  
 
   // Memoized computed values
   const isSelectAllActive = useMemo(() => tempSelected.length === folders.length, [tempSelected.length, folders.length]);

@@ -7,7 +7,7 @@ import { useApp } from '../../contexts/AppContext';
 
 import { ResponsiveAlbumGrid } from '../../components/ResponsiveAlbumGrid';
 import { PictureHackBar } from '../../components/PictureHackBar';
-import { InfoIcon } from '../../components/InfoIcon';
+import { InfoIcon } from '../../components/common/InfoIcon';
 import { AlbumViewModeSelector } from '../../components/AlbumViewModeSelector';
 import { AutoSortManager } from '../../utils/autoSortManager';
 import { getCurrentTheme } from '../../utils/theme';

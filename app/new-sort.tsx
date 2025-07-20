@@ -13,6 +13,10 @@ import { useApp } from '../contexts/AppContext';
 import { ImageMeta, AlbumOutput, SortSession } from '../types';
 import { getCurrentTheme } from '../utils/theme';
 
+
+/**
+ *  Main Sorting Page for the user to ineract with different AI sorting features
+ */
 export default function NewSortScreen() {
   const { userFlags, deductCredits } = useApp();
   const params = useLocalSearchParams();
