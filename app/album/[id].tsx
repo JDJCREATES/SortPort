@@ -9,12 +9,12 @@ import {
   TouchableOpacity, 
   Alert, 
   ActivityIndicator,
-  FlatList,
   InteractionManager,
   LayoutAnimation,
   Platform,
   Dimensions
 } from 'react-native';
+import { LegendList, LegendListRef, LegendListRenderItemProps } from "@legendapp/list";
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import Animated, { 
@@ -35,7 +35,7 @@ import { getCurrentTheme } from '../../utils/theme';
 import { useApp } from '../../contexts/AppContext';
 
 const { width: screenWidth } = Dimensions.get('window');
-const PHOTOS_PER_BATCH = 100; // Increased batch size for better initial loading
+const PHOTOS_PER_BATCH = 50; // Optimized batch size for LegendList performance
 const PRELOAD_THRESHOLD = 0.7; // Start loading when 80% scrolled
 const PRELOAD_LOOKAHEAD = 25; // Number of images to preload ahead
 
@@ -90,6 +90,18 @@ const PhotoItem = memo<{
 
 PhotoItem.displayName = 'PhotoItem';
 
+// Custom comparison for PhotoItem to optimize recycling
+const arePhotosEqual = (prevProps: any, nextProps: any) => {
+  return (
+    prevProps.item.id === nextProps.item.id &&
+    prevProps.itemSize === nextProps.itemSize &&
+    prevProps.onPress === nextProps.onPress
+  );
+};
+
+// Re-export PhotoItem with optimized comparison for recycling
+const OptimizedPhotoItem = memo(PhotoItem, arePhotosEqual);
+
 export default function AlbumScreen() {
   const { id: albumId } = useLocalSearchParams();
   const { userFlags } = useApp();
@@ -129,7 +141,7 @@ export default function AlbumScreen() {
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flatListRef = useRef<FlatList>(null);
+  const listRef = useRef<LegendListRef>(null);
   const isMountedRef = useRef<boolean>(true);
 
   // Memoize item size calculation
@@ -399,9 +411,9 @@ export default function AlbumScreen() {
     }));
   }, []);
 
-  // Optimized render item function with memoization
-  const renderPhotoItem = useCallback(({ item, index }: { item: ImageMeta; index: number }) => (
-    <PhotoItem
+  // Optimized render item function with memoization for LegendList
+  const renderPhotoItem = useCallback(({ item, index }: LegendListRenderItemProps<ImageMeta>) => (
+    <OptimizedPhotoItem
       item={item}
       index={index}
       onPress={handleImagePress}
@@ -554,8 +566,8 @@ export default function AlbumScreen() {
       </Animated.View>
 
       {state.photos.length > 0 ? (
-        <FlatList
-          ref={flatListRef}
+        <LegendList
+          ref={listRef}
           data={state.photos}
           renderItem={renderPhotoItem}
           keyExtractor={keyExtractor}
@@ -566,15 +578,9 @@ export default function AlbumScreen() {
           ListHeaderComponent={renderHeader}
           ListFooterComponent={renderFooter}
           showsVerticalScrollIndicator={false}
-          // Performance optimizations
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={12}
-          windowSize={6}
-          initialNumToRender={12}
-          updateCellsBatchingPeriod={50}
-          disableVirtualization={false}
-          legacyImplementation={false}
-          getItemLayout={getItemLayout}
+          // LegendList performance optimizations
+          recycleItems={true}
+          maintainVisibleContentPosition={true}
           // Prevent unnecessary re-renders
           extraData={`${state.photos.length}-${itemSize}`}
         />

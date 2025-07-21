@@ -11,6 +11,7 @@ interface UseImagePreloaderOptions {
 
 /**
  * Hook to automatically preload upcoming images based on current scroll position
+ * 
  */
 export function useImagePreloader({
   images,
