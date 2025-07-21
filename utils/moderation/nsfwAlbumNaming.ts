@@ -229,7 +229,7 @@ export class NsfwAlbumNaming {
     // Group images by their primary moderation category
     for (const imageData of imagesModerationData) {
       const albumInfo = this.generateAlbumName(imageData.moderationLabels);
-      const categoryId = albumInfo.category.id;
+      const categoryId = albumInfo.category.id; // ✅ Use the category.id, not a generated one
 
       if (!albumGroups[categoryId]) {
         albumGroups[categoryId] = {
@@ -247,16 +247,18 @@ export class NsfwAlbumNaming {
     return Object.entries(albumGroups).map(([categoryId, group]) => {
       const averageConfidence = group.confidences.reduce((sum, conf) => sum + conf, 0) / group.confidences.length;
       
+      console.log(`🎯 Generated album category: "${group.category.displayName}" (ID: ${categoryId}) with ${group.imageIds.length} images`);
+      
       return {
-        categoryId,
-        name: group.category.displayName,
+        categoryId, // ✅ This will be used in tags for future matching
+        name: group.category.displayName, // ✅ Use displayName directly
         description: `${group.category.description} (${group.imageIds.length} images)`,
         icon: group.category.icon,
         imageIds: group.imageIds,
         averageConfidence,
         category: group.category,
       };
-    }).sort((a, b) => b.category.priority - a.category.priority); // Sort by priority
+    }).sort((a, b) => b.category.priority - a.category.priority);
   }
 
   /**
@@ -276,21 +278,8 @@ export class NsfwAlbumNaming {
   /**
    * Generate a safe, user-friendly album name for display
    */
-  static generateSafeDisplayName(category: ModerationCategory, imageCount: number): string {
-    const countText = imageCount === 1 ? '1 image' : `${imageCount} images`;
-    
-    // Use more user-friendly names for sensitive categories
-    const safeNames: { [key: string]: string } = {
-      'explicit_nudity': 'Adult Content',
-      'partial_nudity': 'Revealing Images',
-      'suggestive_content': 'Suggestive Images',
-      'graphic_violence': 'Violent Content',
-      'disturbing_content': 'Disturbing Images',
-      'hate_symbols': 'Inappropriate Symbols',
-      'rude_gestures': 'Inappropriate Gestures',
-    };
-
-    const displayName = safeNames[category.id] || category.displayName;
-    return `${displayName} (${countText})`;
+  static generateSafeDisplayName(category: any, imageCount: number): string {
+    // ✅ Just return the display name without count
+    return category.displayName;
   }
 }

@@ -7,6 +7,7 @@ import { generateUUID } from '../helpers/uuid';
  * -- May be handled or called throuhg langchain soon!
  */
 
+
 interface ModerationResult {
   confidence_score: number;
   moderation_labels: any[];
@@ -23,6 +24,7 @@ export class ModeratedAlbumManager {
   /**
    * Create categorized moderated albums based on moderation labels
    */
+  
   static async createCategorizedModeratedAlbums(
     nsfwImages: any[], 
     moderationResults: { [imageId: string]: ModerationResult }
@@ -75,6 +77,7 @@ export class ModeratedAlbumManager {
     }
   }
 
+  
   /**
    * Create or update a specific categorized moderated album
    */
@@ -92,16 +95,18 @@ export class ModeratedAlbumManager {
 
       if (categoryImages.length === 0) return;
 
+        // ✅ FIXED: Use base name without count
+      const albumName = albumCategory.category.displayName; // "Explicit Content", "Partial Nudity"
       // Generate thumbnail from first image in category
       const thumbnail = categoryImages[0]?.uri || null;
 
-      // Check if this category album already exists
+      // ✅ FIXED: Search by exact display name since there's no count
       const { data: existingAlbums, error: loadError } = await supabase
         .from('albums')
         .select('*')
         .eq('user_id', userId)
         .eq('is_moderated_album', true)
-        .ilike('name', `%${albumCategory.name}%`)
+        .eq('name', albumName) // ✅ Exact name match since no count
         .order('created_at', { ascending: false })
         .limit(1);
 
@@ -110,14 +115,28 @@ export class ModeratedAlbumManager {
         return;
       }
 
-      const safeDisplayName = NsfwAlbumNaming.generateSafeDisplayName(
-        albumCategory.category, 
-        categoryImages.length
-      );
+      // ✅ Fallback: search by category ID in tags
+      let finalExistingAlbums: any[] = existingAlbums || [];
+      if (finalExistingAlbums.length === 0) {
+        const { data: fallbackAlbums, error: fallbackError } = await supabase
+          .from('albums')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('is_moderated_album', true)
+          .contains('tags', [albumCategory.categoryId])
+          .order('created_at', { ascending: false })
+          .limit(1);
+      
+        if (!fallbackError && fallbackAlbums) {
+          finalExistingAlbums = fallbackAlbums;
+        }
+      }
 
-      if (existingAlbums && existingAlbums.length > 0) {
-        // Update existing categorized album
-        const existingAlbum = existingAlbums[0];
+    
+
+      if (finalExistingAlbums.length > 0) {
+        // Update existing album
+        const existingAlbum = finalExistingAlbums[0];
         const existingImageIds = existingAlbum.image_ids || [];
         const mergedImageIds = [...new Set([...existingImageIds, ...albumCategory.imageIds])];
 
@@ -125,14 +144,14 @@ export class ModeratedAlbumManager {
           const { error: updateError } = await supabase
             .from('albums')
             .update({
-              name: safeDisplayName,
+              name: albumName, // ✅ Keep same base name
               image_ids: mergedImageIds,
               count: mergedImageIds.length,
               thumbnail: thumbnail || existingAlbum.thumbnail,
               tags: [
                 'nsfw', 
                 'moderated', 
-                albumCategory.categoryId,
+                albumCategory.categoryId, // ✅ Ensure category ID is in tags
                 ...albumCategory.category.keywords.map((k: string) => k.toLowerCase().replace(/\s+/g, '_'))
               ],
               updated_at: new Date().toISOString(),
@@ -142,20 +161,20 @@ export class ModeratedAlbumManager {
           if (updateError) {
             console.error('❌ Error updating categorized album:', updateError);
           } else {
-            console.log(`✅ Updated categorized album: ${safeDisplayName}`);
+            console.log(`✅ Updated categorized album: ${albumName} (${mergedImageIds.length} images)`);
           }
         }
       } else {
-        // Create new categorized album
+        // Create new album
         const newAlbum = {
           id: generateUUID(),
           user_id: userId,
-          name: safeDisplayName,
+          name: albumName, // ✅ Base name without count
           image_ids: albumCategory.imageIds,
           tags: [
             'nsfw', 
             'moderated', 
-            albumCategory.categoryId,
+            albumCategory.categoryId, // ✅ Include category ID for future matching
             ...albumCategory.category.keywords.map((k: string) => k.toLowerCase().replace(/\s+/g, '_'))
           ],
           thumbnail: thumbnail,
@@ -168,7 +187,7 @@ export class ModeratedAlbumManager {
         };
 
         console.log(`🔒 Creating moderated album in database:`, {
-          name: newAlbum.name,
+          name: albumName,
           count: newAlbum.count,
           is_moderated_album: newAlbum.is_moderated_album,
           tags: newAlbum.tags
@@ -181,7 +200,7 @@ export class ModeratedAlbumManager {
         if (insertError) {
           console.error('❌ Error creating categorized album:', insertError);
         } else {
-          console.log(`✅ Successfully created moderated album: ${safeDisplayName}`);
+          console.log(`✅ Successfully created moderated album: ${albumName}`);
         }
       }
 
@@ -277,5 +296,27 @@ export class ModeratedAlbumManager {
     } catch (error) {
       console.error('❌ updateModeratedFolders: Error:', error);
     }
+  }
+
+  // ✅ FIXED: Deduplicate tags properly
+  private static generateEnhancedTags(category: AlbumCategory, existingTags?: string[]): string[] {
+    const baseTags = ['nsfw', 'moderated', category.categoryId];
+    const keywordTags = category.category.keywords.map((k: string) => 
+      k.toLowerCase().replace(/\s+/g, '_')
+    );
+    
+    // Preserve existing custom tags that aren't in our base set
+    const preservedTags = existingTags?.filter(tag => 
+      !baseTags.includes(tag) && 
+      !keywordTags.includes(tag) &&
+      !tag.startsWith('category_')
+    ) || [];
+    
+    // ✅ FIXED: Use Set to remove duplicates
+    const allTags = [...baseTags, ...keywordTags, ...preservedTags];
+    const uniqueTags = Array.from(new Set(allTags));
+    
+    console.log(`🏷️ Generated unique tags for ${category.name}:`, uniqueTags);
+    return uniqueTags;
   }
 }

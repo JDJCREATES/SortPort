@@ -521,7 +521,7 @@ serve(async (req: Request): Promise<Response> => {
         JobName: rekognitionJobName,
         OperationsConfig: {
           DetectModerationLabels: {
-            MinConfidence: settings?.confidence_threshold || 80,
+            MinConfidence: settings?.confidence_threshold || 60,
           }
         },
         Input: {
@@ -542,7 +542,7 @@ serve(async (req: Request): Promise<Response> => {
         Bucket: bucketName,
         ManifestFile: manifestKey,
         OutputPrefix: 'output/',
-        MinConfidence: settings?.confidence_threshold || 80,
+        MinConfidence: settings?.confidence_threshold || 60,
         ServiceRole: serviceRole || 'DEFAULT_CREDENTIALS'
       });
 
