@@ -2,6 +2,11 @@ import { supabase } from '../supabase';
 import { NsfwAlbumNaming } from '../moderation/nsfwAlbumNaming';
 import { generateUUID } from '../helpers/uuid';
 
+/**
+ *  Called Through AlbumUtils after bulk mdoeration is completed
+ * -- May be handled or called throuhg langchain soon!
+ */
+
 interface ModerationResult {
   confidence_score: number;
   moderation_labels: any[];

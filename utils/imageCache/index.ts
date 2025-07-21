@@ -1,1 +1,1 @@
-export { ImageCacheManager } from '../imageCache';
+export { ImageCacheManager } from '../imageCache.native';

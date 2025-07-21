@@ -215,18 +215,17 @@ export function AppProvider({ children }: AppProviderProps) {
   // Initialize app data - prevent multiple concurrent calls
   useEffect(() => {
     if (!initializationPromise.current) {
-      console.log('🚀 Starting app initialization...');
       initializationPromise.current = initializeApp();
     }
   }, []);
 
   // Set up auth state listener with debouncing
   useEffect(() => {
-    console.log('🔐 Setting up auth state listener...');
+   
     let timeoutId: NodeJS.Timeout;
     
     const { data: { subscription } } = SupabaseAuth.onAuthStateChange(async (event, session) => {
-      console.log('🔐 Auth state changed:', event, !!session?.user, session?.user?.id || 'no-user');
+    
       
       // Debounce rapid auth state changes
       clearTimeout(timeoutId);
@@ -246,23 +245,22 @@ export function AppProvider({ children }: AppProviderProps) {
       // User signed in - prevent concurrent profile loading
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         try {
-          console.log('👤 Loading user profile after sign in...');
+      
           const profile = await SupabaseAuth.getProfile();
-          console.log('👤 Profile loaded:', !!profile);
+      
           dispatch({
             type: 'SET_AUTHENTICATED',
             payload: { isAuthenticated: true, userProfile: profile },
           });
           
-          // Only refresh data once per auth change
-          console.log('🔄 Refreshing user data after sign in...');
+        
           await Promise.all([
             refreshUserFlags(),
             refreshAlbums()
           ]);
-          console.log('✅ User data refresh complete');
+         
         } catch (error) {
-          console.error('Error loading user profile after sign in:', error);
+         
           dispatch({
             type: 'SET_AUTHENTICATED',
             payload: { isAuthenticated: true, userProfile: null },
@@ -271,7 +269,6 @@ export function AppProvider({ children }: AppProviderProps) {
       }
     } else {
       // User signed out
-      console.log('👤 User signed out, clearing state...');
       dispatch({
         type: 'SET_AUTHENTICATED',
         payload: { isAuthenticated: false, userProfile: null },
@@ -288,7 +285,6 @@ export function AppProvider({ children }: AppProviderProps) {
   };
 
   const initializeApp = async () => {
-    console.log('🚀 initializeApp: Starting...');
     dispatch({ type: 'SET_INITIALIZING', payload: true });
 
     try {
@@ -306,23 +302,20 @@ export function AppProvider({ children }: AppProviderProps) {
         customColors: settings.customColors
       });
       
-      // Check authentication status
-      console.log('🔐 initializeApp: Checking auth status...');
+    
       await checkAuthStatus();
       
       // Load user flags and albums in parallel, but only once
-      console.log('🏷️ initializeApp: Loading user flags...');
-      console.log('📁 initializeApp: Loading albums...');
       await Promise.all([
         refreshUserFlags(),
         refreshAlbums()
       ]);
       
-      console.log('✅ initializeApp: Complete');
+ 
     } catch (error) {
-      console.error('❌ initializeApp: Error during initialization:', error);
+      
     } finally {
-      console.log('🚀 initializeApp: Setting initialization complete');
+    
       dispatch({ type: 'SET_INITIALIZING', payload: false });
     }
   };
@@ -330,19 +323,19 @@ export function AppProvider({ children }: AppProviderProps) {
   const checkAuthStatus = async () => {
     dispatch({ type: 'SET_AUTH_LOADING', payload: true });
     
-    console.log('🔐 checkAuthStatus: Starting...');
+
     try {
       const user = await SupabaseAuth.getCurrentUser();
       if (user) {
-        console.log('👤 checkAuthStatus: User found, loading profile...');
+       
         const profile = await SupabaseAuth.getProfile();
-        console.log('👤 checkAuthStatus: Profile loaded:', !!profile);
+       
         dispatch({
           type: 'SET_AUTHENTICATED',
           payload: { isAuthenticated: true, userProfile: profile },
         });
       } else {
-        console.log('👤 checkAuthStatus: No user found');
+      
         dispatch({
           type: 'SET_AUTHENTICATED',
           payload: { isAuthenticated: false, userProfile: null },
@@ -350,7 +343,7 @@ export function AppProvider({ children }: AppProviderProps) {
       }
       
     } catch (error: any) {
-      console.error('❌ checkAuthStatus: Error:', error);
+     
       // Don't throw the error, just set unauthenticated state
       dispatch({
         type: 'SET_AUTHENTICATED',
@@ -391,7 +384,7 @@ export function AppProvider({ children }: AppProviderProps) {
         type: 'SET_AUTHENTICATED',
         payload: { isAuthenticated: true, userProfile: profile },
       });
-      console.log('✅ refreshUserProfile: Complete');
+
     } catch (error) {
       console.error('❌ refreshUserProfile: Error:', error);
     }
@@ -403,7 +396,7 @@ export function AppProvider({ children }: AppProviderProps) {
       return refreshPromises.current.userFlags;
     }
 
-    console.log('🏷️ refreshUserFlags: Starting...');
+  
     dispatch({ type: 'SET_USER_FLAGS_LOADING', payload: true });
     
     const promise = (async () => {
@@ -476,9 +469,8 @@ export function AppProvider({ children }: AppProviderProps) {
         );
       }
       
-      console.log(`✅ Setting ${key} updated successfully`);
+
     } catch (error) {
-      console.error(`❌ Error updating setting ${key}:`, error);
       throw error;
     }
   };
@@ -490,7 +482,7 @@ export function AppProvider({ children }: AppProviderProps) {
     try {
       const settings = await MediaStorage.loadSettings();
       dispatch({ type: 'SET_SETTINGS', payload: settings });
-      console.log('✅ refreshSettings: Complete');
+ 
     } catch (error) {
       console.error('❌ refreshSettings: Error:', error);
       dispatch({ type: 'SET_SETTINGS_LOADING', payload: false });
@@ -503,11 +495,11 @@ export function AppProvider({ children }: AppProviderProps) {
     
     // Prevent concurrent executions
     if (refreshPromises.current.albums) {
-      console.log('📁 refreshAlbums: Already running, waiting for completion...');
+  
       return refreshPromises.current.albums;
     }
 
-    console.log('📁 refreshAlbums: Starting...');
+   
     dispatch({ type: 'SET_ALBUMS_LOADING', payload: true });
     
     const promise = (async () => {
@@ -652,7 +644,6 @@ export function AppProvider({ children }: AppProviderProps) {
         },
       });
     } catch (error) {
-      console.error('Error during account deletion:', error);
       throw error;
     }
   };
