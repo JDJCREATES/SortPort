@@ -61,8 +61,9 @@ function SourceFolderPickerComponent({
       
       const { data, error } = await supabase
         .from('moderated_folders')
-        .select('folder_id')
-        .eq('user_id', userProfile.id);
+        .select('folder_id, status')
+        .eq('user_id', userProfile.id)
+        .eq('status', 'scanned'); // ✅ Use 'scanned' instead of 'completed'
       
       if (error) {
         console.error('Error refreshing folder scan status:', error);
@@ -86,6 +87,7 @@ function SourceFolderPickerComponent({
 
 
 
+  // Fix loadFolders to properly check for 'scanned' status
   const loadFolders = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -105,55 +107,56 @@ function SourceFolderPickerComponent({
         return;
       }
       
-      const folderData: SourceFolder[] = await Promise.all(
-        availableFolders.map(async (folder) => {
-          let icon = <Ionicons name="folder" size={20} color={theme.colors.primary} />;
-          let description = `${folder.count} photos`;
+      // Get all scanned folders for this user in one query
+      let scannedFolderIds = new Set<string>();
+      if (userProfile) {
+        try {
+          const { data } = await supabase
+            .from('moderated_folders')
+            .select('folder_id')
+            .eq('user_id', userProfile.id)
+            .eq('status', 'scanned');
+        
+          scannedFolderIds = new Set(data?.map(row => row.folder_id) || []);
+        } catch (error) {
+          // Ignore error, assume no folders scanned
+        }
+      }
+      
+      const folderData: SourceFolder[] = availableFolders.map((folder) => {
+        let icon = <Ionicons name="folder" size={20} color={theme.colors.primary} />;
+        let description = `${folder.count} photos`;
 
-          // Check if folder has been scanned
-          let isScanned = false;
-          if (userProfile) {
-            try {
-              const { data } = await supabase
-                .from('moderated_folders')
-                .select('folder_id')
-                .eq('user_id', userProfile.id)
-                .eq('folder_id', folder.id)
-                .single();
-              isScanned = !!data;
-            } catch (error) {
-              // Folder not scanned, isScanned remains false
-            }
-          }
+        // Check if this folder is scanned
+        const isScanned = scannedFolderIds.has(folder.id);
 
-          // Assign specific icons based on folder name
-          if (folder.name.toLowerCase().includes('camera')) {
-            icon = <Ionicons name="camera" size={20} color={theme.colors.secondary} />;
-            description = 'Photos taken with camera';
-          } else if (folder.name.toLowerCase().includes('download')) {
-            icon = <Ionicons name="download" size={20} color={theme.colors.warning} />;
-            description = 'Downloaded images';
-          } else if (folder.name.toLowerCase().includes('screenshot')) {
-            icon = <Ionicons name="phone-portrait" size={20} color={theme.colors.success} />;
-            description = 'Screen captures';
-          } else if (folder.name.toLowerCase().includes('whatsapp')) {
-            icon = <MaterialIcons name="chat" size={20} color="#25D366" />;
-            description = 'WhatsApp images';
-          } else if (folder.name.toLowerCase().includes('instagram')) {
-            icon = <MaterialIcons name="photo-camera" size={20} color="#E4405F" />;
-            description = 'Instagram images';
-          }
+        // Assign specific icons based on folder name
+        if (folder.name.toLowerCase().includes('camera')) {
+          icon = <Ionicons name="camera" size={20} color={theme.colors.secondary} />;
+          description = 'Photos taken with camera';
+        } else if (folder.name.toLowerCase().includes('download')) {
+          icon = <Ionicons name="download" size={20} color={theme.colors.warning} />;
+          description = 'Downloaded images';
+        } else if (folder.name.toLowerCase().includes('screenshot')) {
+          icon = <Ionicons name="phone-portrait" size={20} color={theme.colors.success} />;
+          description = 'Screen captures';
+        } else if (folder.name.toLowerCase().includes('whatsapp')) {
+          icon = <MaterialIcons name="chat" size={20} color="#25D366" />;
+          description = 'WhatsApp images';
+        } else if (folder.name.toLowerCase().includes('instagram')) {
+          icon = <MaterialIcons name="photo-camera" size={20} color="#E4405F" />;
+          description = 'Instagram images';
+        }
 
-          return {
-            id: folder.id,
-            name: folder.name,
-            count: folder.count,
-            icon,
-            description,
-            isScanned, // Add this property
-          };
-        })
-      );
+        return {
+          id: folder.id,
+          name: folder.name,
+          count: folder.count,
+          icon,
+          description,
+          isScanned,
+        };
+      });
 
       // Sort folders by count (descending) for better UX
       folderData.sort((a, b) => b.count - a.count);
@@ -166,7 +169,7 @@ function SourceFolderPickerComponent({
     } finally {
       setLoading(false);
     }
-  }, [theme.colors]);
+  }, [theme.colors, userProfile]);
     // Update the existing useEffect for visible to include refresh
   useEffect(() => {
     if (visible) {
@@ -189,97 +192,30 @@ function SourceFolderPickerComponent({
     );
   }, []);
 
-  // Add this helper function after the existing useCallback hooks, before the render return
+  // Fix checkUnscannedFolders to only consider 'scanned' status folders
   const checkUnscannedFolders = useCallback(async (folderIds: string[], userId: string): Promise<string[]> => {
     try {
       const { data, error } = await supabase
         .from('moderated_folders')
         .select('folder_id')
         .eq('user_id', userId)
-        .in('folder_id', folderIds);
+        .in('folder_id', folderIds)
+        .eq('status', 'scanned');
     
       if (error) {
-        console.error('Error checking scanned folders:', error);
         return folderIds; // Assume unscanned on error
       }
     
       const scannedFolderIds = new Set(data?.map(row => row.folder_id) || []);
       const unscannedFolders = folderIds.filter(id => !scannedFolderIds.has(id));
     
-      console.log(`📊 Folder scan status: ${scannedFolderIds.size} already scanned, ${unscannedFolders.length} need scanning`);
-    
       return unscannedFolders;
     } catch (error) {
-      console.error('Error in checkUnscannedFolders:', error);
       return folderIds; // Assume unscanned on error
     }
   }, []);
 
-  // Replace the existing handleConfirm function with this updated version
-  const handleConfirm = useCallback(async () => {
-    if (isScanning) return; // Prevent multiple scans
-    
-    const selectedFolderObjects = folders.filter(folder => 
-      tempSelected.includes(folder.id)
-    );
-    
-    // If no folders selected, just clear and close immediately
-    if (tempSelected.length === 0) {
-      onSelect([]);
-      onClose();
-      return;
-    }
-    
-    // ✅ REAL-TIME DATABASE CHECK - Only scan truly unscanned folders
-    if (userProfile) {
-      const actuallyNewFolders = await checkUnscannedFolders(tempSelected, userProfile.id);
-    
-      if (actuallyNewFolders.length > 0) {
-        // Start NSFW scanning for truly new folders
-        handleNsfwScanning(actuallyNewFolders, selectedFolderObjects);
-      } else {
-        // All folders already scanned, just update selection
-        console.log('✅ All selected folders already scanned, skipping scan process');
-        onSelect(selectedFolderObjects);
-        onClose();
-      }
-    } else {
-      // No user, just update selection
-      onSelect(selectedFolderObjects);
-      onClose();
-    }
-  }, [isScanning, folders, tempSelected, userProfile, onSelect, onClose, checkUnscannedFolders]);
-
-  // Add this helper function after checkUnscannedFolders
-  const markFoldersAsScanning = useCallback(async (folderIds: string[], userId: string): Promise<void> => {
-    try {
-      const folderRecords = folderIds.map(folderId => {
-        const folder = folders.find(f => f.id === folderId);
-        return {
-          user_id: userId,
-          folder_id: folderId,
-          folder_name: folder?.name || 'Unknown',
-          scanned_at: new Date().toISOString(),
-          // Note: If you add a status column later, uncomment this:
-          // status: 'scanning'
-        };
-      });
-      
-      const { error } = await supabase
-        .from('moderated_folders')
-        .upsert(folderRecords, { onConflict: 'user_id,folder_id' });
-      
-      if (error) {
-        console.error('Error marking folders as scanning:', error);
-        throw error;
-      }
-      
-      console.log(`✅ Marked ${folderIds.length} folders as scanning in database`);
-    } catch (error) {
-      console.error('Error in markFoldersAsScanning:', error);
-      throw error;
-    }
-  }, [folders]);
+ 
 
   // Update the handleNsfwScanning function - add this right after the initial setup
   const handleNsfwScanning = useCallback(async (
@@ -292,6 +228,20 @@ function SourceFolderPickerComponent({
       return;
     }
     
+    // ✅ DOUBLE-CHECK: Verify these folders are still unscanned
+    const finalUnscannedFolders = await checkUnscannedFolders(newlySelectedFolderIds, userProfile.id);
+    
+    if (finalUnscannedFolders.length === 0) {
+      console.log('✅ All folders already scanned after double-check, skipping scan');
+      onSelect(allSelectedFolders);
+      onClose();
+      return;
+    }
+    
+    if (finalUnscannedFolders.length !== newlySelectedFolderIds.length) {
+      console.log(`⚠️ Folder count changed: ${newlySelectedFolderIds.length} → ${finalUnscannedFolders.length} (some were scanned by another process)`);
+    }
+    
     setIsScanning(true);
     setScanProgress({ 
       current: 0, 
@@ -300,11 +250,8 @@ function SourceFolderPickerComponent({
     });
     
     try {
-      // ✅ MARK FOLDERS AS SCANNING IMMEDIATELY
-      await markFoldersAsScanning(newlySelectedFolderIds, userProfile.id);
-      
-      // Get all photos from newly selected folders
-      const allPhotos = await PhotoLoader.loadAllPhotoIds(newlySelectedFolderIds);
+      // Get all photos from the verified unscanned folders
+      const allPhotos = await PhotoLoader.loadAllPhotoIds(finalUnscannedFolders);
       
       if (allPhotos.length === 0) {
         onSelect(allSelectedFolders);
@@ -407,7 +354,7 @@ function SourceFolderPickerComponent({
 
       // Update moderated folders
       const folderIds = newlySelectedFolderIds;
-      
+
       // Create folderNames mapping from selected folders
       const folderNames: { [folderId: string]: string } = {};
       allSelectedFolders.forEach(folder => {
@@ -415,8 +362,28 @@ function SourceFolderPickerComponent({
           folderNames[folder.id] = folder.name;
         }
       });
-      
+
       await AlbumUtils.updateModeratedFolders(folderIds, folderNames);
+
+      // ✅ Mark folders as scanned (not completed)
+      try {
+        const { error } = await supabase
+          .from('moderated_folders')
+          .update({
+            status: 'scanned', // ✅ Use 'scanned' instead of 'completed'
+            last_scanned_at: new Date().toISOString()
+          })
+          .eq('user_id', userProfile.id)
+          .in('folder_id', newlySelectedFolderIds);
+
+        if (error) {
+          console.error('Error marking folders as scanned:', error);
+        } else {
+          console.log(`✅ Marked ${newlySelectedFolderIds.length} folders as scanned`);
+        }
+      } catch (error) {
+        console.error('Error updating folder scan status:', error);
+      }
 
       onSelect(allSelectedFolders);
       onClose();
@@ -441,7 +408,38 @@ function SourceFolderPickerComponent({
       setIsScanning(false);
       setScanProgress({ current: 0, total: 0, message: '' });
     }
-  }, [userProfile, onSelect, onClose, markFoldersAsScanning]);
+  }, [userProfile, onSelect, onClose]);
+   // Fix handleConfirm to use the check properly
+  const handleConfirm = useCallback(async () => {
+    if (isScanning) return;
+    
+    const selectedFolderObjects = folders.filter(folder => 
+      tempSelected.includes(folder.id)
+    );
+    
+    if (tempSelected.length === 0) {
+      onSelect([]);
+      onClose();
+      return;
+    }
+    
+    if (userProfile) {
+      const unscannedFolders = await checkUnscannedFolders(tempSelected, userProfile.id);
+    
+      if (unscannedFolders.length > 0) {
+        // Only scan the unscanned folders, but pass all selected folders for UI
+        handleNsfwScanning(unscannedFolders, selectedFolderObjects);
+      } else {
+        // All already scanned, just update selection
+        onSelect(selectedFolderObjects);
+        onClose();
+      }
+    } else {
+      onSelect(selectedFolderObjects);
+      onClose();
+    }
+  }, [isScanning, folders, tempSelected, userProfile, onSelect, onClose, checkUnscannedFolders, handleNsfwScanning]);
+
 
   const handleSelectAll = useCallback(() => {
     if (tempSelected.length === folders.length) {
