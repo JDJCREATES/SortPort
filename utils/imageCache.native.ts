@@ -5,8 +5,10 @@ import { ImageMeta } from '../types';
 export class ImageCacheManager {
   private static preloadQueue: Set<string> = new Set();
   private static isPreloading = false;
-  private static readonly PRELOAD_BATCH_SIZE = 10;
-  private static readonly PRELOAD_DELAY = 50;
+  private static readonly PRELOAD_BATCH_SIZE = 15; // Increased for better throughput
+  private static readonly PRELOAD_DELAY = 25; // Reduced delay for faster preloading
+  private static readonly MAX_CACHE_SIZE = 1000; // Increased to reduce aggressive eviction
+  private static cacheOrder: string[] = []; // Track LRU order
 
   /**
    * Preload images for better performance using Expo Image
@@ -16,36 +18,86 @@ export class ImageCacheManager {
       .filter(uri => !this.preloadQueue.has(uri))
       .map(uri => {
         this.preloadQueue.add(uri);
+        this.updateCacheOrder(uri);
         return uri;
       });
 
     if (sources.length === 0) return;
 
+    // Manage memory by evicting old items if needed
+    this.evictOldCache();
+
     try {
-      // Batch preload to avoid overwhelming the system
-      for (let i = 0; i < sources.length; i += this.PRELOAD_BATCH_SIZE) {
-        const batch = sources.slice(i, i + this.PRELOAD_BATCH_SIZE);
+      // Adjust batch processing based on priority
+      const batchSize = priority === 'high' ? this.PRELOAD_BATCH_SIZE + 5 : this.PRELOAD_BATCH_SIZE;
+      const delay = priority === 'high' ? 0 : priority === 'normal' ? this.PRELOAD_DELAY : this.PRELOAD_DELAY * 2;
+      
+      for (let i = 0; i < sources.length; i += batchSize) {
+        const batch = sources.slice(i, i + batchSize);
+        
+        // Priority-based cache policy
+        const cachePolicy = priority === 'high' ? 'memory-disk' : 
+                           priority === 'normal' ? 'memory-disk' : 'disk';
         
         // Preload each image in the batch
-        await Promise.all(
-          batch.map(uri => 
-            Image.prefetch(uri, {
-              cachePolicy: 'memory-disk'
-            }).catch(error => {
-              console.warn(`Failed to preload image ${uri}:`, error);
-              // Remove from queue if preload fails
+        if (priority === 'high') {
+          // High priority: sequential for immediate need
+          for (const uri of batch) {
+            try {
+              await Image.prefetch(uri, { cachePolicy });
+            } catch (error) {
+              console.warn(`Failed to preload high priority image ${uri}:`, error);
               this.preloadQueue.delete(uri);
-            })
-          )
-        );
+            }
+          }
+        } else {
+          // Normal/low priority: parallel for efficiency
+          await Promise.all(
+            batch.map(uri => 
+              Image.prefetch(uri, { cachePolicy }).catch(error => {
+                console.warn(`Failed to preload image ${uri}:`, error);
+                this.preloadQueue.delete(uri);
+              })
+            )
+          );
+        }
         
-        // Small delay between batches to prevent overwhelming
-        if (i + this.PRELOAD_BATCH_SIZE < sources.length) {
-          await new Promise(resolve => setTimeout(resolve, this.PRELOAD_DELAY));
+        // Delay between batches (except for high priority)
+        if (delay > 0 && i + batchSize < sources.length) {
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     } catch (error) {
       console.warn('Error preloading images:', error);
+    }
+  }
+
+  /**
+   * Update cache order for LRU management
+   */
+  private static updateCacheOrder(uri: string): void {
+    const existingIndex = this.cacheOrder.indexOf(uri);
+    if (existingIndex > -1) {
+      this.cacheOrder.splice(existingIndex, 1);
+    }
+    this.cacheOrder.push(uri);
+  }
+
+  /**
+   * Conservative cache eviction - only remove items when significantly over limit
+   */
+  private static evictOldCache(): void {
+    // Only evict when significantly over limit to avoid aggressive cache clearing
+    if (this.preloadQueue.size > this.MAX_CACHE_SIZE * 1.2) {
+      // Remove only a quarter of excess items to be conservative
+      const targetReduction = Math.floor((this.preloadQueue.size - this.MAX_CACHE_SIZE) / 4);
+      
+      for (let i = 0; i < targetReduction && this.cacheOrder.length > 0; i++) {
+        const oldestUri = this.cacheOrder.shift();
+        if (oldestUri) {
+          this.preloadQueue.delete(oldestUri);
+        }
+      }
     }
   }
 
@@ -75,8 +127,9 @@ export class ImageCacheManager {
       await Image.clearMemoryCache();
       await Image.clearDiskCache();
       
-      // Clear our preload queue
+      // Clear our preload queue and cache order
       this.preloadQueue.clear();
+      this.cacheOrder = [];
       
       console.log('✅ Image cache cleared successfully');
     } catch (error) {
@@ -99,10 +152,14 @@ export class ImageCacheManager {
   }
 
   /**
-   * Remove URI from preload queue
+   * Remove URI from preload queue and cache order
    */
   static removeFromPreloadQueue(uri: string): void {
     this.preloadQueue.delete(uri);
+    const index = this.cacheOrder.indexOf(uri);
+    if (index > -1) {
+      this.cacheOrder.splice(index, 1);
+    }
   }
 
   /**
