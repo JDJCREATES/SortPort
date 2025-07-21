@@ -122,7 +122,7 @@ const generateTextColors = (backgroundColor: string, isDark: boolean) => {
   } else if (darkContrast >= 4.5) {
     return {
       text: darkText,
-      textSecondary: darkSecondary,
+      textSecondary: darkSecondary
     };
   } else {
     // Fallback based on luminance if neither meets contrast requirements
@@ -143,56 +143,73 @@ const generateTextColors = (backgroundColor: string, isDark: boolean) => {
 // Single set of background colors - the system will handle dark mode conversion
 export const BACKGROUND_COLORS = [
   '#FFFFFF', // Pure White
-  '#F8FAFC', // Slate 50
-  '#F1F5F9', // Slate 100
-  '#E2E8F0', // Slate 200
-  '#FEF7F0', // Warm White
-  '#FFF8F0', // Cream
-  '#F0F9FF', // Sky 50
-  '#ECFDF5', // Emerald 50
-  '#F0FDF4', // Green 50
-  '#FEF3C7', // Amber 50
-  '#FFFBEB', // Amber 25
-  '#FCE7F3', // Pink 50
-  '#FDF2F8', // Pink 25
-  '#F3E8FF', // Violet 50
-  '#FAF5FF', // Violet 25
-  '#E0F2FE', // Light Blue 50
-  '#F5F5F4', // Stone 50
-  '#FAFAF9', // Stone 25
-  // Add some mid-tone colors that work well in both modes
-  '#D1D5DB', // Gray 300
-  '#9CA3AF', // Gray 400
-  '#6B7280', // Gray 500
-  '#4B5563', // Gray 600
-  '#374151', // Gray 700
-  '#1F2937', // Gray 800
-  '#111827', // Gray 900
-  '#000000', // Pure Black
+  '#F8F4F0', // Cloud Cream
+  '#F5EBDD', // Linen Sand
+  '#EDE5D1', // Pebble Beige
+  '#ECECEC', // Mist Grey
+  '#D6D3D1', // Soft Ash
+  '#CFCFCF', // Silver Veil
+  '#D8CAB8', // Greige Glow
+  '#EAEAEA', // Pastel Fog
+  '#FFE4E1', // Misty Rose
+  '#E6E6FA', // Lavender
+  '#e2e9efff', // Alice Blue
+  '#F5FFFA', // Mint Cream
+  '#fbf4d5ff', // Cornsilk
+  '#FFE4B5', // Moccasin
+  '#FFEFD5', // Papaya Whip
+  '#E0FFFF', // Light Cyan
+  '#F0FFF0', // Honeydew
+  '#FDF5E6', // Old Lace
+  '#FFB6C1', // Light Pink
+  '#DDA0DD', // Plum
+  '#87CEEB', // Sky Blue
+  '#98FB98', // Pale Green
+  '#F0E68C', // Khaki
+  '#FFA07A', // Light Salmon
+  '#20B2AA', // Light Sea Green
+  '#87CEFA', // Light Sky Blue
+  '#DEB887', // Burlywood
+  '#F5DEB3', // Wheat
+  // Keep essential darks for contrast
+  '#A1A1AA', // Soft Charcoal
+  '#1F2937', // Iron Black
+  '#111827', // Obsidian Shadow
+  '#171717', // Carbon Depth
 ];
 
-// Accent colors remain the same
+// Accent colors with your new palette
 export const ACCENT_COLORS = [
-  '#6366F1', // Indigo
-  '#8B5CF6', // Violet
-  '#EC4899', // Pink
-  '#EF4444', // Red
-  '#F59E0B', // Amber
-  '#10B981', // Emerald
-  '#06B6D4', // Cyan
-  '#3B82F6', // Blue
-  '#8B5A2B', // Brown
-  '#6B7280', // Gray
-  '#7C3AED', // Purple
-  '#DC2626', // Red 600
-  '#059669', // Emerald 600
-  '#0891B2', // Cyan 600
-  '#2563EB', // Blue 600
-  '#9333EA', // Violet 600
-  '#DB2777', // Pink 600
-  '#D97706', // Amber 600
-  '#16A34A', // Green 600
-  '#EA580C', // Orange 600
+  '#FF6B6B', // Flame Coral
+  '#FF9E5E', // Apricot Pop
+  '#FFD166', // Golden Glow
+  '#FFB3A7', // Melon Soda
+  '#F9A8D4', // Blush Pink
+  '#FF7EB9', // Bubblegum Bloom
+  '#D72638', // Raspberry Rush
+  '#E07A5F', // Terracotta Clay
+  '#BC4B51', // Rosewood Blush
+  '#DDBEA9', // Sandalwood Spice
+  '#CDB4DB', // Orchid Mist
+  '#A78BFA', // Lavender Smoke
+  '#7C3AED', // Grape Royale
+  '#BFA2DB', // Lilac Storm
+  '#9B5DE5', // Mauve Twilight
+  '#3A86FF', // Skybeam Blue
+  '#B3CDE0', // Powder Blue
+  '#5BC0EB', // Azure Snap
+  '#00B5D8', // Cyan Drift
+  '#9AE6B4', // Mint Sorbet
+  '#34D399', // Emerald Palm
+  '#228B22', // Jade Forest
+  '#A3E635', // Lime Ice
+  '#2EC4B6', // Teal Lake
+  '#587792', // Denim Dust
+  '#4C51BF', // Steel Indigo
+  '#F4A261', // Marigold Flame
+  '#DB2777', // Magenta Bloom
+  '#E11D48', // Cherry Punch
+  '#B5179E', // Electric Purple
 ];
 
 export const defaultLightTheme: AppTheme = {
@@ -289,26 +306,26 @@ export class ThemeManager {
     
     // Apply custom colors intelligently
     if (this.customColors.primary) {
-      themeColors.primary = this.customColors.primary;
+      if (isDark) {
+        // For dark mode, slightly lighten the chosen primary color for better visibility
+        themeColors.primary = generateTint(this.customColors.primary, 20);
+      } else {
+        themeColors.primary = this.customColors.primary;
+      }
     }
     
     if (this.customColors.secondary) {
-      // Secondary is the background color
       let backgroundColor = this.customColors.secondary;
       
-      // If we're in dark mode and the chosen color is light, invert it
-      if (isDark && getLuminance(backgroundColor) > 0.5) {
-        backgroundColor = invertColorForDarkMode(backgroundColor);
-      }
-      // If we're in light mode and the chosen color is dark, invert it
-      else if (!isDark && getLuminance(backgroundColor) < 0.5) {
-        backgroundColor = invertColorForDarkMode(backgroundColor);
+      // For dark mode, darken the chosen background color
+      if (isDark) {
+        backgroundColor = generateShade(backgroundColor, 75); // Darken by 75%
       }
       
       themeColors.background = backgroundColor;
       themeColors.secondary = backgroundColor;
       
-      // Generate surface colors dynamically
+      // Generate surface colors dynamically based on the darkened/original color
       const surfaceColors = generateSurfaceColors(backgroundColor, isDark);
       themeColors = { ...themeColors, ...surfaceColors };
       
@@ -317,10 +334,24 @@ export class ThemeManager {
       themeColors = { ...themeColors, ...textColors };
     }
     
-    // Apply any other custom colors
+    // Apply any other custom colors with appropriate dark mode adjustments
     Object.keys(this.customColors).forEach(key => {
       if (key !== 'primary' && key !== 'secondary') {
-        themeColors[key as keyof AppTheme['colors']] = this.customColors[key as keyof AppTheme['colors']]!;
+        const colorKey = key as keyof AppTheme['colors'];
+        const customColor = this.customColors[colorKey]!;
+        
+        if (isDark) {
+          // For dark mode, adjust colors appropriately
+          if (key === 'text' || key === 'textSecondary') {
+            // Text colors should be lightened in dark mode
+            themeColors[colorKey] = generateTint(customColor, 30);
+          } else {
+            // Other colors should be slightly darkened or kept as-is
+            themeColors[colorKey] = generateShade(customColor, 20);
+          }
+        } else {
+          themeColors[colorKey] = customColor;
+        }
       }
     });
     
@@ -405,19 +436,19 @@ export class ThemeManager {
     
     // Apply preview colors intelligently
     if (customColors.primary) {
-      themeColors.primary = customColors.primary;
+      if (this.isDarkMode) {
+        themeColors.primary = generateTint(customColors.primary, 20);
+      } else {
+        themeColors.primary = customColors.primary;
+      }
     }
     
     if (customColors.secondary) {
       let backgroundColor = customColors.secondary;
       
-      // If we're in dark mode and the chosen color is light, invert it
-      if (this.isDarkMode && getLuminance(backgroundColor) > 0.5) {
-        backgroundColor = invertColorForDarkMode(backgroundColor);
-      }
-      // If we're in light mode and the chosen color is dark, invert it
-      else if (!this.isDarkMode && getLuminance(backgroundColor) < 0.5) {
-        backgroundColor = invertColorForDarkMode(backgroundColor);
+      // For dark mode, darken the chosen background color
+      if (this.isDarkMode) {
+        backgroundColor = generateShade(backgroundColor, 75);
       }
       
       themeColors.background = backgroundColor;
@@ -429,6 +460,24 @@ export class ThemeManager {
       const textColors = generateTextColors(backgroundColor, this.isDarkMode);
       themeColors = { ...themeColors, ...textColors };
     }
+    
+    // Apply other custom colors with dark mode adjustments
+    Object.keys(customColors).forEach(key => {
+      if (key !== 'primary' && key !== 'secondary') {
+        const colorKey = key as keyof AppTheme['colors'];
+        const customColor = customColors[colorKey]!;
+        
+        if (this.isDarkMode) {
+          if (key === 'text' || key === 'textSecondary') {
+            themeColors[colorKey] = generateTint(customColor, 30);
+          } else {
+            themeColors[colorKey] = generateShade(customColor, 20);
+          }
+        } else {
+          themeColors[colorKey] = customColor;
+        }
+      }
+    });
     
     return {
       ...baseTheme,
