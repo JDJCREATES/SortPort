@@ -3,7 +3,7 @@ import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
 import { AppSettings, CustomThemeColors, ImageMeta } from '../types';
 
-//This file is a utility class for managing media storage and settings specifically for the Snapsort app. It provides methods to save and load settings, manage processed images, and handle media library operations.
+//This file is a utility class for managing media storage and settings. It provides methods to save and load settings, manage processed images, and handle media library operations.
 export class MediaStorage {
   private static SETTINGS_KEY = '@snapsort_settings';
   private static PROCESSED_IMAGES_KEY = '@snapsort_processed';

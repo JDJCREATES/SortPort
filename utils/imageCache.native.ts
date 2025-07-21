@@ -5,8 +5,8 @@ import { ImageMeta } from '../types';
 export class ImageCacheManager {
   private static preloadQueue: Set<string> = new Set();
   private static isPreloading = false;
-  private static readonly PRELOAD_BATCH_SIZE = 15; // Increased for better throughput
-  private static readonly PRELOAD_DELAY = 25; // Reduced delay for faster preloading
+  private static readonly PRELOAD_BATCH_SIZE = 25; // Increased for better throughput
+  private static readonly PRELOAD_DELAY = 15; // Reduced delay for faster preloading
   private static readonly MAX_CACHE_SIZE = 1000; // Increased to reduce aggressive eviction
   private static cacheOrder: string[] = []; // Track LRU order
 
