@@ -95,7 +95,7 @@ export function PictureHackBar({
       if (userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY) {
         Alert.alert(
           'Insufficient Credits',
-          `You need ${CREDIT_COSTS.NATURAL_LANGUAGE_QUERY} credits to submit a query. Please purchase more credits.`,
+          `You need ${CREDIT_COSTS.NATURAL_LANGUAGE_QUERY} credits to submit this query. Please purchase more credits.`,
           [{ text: 'OK' }]
         );
         return;
@@ -113,16 +113,12 @@ export function PictureHackBar({
     try {
 
       console.log('🎬 Starting recording...');
-    console.log(' audioRecorder.isRecording:', audioRecorder.isRecording);
-    console.log(' voice.state.isRecording:', voice.state.isRecording);
+
 
       setPrompt(''); // Clear any existing text
       
       // Start recording
       await voice.startVoiceInput();
-      console.log('Recording started with new voice system');
-       console.log(' audioRecorder.isRecording:', audioRecorder.isRecording);
-    console.log(' voice.state.isRecording:', voice.state.isRecording);
       
       // Start pulsing animation
       const pulse = () => {
