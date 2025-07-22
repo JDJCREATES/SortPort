@@ -89,7 +89,7 @@ export class SortByToneChain {
 
     } catch (error) {
       console.error('Tone sorting chain error:', error);
-      throw new Error(`Tone sorting failed: ${error.message}`);
+      throw new Error(`Tone sorting failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -333,7 +333,7 @@ export class SortByToneChain {
   private async performLLMSorting(input: ChainInput, combinedResults: any[], toneParams: any): Promise<SortedImageResult[]> {
     const topImages = combinedResults.slice(0, Math.min(20, input.context.constraints.maxResults));
     
-    const prompt = SortingPrompts.TONE_SORTING.format({
+    const promptText = await SortingPrompts.TONE_SORTING.format({
       query: input.query,
       imageCount: topImages.length,
       sortType: 'tone',
@@ -343,7 +343,7 @@ export class SortByToneChain {
       imageData: formatImageDataForPrompt(topImages.map(r => r.image))
     });
 
-    const llmResponse = await this.llm.invoke(prompt);
+    const llmResponse = await this.llm.invoke(promptText);
     
     try {
       const parsed = JSON.parse(llmResponse.content as string);

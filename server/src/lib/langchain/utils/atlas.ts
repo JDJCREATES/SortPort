@@ -16,6 +16,7 @@
  */
 
 import { VirtualImage, AtlasGeneration, AtlasResult } from '../../../types/sorting.js';
+import { AtlasImageMap } from '../../../types/api.js';
 import { supabaseService } from '../../supabase/client.js';
 
 // Canvas would be used in Node.js environment for image processing
@@ -88,7 +89,7 @@ export class AtlasGenerator {
 
       const result: AtlasResult = {
         atlasBuffer,
-        imageMap,
+        imageMap: imageMap as any,
         metadata: {
           totalImages: images.length,
           gridSize: this.config.gridSize,
@@ -105,7 +106,7 @@ export class AtlasGenerator {
 
     } catch (error) {
       console.error('Atlas generation failed:', error);
-      throw new Error(`Failed to generate atlas: ${error.message}`);
+      throw new Error(`Failed to generate atlas: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -131,7 +132,7 @@ export class AtlasGenerator {
 
     } catch (error) {
       console.error('Atlas generation from URLs failed:', error);
-      throw new Error(`Failed to generate atlas from URLs: ${error.message}`);
+      throw new Error(`Failed to generate atlas from URLs: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -232,24 +233,15 @@ export class AtlasGenerator {
       return placeholderAtlas;
 
     } catch (error) {
-      throw new Error(`Atlas creation failed: ${error.message}`);
+      throw new Error(`Atlas creation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   /**
    * Generate image position map for atlas
    */
-  private generateImageMap(images: VirtualImage[]): Record<string, {
-    imageId: string;
-    originalPath: string;
-    bounds: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
-  }> {
-    const imageMap: Record<string, any> = {};
+  private generateImageMap(images: VirtualImage[]): AtlasImageMap {
+    const imageMap: AtlasImageMap = {};
     const [imageWidth, imageHeight] = this.config.imageSize;
     const padding = this.config.padding;
 
@@ -375,7 +367,7 @@ export class AtlasGenerator {
 
     } catch (error) {
       console.error('Atlas upload failed:', error);
-      throw new Error(`Failed to upload atlas: ${error.message}`);
+      throw new Error(`Failed to upload atlas: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -393,7 +385,7 @@ export class AtlasGenerator {
       }
     } catch (error) {
       console.error('Atlas deletion failed:', error);
-      throw new Error(`Failed to delete atlas: ${error.message}`);
+      throw new Error(`Failed to delete atlas: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -413,6 +405,7 @@ export class AtlasGenerator {
         virtualTags: null,
         virtualAlbum: null,
         virtual_description: null,
+        thumbnail: null,
         nsfwScore: null,
         isFlagged: null,
         caption: null,
@@ -501,7 +494,7 @@ export class AtlasVisionAnalyzer {
 
     } catch (error) {
       console.error('Atlas vision analysis failed:', error);
-      throw new Error(`Vision analysis failed: ${error.message}`);
+      throw new Error(`Vision analysis failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

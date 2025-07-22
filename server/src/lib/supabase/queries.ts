@@ -1,4 +1,4 @@
-import { supabaseService, VirtualImageRow, handleDatabaseError } from './client.js';
+import { supabaseService, handleDatabaseError } from './client.js';
 import { VirtualImage } from '../../types/sorting.js';
 
 // Query builders for virtual_image table
@@ -23,7 +23,7 @@ export class VirtualImageQueries {
         .select(
           options.includeEmbeddings 
             ? '*' 
-            : '*, embedding:!embedding()'  // Exclude embeddings by default
+            : 'id, user_id, originalPath, originalName, hash, thumbnail, virtualName, virtualTags, virtualAlbum, virtual_description, nsfwScore, isFlagged, caption, visionSummary, vision_sorted, metadata, created_at, updated_at, sortOrder'  // Exclude embeddings by default
         )
         .eq('user_id', userId);
 
@@ -55,9 +55,10 @@ export class VirtualImageQueries {
         handleDatabaseError(error, 'virtual_image', 'getByUserId');
       }
 
-      return (data || []) as VirtualImage[];
+      return (data || []) as unknown as VirtualImage[];
     } catch (error) {
       handleDatabaseError(error, 'virtual_image', 'getByUserId');
+      return []; // This line should never be reached due to handleDatabaseError throwing
     }
   }
 

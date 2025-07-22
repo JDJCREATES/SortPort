@@ -133,7 +133,7 @@ router.get('/metrics', async (req: Request, res: Response) => {
     }
 
     // Track monitoring access
-    metricsCollector.recordApiCall(req.path, req.method, 200, Date.now() - req.startTime, query.userId);
+    metricsCollector.recordApiCall(req.path, req.method, 200, 0, query.userId);
     
     res.json(response);
   } catch (error) {

@@ -75,6 +75,20 @@ export interface SortedImageResult {
     emotions?: string[];
     primaryColor?: string;
     composition?: string;
+    confidence?: number;
+    thumbnailPurpose?: "album" | "collection" | "showcase" | "preview";
+    qualityLevel?: "high" | "medium" | "any";
+    technicalScore?: number;
+    visualScore?: number;
+    representativenessScore?: number;
+    factors?: any;
+    queryComplexity?: any;
+    criteriaUsed?: any;
+    albumInfo?: any;
+    albumName?: string;
+    isAlbumHeader?: boolean;
+    albumTheme?: string;
+    inAlbum?: string;
   };
 }
 
@@ -143,7 +157,7 @@ export interface AtlasResult {
   atlasBuffer: Buffer;
   imageMap: Record<string, {
     imageId: string;
-    position: string; // e.g., "A1", "B2"
+    originalPath: string;
     bounds: {
       x: number;
       y: number;

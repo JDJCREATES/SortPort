@@ -241,7 +241,7 @@ export class ProductionAtlasService {
       atlas,
       query: request.query,
       analysisType: request.analysisType,
-      metadata: request.images.map(img => img.metadata).filter(Boolean),
+      metadata: request.images.map(img => img.metadata).filter((metadata): metadata is Record<string, any> => metadata != null),
       options: {
         includeConfidence: true,
         detailLevel: strategy.detailLevel

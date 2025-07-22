@@ -85,7 +85,7 @@ async function checkSupabase(): Promise<{ status: string; latency?: number }> {
       latency: Date.now() - start
     };
   } catch (error) {
-    throw new Error(`Supabase connection failed: ${error.message}`);
+    throw new Error(`Supabase connection failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -113,7 +113,7 @@ async function checkOpenAI(): Promise<{ status: string; latency?: number }> {
       latency: Date.now() - start
     };
   } catch (error) {
-    throw new Error(`OpenAI connection failed: ${error.message}`);
+    throw new Error(`OpenAI connection failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

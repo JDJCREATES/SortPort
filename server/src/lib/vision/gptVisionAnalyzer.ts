@@ -281,13 +281,8 @@ Please analyze each image and provide structured results in JSON format:
           ]
         });
 
-        // Configure model for this specific call
-        const visionModel = this.vision.bind({
-          max_tokens: options?.maxTokens || 2000,
-          temperature: options?.temperature || 0.1
-        });
-
-        return await visionModel.invoke([message]);
+        // Use the pre-configured model
+        return await this.vision.invoke([message]);
 
       } catch (error) {
         lastError = error as Error;
@@ -416,7 +411,7 @@ Respond in JSON format:
       });
 
       const response = await this.vision.invoke([message]);
-      const parsed = JSON.parse(response.content);
+      const parsed = JSON.parse(response.content as string);
 
       return {
         query,

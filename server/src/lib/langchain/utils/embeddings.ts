@@ -54,7 +54,7 @@ export class EmbeddingService {
       return embedding;
     } catch (error) {
       console.error('Error generating query embedding:', error);
-      throw new Error(`Failed to generate embedding: ${error.message}`);
+      throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -107,7 +107,7 @@ export class EmbeddingService {
       return embeddingMap;
     } catch (error) {
       console.error('Error generating image embeddings:', error);
-      throw new Error(`Failed to generate image embeddings: ${error.message}`);
+      throw new Error(`Failed to generate image embeddings: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -147,7 +147,7 @@ export class EmbeddingService {
       }));
     } catch (error) {
       console.error('Error in vector similarity search:', error);
-      throw new Error(`Vector search failed: ${error.message}`);
+      throw new Error(`Vector search failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

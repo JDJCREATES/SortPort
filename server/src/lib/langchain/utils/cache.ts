@@ -292,10 +292,10 @@ export class CacheService {
       const testValue = { test: true, timestamp: Date.now() };
       
       await this.set(testKey, testValue, 60);
-      const retrieved = await this.get(testKey);
+      const retrieved = await this.get<{ test: boolean; timestamp: number }>(testKey);
       await this.delete(testKey);
       
-      return retrieved !== null && retrieved.test === true;
+      return retrieved !== null && retrieved?.test === true;
     } catch (error) {
       console.error('Cache health check failed:', error);
       return false;
@@ -310,7 +310,7 @@ export class CacheService {
     let cleanedCount = 0;
     let reclaimedSize = 0;
 
-    for (const [key, entry] of this.cache.entries()) {
+    for (const [key, entry] of Array.from(this.cache.entries())) {
       if (now > entry.expiresAt) {
         this.cache.delete(key);
         reclaimedSize += entry.size;
@@ -346,7 +346,7 @@ export class CacheService {
     let oldestKey: string | null = null;
     let oldestTime = Date.now();
 
-    for (const [key, entry] of this.cache.entries()) {
+    for (const [key, entry] of Array.from(this.cache.entries())) {
       if (entry.lastAccessed < oldestTime) {
         oldestTime = entry.lastAccessed;
         oldestKey = key;

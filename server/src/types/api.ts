@@ -19,7 +19,7 @@ export const SortRequestSchema = z.object({
   userId: z.string().uuid(),
   imageIds: z.array(z.string().uuid()).optional(),
   albumId: z.string().optional(),
-  sortType: z.enum(['tone', 'scene', 'custom', 'thumbnail']).default('custom'),
+  sortType: z.enum(['tone', 'scene', 'custom', 'thumbnail', 'smart_album']).default('custom'),
   useVision: z.boolean().default(false),
   maxResults: z.number().min(1).max(1000).default(100)
 });

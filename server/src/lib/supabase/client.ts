@@ -35,7 +35,7 @@ export const supabaseAnon = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Helper function to create user-scoped client
 export function createUserClient(userToken: string) {
-  return createClient(supabaseUrl, supabaseAnonKey, {
+  return createClient(supabaseUrl!, supabaseAnonKey!, {
     auth: {
       autoRefreshToken: false,
       persistSession: false

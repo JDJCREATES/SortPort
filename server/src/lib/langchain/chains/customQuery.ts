@@ -132,7 +132,7 @@ export class CustomQueryChain {
 
     } catch (error) {
       console.error('Custom query chain error:', error);
-      throw new Error(`Custom query processing failed: ${error.message}`);
+      throw new Error(`Custom query processing failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -144,7 +144,7 @@ export class CustomQueryChain {
       QUERY_DECOMPOSITION_PROMPT,
       this.llm,
       new RunnableLambda({
-        func: (output) => {
+        func: (output: any) => {
           try {
             return JSON.parse(output.content);
           } catch (error) {
@@ -563,7 +563,7 @@ export class CustomQueryChain {
     // Use LLM for final intelligent ranking
     const topResults = results.slice(0, 20);
     
-    const prompt = SortingPrompts.CUSTOM_QUERY.format({
+    const promptText = await SortingPrompts.CUSTOM_QUERY.format({
       query: input.query,
       imageCount: topResults.length,
       sortType: 'custom',
@@ -573,7 +573,7 @@ export class CustomQueryChain {
     });
 
     try {
-      const llmResponse = await this.llm.invoke(prompt);
+      const llmResponse = await this.llm.invoke(promptText);
       const parsed = JSON.parse(llmResponse.content as string);
       
       return parsed.sortedImages.map((item: any, index: number) => ({

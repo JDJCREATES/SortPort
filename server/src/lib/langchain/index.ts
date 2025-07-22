@@ -100,7 +100,7 @@ export class SortingDispatcher {
       const cacheKey = this.generateCacheKey(request);
       const cachedResult = await this.cacheService.get(cacheKey);
       if (cachedResult) {
-        return this.formatCachedResponse(cachedResult, context);
+        return this.formatCachedResponse(cachedResult as ChainOutput, context);
       }
 
       // Load user's images
@@ -132,7 +132,7 @@ export class SortingDispatcher {
 
     } catch (error) {
       console.error('Sorting dispatch error:', error);
-      throw new Error(`Sorting failed: ${error.message}`);
+      throw new Error(`Sorting failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -144,7 +144,7 @@ export class SortingDispatcher {
       QUERY_ANALYSIS_PROMPT,
       llm,
       new RunnableLambda({
-        func: (output) => {
+        func: (output: any) => {
           try {
             return JSON.parse(output.content);
           } catch {

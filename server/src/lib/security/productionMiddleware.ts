@@ -23,7 +23,7 @@ import slowDown from 'express-slow-down';
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
-import { z } from 'zod';
+
 import { metricsCollector } from '../monitoring/metricsCollector.js';
 import NodeCache from 'node-cache';
 
@@ -111,12 +111,16 @@ export class ProductionSecurity {
       },
       standardHeaders: true,
       legacyHeaders: false,
-      store: redis ? new RedisStore(redis) : undefined,
-      onLimitReached: (req) => {
+      // store: redis ? new RedisStore(redis) : undefined, // Temporarily disabled due to interface mismatch
+      handler: (req: Request, res: Response) => {
         this.handleRateLimitReached(req, 'global');
+        return res.status(429).json({
+          error: 'Too many requests, please try again later.',
+          retryAfter: this.config.rateLimiting.global.windowMs / 1000
+        });
       },
-      keyGenerator: (req) => this.getClientKey(req),
-      skip: (req) => this.shouldSkipRateLimit(req)
+      keyGenerator: (req: Request) => this.getClientKey(req),
+      skip: (req: Request) => this.shouldSkipRateLimit(req)
     });
   }
 
@@ -135,8 +139,12 @@ export class ProductionSecurity {
         const userId = this.extractUserId(req);
         return userId || this.getClientKey(req);
       },
-      onLimitReached: (req) => {
+      handler: (req: Request, res: Response) => {
         this.handleRateLimitReached(req, 'user');
+        return res.status(429).json({
+          error: 'Too many requests for this user, please slow down.',
+          retryAfter: this.config.rateLimiting.perUser.windowMs / 1000
+        });
       }
     });
   }
@@ -156,7 +164,7 @@ export class ProductionSecurity {
         const userId = this.extractUserId(req);
         return `expensive:${userId || this.getClientKey(req)}`;
       },
-      onLimitReached: (req) => {
+      handler: (req: Request, res: Response) => {
         this.handleRateLimitReached(req, 'expensive');
         // Track expensive operation abuse
         metricsCollector.recordEvent({
@@ -164,6 +172,10 @@ export class ProductionSecurity {
           operation: 'expensive_rate_limit_exceeded',
           success: false,
           metadata: { ip: this.getClientIP(req), userId: this.extractUserId(req) }
+        });
+        return res.status(429).json({
+          error: 'Too many expensive operations, please wait before retrying.',
+          retryAfter: this.config.rateLimiting.expensive.windowMs / 1000
         });
       }
     });
@@ -490,7 +502,8 @@ export class ProductionSecurity {
     if (contentType && !this.config.validation.allowedImageTypes.some(type => 
       contentType.includes(type)
     )) {
-      return res.status(400).json({ error: 'Unsupported image format' });
+      res.status(400).json({ error: 'Unsupported image format' });
+      return;
     }
 
     // Additional validation can be added here
@@ -557,21 +570,59 @@ export class ProductionSecurity {
 class RedisStore {
   constructor(private redis: Redis) {}
 
-  async get(key: string): Promise<number | undefined> {
-    const value = await this.redis.get(key);
-    return value ? parseInt(value) : undefined;
+  async increment(key: string): Promise<{ totalHits: number; timeToExpire?: number | undefined; resetTime: Date }> {
+    const multi = this.redis.multi();
+    multi.incr(key);
+    multi.ttl(key);
+    const results = await multi.exec();
+    const totalHits = (results?.[0]?.[1] as number) || 1;
+    const ttl = (results?.[1]?.[1] as number) || -1;
+    
+    return {
+      totalHits,
+      timeToExpire: ttl > 0 ? ttl * 1000 : undefined,
+      resetTime: ttl > 0 ? new Date(Date.now() + ttl * 1000) : new Date(Date.now() + 3600000)
+    };
+  }
+
+  async decrement(key: string): Promise<{ totalHits: number; timeToExpire?: number | undefined; resetTime: Date }> {
+    const multi = this.redis.multi();
+    multi.decr(key);
+    multi.ttl(key);
+    const results = await multi.exec();
+    const totalHits = Math.max((results?.[0]?.[1] as number) || 0, 0);
+    const ttl = (results?.[1]?.[1] as number) || -1;
+    
+    return {
+      totalHits,
+      timeToExpire: ttl > 0 ? ttl * 1000 : undefined,
+      resetTime: ttl > 0 ? new Date(Date.now() + ttl * 1000) : new Date(Date.now() + 3600000)
+    };
+  }
+
+  async resetKey(key: string): Promise<void> {
+    await this.redis.del(key);
+  }
+
+  async get(key: string): Promise<{ totalHits: number; timeToExpire?: number | undefined; resetTime: Date } | undefined> {
+    const multi = this.redis.multi();
+    multi.get(key);
+    multi.ttl(key);
+    const results = await multi.exec();
+    const value = results?.[0]?.[1] as string | null;
+    const ttl = (results?.[1]?.[1] as number) || -1;
+    
+    if (!value) return undefined;
+    
+    return {
+      totalHits: parseInt(value),
+      timeToExpire: ttl > 0 ? ttl * 1000 : undefined,
+      resetTime: ttl > 0 ? new Date(Date.now() + ttl * 1000) : new Date(Date.now() + 3600000)
+    };
   }
 
   async set(key: string, value: number, windowMs: number): Promise<void> {
     await this.redis.setex(key, Math.ceil(windowMs / 1000), value.toString());
-  }
-
-  async increment(key: string, windowMs: number): Promise<number> {
-    const multi = this.redis.multi();
-    multi.incr(key);
-    multi.expire(key, Math.ceil(windowMs / 1000));
-    const results = await multi.exec();
-    return results?.[0]?.[1] as number || 1;
   }
 }
 

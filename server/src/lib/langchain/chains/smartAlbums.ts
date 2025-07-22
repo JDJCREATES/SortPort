@@ -31,10 +31,10 @@ interface AlbumGroup {
   thumbnailImage?: any;
   metadata: {
     size: number;
-    dateRange?: string;
-    location?: string;
-    people?: string[];
-    tags?: string[];
+    dateRange?: any;
+    location?: string | string[];
+    people?: string[] | (string | string[])[];
+    tags?: string[] | string;
   };
 }
 
@@ -113,7 +113,7 @@ export class SmartAlbumsChain {
 
     } catch (error) {
       console.error('Smart albums chain error:', error);
-      throw new Error(`Smart album creation failed: ${error.message}`);
+      throw new Error(`Smart album creation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -490,8 +490,8 @@ Album Info:
 - Size: ${album.metadata.size} images
 - Date Range: ${album.metadata.dateRange || 'Various dates'}
 - Theme: ${album.theme}
-- Location: ${album.metadata.location || 'Various locations'}
-- Common Tags: ${album.metadata.tags?.join(', ') || 'None'}
+- Location: ${Array.isArray(album.metadata.location) ? album.metadata.location.join(', ') : (album.metadata.location || 'Various locations')}
+- Common Tags: ${Array.isArray(album.metadata.tags) ? album.metadata.tags.join(', ') : (album.metadata.tags || 'None')}
 
 Sample Images:
 ${album.images.slice(0, 3).map((img, i) => 
@@ -590,8 +590,9 @@ Respond with JSON:
           originalPath: '',
           originalName: album.name,
           hash: '',
+          thumbnail: null,
           virtualName: album.name,
-          virtualTags: album.metadata.tags || [],
+          virtualTags: Array.isArray(album.metadata.tags) ? album.metadata.tags : (album.metadata.tags ? [album.metadata.tags] : []),
           virtualAlbum: null,
           virtual_description: album.description,
           nsfwScore: null,
@@ -639,7 +640,7 @@ Respond with JSON:
           metadata: {
             albumName: album.name,
             albumTheme: album.theme,
-            inAlbum: true,
+            inAlbum: 'true',
             confidence: album.confidence * 0.9
           }
         });

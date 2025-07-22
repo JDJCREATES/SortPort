@@ -43,7 +43,11 @@ server/
 │       ├── supabase/
 │       │   ├── client.ts       # Database connection
 │       │   └── queries.ts      # Reusable queries
-│       └── langchain/          # LangChain implementations (TODO)
+│       └── langchain/          # LangChain integration
+│           ├── prompts/        # LangChain prompts
+│           ├── chains/         # LangChain chains
+│           └── utils/          # Utility files
+
 ├── package.json
 ├── tsconfig.json
 └── .env.example

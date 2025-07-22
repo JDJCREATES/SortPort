@@ -104,7 +104,7 @@ export class PickThumbnailsChain {
 
     } catch (error) {
       console.error('Thumbnail selection chain error:', error);
-      throw new Error(`Thumbnail selection failed: ${error.message}`);
+      throw new Error(`Thumbnail selection failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -573,7 +573,7 @@ export class PickThumbnailsChain {
   private async selectFinalThumbnails(input: ChainInput, results: any[], criteria: ThumbnailCriteria): Promise<SortedImageResult[]> {
     const candidates = results.slice(0, Math.min(10, results.length));
     
-    const prompt = SortingPrompts.THUMBNAIL.format({
+    const promptText = await SortingPrompts.THUMBNAIL.format({
       query: input.query,
       imageCount: candidates.length,
       sortType: 'thumbnail',
@@ -585,7 +585,7 @@ export class PickThumbnailsChain {
     });
 
     try {
-      const llmResponse = await this.llm.invoke(prompt);
+      const llmResponse = await this.llm.invoke(promptText);
       const parsed = JSON.parse(llmResponse.content as string);
       
       const selected = parsed.sortedImages

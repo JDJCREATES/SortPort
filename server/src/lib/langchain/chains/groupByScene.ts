@@ -92,7 +92,7 @@ export class GroupBySceneChain {
 
     } catch (error) {
       console.error('Scene sorting chain error:', error);
-      throw new Error(`Scene sorting failed: ${error.message}`);
+      throw new Error(`Scene sorting failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -559,7 +559,7 @@ export class GroupBySceneChain {
   private async performSceneGrouping(input: ChainInput, combinedResults: any[], sceneParams: any): Promise<SortedImageResult[]> {
     const topImages = combinedResults.slice(0, Math.min(20, input.context.constraints.maxResults));
     
-    const prompt = SortingPrompts.SCENE_SORTING.format({
+    const promptText = await SortingPrompts.SCENE_SORTING.format({
       query: input.query,
       imageCount: topImages.length,
       sortType: 'scene',
@@ -570,7 +570,7 @@ export class GroupBySceneChain {
       imageData: formatImageDataForPrompt(topImages.map(r => r.image))
     });
 
-    const llmResponse = await this.llm.invoke(prompt);
+    const llmResponse = await this.llm.invoke(promptText);
     
     try {
       const parsed = JSON.parse(llmResponse.content as string);
