@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, TextInput, TouchableOpacity, StyleSheet, Text, Alert, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, TextInput, TouchableOpacity, StyleSheet, Text, Alert, Platform, Modal } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useAudioRecorder, RecordingPresets } from 'expo-audio';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
@@ -8,13 +8,19 @@ import { CREDIT_COSTS } from '../utils/creditPurchaseManager';
 import { getCurrentTheme } from '../utils/theme';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { VoiceError, VoiceErrorCode } from '../utils/voice/types/VoiceTypes';
+import { sortingService, SortingResult, SortingProgress as SortingProgressType } from '../utils/sortingService';
+import { SortingProgress } from './SortingProgress';
+import { SortingResults } from './SortingResults';
 
 /**
  * This is the main chatbar for the AI Sorting feature. This is the main entry point for the user to sort their images through natural language.
  */
 
 interface PictureHackBarProps {
-  onSubmit: (prompt: string) => void;
+  onSubmit?: (prompt: string) => void;
+  onSortingComplete?: (result: SortingResult) => void;
+  imageIds?: string[];
+  albumId?: string;
   placeholder?: string;
   disabled?: boolean;
 }
@@ -22,12 +28,19 @@ interface PictureHackBarProps {
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
 export function PictureHackBar({ 
-  onSubmit, 
+  onSubmit,
+  onSortingComplete,
+  imageIds,
+  albumId,
   placeholder = "What would you like to sort?",
   disabled = false 
 }: PictureHackBarProps) {
   const { userFlags, deductCredits } = useApp();
   const [prompt, setPrompt] = useState('');
+  const [sortingProgress, setSortingProgress] = useState<SortingProgressType | null>(null);
+  const [sortingResult, setSortingResult] = useState<SortingResult | null>(null);
+  const [showProgress, setShowProgress] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const theme = getCurrentTheme();
   
   // Move useAudioRecorder here (React hook at component level)
@@ -89,7 +102,14 @@ export function PictureHackBar({
   const containerScale = useSharedValue(1);
   const micPulse = useSharedValue(1);
 
-  const handleSubmit = () => {
+  // Set up sorting progress callback
+  React.useEffect(() => {
+    sortingService.setProgressCallback((progress) => {
+      setSortingProgress(progress);
+    });
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
     if (prompt.trim() && !disabled && !voice.state.isRecording && !voice.state.isTranscribing) {
       // Check if user has sufficient credits for the query
       if (userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY) {
@@ -104,10 +124,47 @@ export function PictureHackBar({
       sendScale.value = withSpring(0.9, { damping: 15, stiffness: 300 }, () => {
         sendScale.value = withSpring(1);
       });
-      onSubmit(prompt.trim());
+
+      // Call original onSubmit if provided (for backward compatibility)
+      onSubmit?.(prompt.trim());
+
+      // Start new sorting process
+      try {
+        setShowProgress(true);
+        setSortingProgress({
+          stage: 'analyzing',
+          progress: 0,
+          message: 'Starting analysis...'
+        });
+
+        const result = await sortingService.sortImages({
+          query: prompt.trim(),
+          imageIds,
+          albumId,
+          sortType: 'custom',
+          maxResults: 50
+        });
+
+        setSortingResult(result);
+        setShowProgress(false);
+        setShowResults(true);
+        
+        if (onSortingComplete) {
+          onSortingComplete(result);
+        }
+
+      } catch (error: any) {
+        console.error('Sorting failed:', error);
+        setSortingProgress({
+          stage: 'error',
+          progress: 0,
+          message: error?.message || 'Sorting failed'
+        });
+      }
+
       setPrompt('');
     }
-  };
+  }, [prompt, disabled, voice.state, userFlags.creditBalance, onSubmit, onSortingComplete, imageIds, albumId, sendScale]);
 
   const startRecording = async () => {
     try {
@@ -188,6 +245,35 @@ export function PictureHackBar({
   const isVoiceDisabled = !voice.isAvailable || disabled || voice.state.isTranscribing;
   const isSubmitDisabled = !prompt.trim() || disabled || voice.state.isRecording || voice.state.isTranscribing || userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY;
 
+  // Callback handlers
+  const handleCancelSorting = useCallback(() => {
+    sortingService.cancel();
+    setShowProgress(false);
+    setSortingProgress(null);
+  }, []);
+
+  const handleRetrySort = useCallback(async () => {
+    if (prompt.trim()) {
+      handleSubmit();
+    }
+  }, [prompt, handleSubmit]);
+
+  const handleSortingResultClose = useCallback(() => {
+    setShowResults(false);
+    setSortingResult(null);
+  }, []);
+
+  const handleApplySort = useCallback((images: any[]) => {
+    console.log('Applying sort order:', images);
+    // TODO: Implement sort application
+    setShowResults(false);
+  }, []);
+
+  const handleSaveResults = useCallback((result: SortingResult) => {
+    console.log('Saving sorting results:', result);
+    // TODO: Implement result saving
+  }, []);
+
   // Create styles with current theme
   const styles = createStyles(theme);
 
@@ -259,6 +345,35 @@ export function PictureHackBar({
           </AnimatedTouchableOpacity>
         </View>
       </View>
+
+      {/* Progress Modal */}
+      {sortingProgress && (
+        <SortingProgress
+          progress={sortingProgress}
+          onCancel={handleCancelSorting}
+          onRetry={handleRetrySort}
+          isVisible={showProgress}
+          estimatedCost={1}
+        />
+      )}
+
+      {/* Results Modal */}
+      <Modal
+        visible={showResults}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={handleSortingResultClose}
+      >
+        {sortingResult && (
+          <SortingResults
+            result={sortingResult}
+            onClose={handleSortingResultClose}
+            onApplySort={handleApplySort}
+            onSaveResults={handleSaveResults}
+            isVisible={showResults}
+          />
+        )}
+      </Modal>
     </Animated.View>
   );
 }
