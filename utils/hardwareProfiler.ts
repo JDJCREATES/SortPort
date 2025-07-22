@@ -1,4 +1,4 @@
-import * as Device from 'expo-device';
+import DeviceInfo from 'react-native-device-info';
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 
@@ -91,7 +91,7 @@ export class HardwareProfiler {
   }
 
   /**
-   * 📱 Get device information
+   * 📱 Get device information with react-native-device-info
    */
   private static async getDeviceInfo(): Promise<{
     cpuCores: number;
@@ -100,58 +100,115 @@ export class HardwareProfiler {
     isTablet: boolean;
   }> {
     try {
-      // Estimate CPU cores based on platform and device
+      // Use react-native-device-info for accurate hardware detection
+      const [
+        modelName,
+        deviceId,
+        brand,
+        systemVersion,
+        isTablet,
+        totalMemory
+      ] = await Promise.all([
+        DeviceInfo.getModel(),
+        DeviceInfo.getDeviceId(),
+        DeviceInfo.getBrand(),
+        DeviceInfo.getSystemVersion(),
+        DeviceInfo.isTablet(),
+        DeviceInfo.getTotalMemory().catch(() => 0)
+      ]);
+
+      // More accurate CPU core detection
       let cpuCores = 4; // Safe default
       
       if (Platform.OS === 'ios') {
-        const modelName = Device.modelName || '';
+        // Enhanced iOS detection using device identifier
+        const deviceIdentifier = deviceId.toLowerCase();
         
-        // iOS device detection
-        if (modelName.includes('iPhone')) {
-          if (modelName.includes('15') || modelName.includes('14')) {
-            cpuCores = 6; // A16/A15 Bionic
-          } else if (modelName.includes('13') || modelName.includes('12')) {
-            cpuCores = 6; // A15/A14 Bionic
-          } else if (modelName.includes('11') || modelName.includes('XS') || modelName.includes('XR')) {
-            cpuCores = 6; // A12/A13 Bionic
+        if (deviceIdentifier.includes('iphone')) {
+          if (deviceIdentifier.includes('15,') || deviceIdentifier.includes('16,')) {
+            cpuCores = 6; // iPhone 14/15 series
+          } else if (deviceIdentifier.includes('14,') || deviceIdentifier.includes('13,')) {
+            cpuCores = 6; // iPhone 13/12 series
+          } else if (deviceIdentifier.includes('12,') || deviceIdentifier.includes('11,')) {
+            cpuCores = 6; // iPhone 11/XS/XR series
           } else {
-            cpuCores = 4; // Older devices
+            cpuCores = 4; // Older iPhones
           }
-        } else if (modelName.includes('iPad')) {
-          cpuCores = 8; // iPads generally have more cores
+        } else if (deviceIdentifier.includes('ipad')) {
+          cpuCores = deviceIdentifier.includes('pro') ? 8 : 6;
         }
       } else if (Platform.OS === 'android') {
-        // Android estimation based on year and device class
-        const year = Device.deviceYearClass || 2020;
-        if (year >= 2022) {
+        // Enhanced Android detection
+        const brandLower = brand.toLowerCase();
+        const modelLower = modelName.toLowerCase();
+        
+        // Flagship devices (8+ cores)
+        if (
+          (brandLower.includes('samsung') && (modelLower.includes('s2') || modelLower.includes('note') || modelLower.includes('ultra'))) ||
+          (brandLower.includes('google') && modelLower.includes('pixel')) ||
+          totalMemory > 6 * 1024 * 1024 * 1024 // 6GB+ RAM
+        ) {
           cpuCores = 8;
-        } else if (year >= 2020) {
+        } else if (totalMemory > 4 * 1024 * 1024 * 1024) { // 4GB+ RAM
           cpuCores = 6;
-        } else {
+        } else if (totalMemory > 2 * 1024 * 1024 * 1024) { // 2GB+ RAM
           cpuCores = 4;
+        } else {
+          cpuCores = 2;
         }
+      }
+
+      // Estimate device year
+      let year = 2020;
+      if (Platform.OS === 'ios') {
+        const identifierNumber = parseInt(deviceId.split(',')[0].slice(-2));
+        if (identifierNumber >= 15) year = 2023;
+        else if (identifierNumber >= 14) year = 2022;
+        else if (identifierNumber >= 13) year = 2021;
+        else if (identifierNumber >= 12) year = 2020;
+        else year = 2019;
+      } else {
+        const androidVersion = parseInt(systemVersion);
+        if (androidVersion >= 13) year = 2023;
+        else if (androidVersion >= 12) year = 2022;
+        else if (androidVersion >= 11) year = 2021;
+        else if (androidVersion >= 10) year = 2020;
+        else year = 2019;
       }
 
       return {
         cpuCores,
-        modelName: Device.modelName || 'Unknown',
-        year: Device.deviceYearClass || 2020,
-        isTablet: Device.deviceType === Device.DeviceType.TABLET
+        modelName,
+        year,
+        isTablet
       };
 
     } catch (error) {
-      console.warn('⚠️ Device info detection failed:', error);
+      console.warn('⚠️ Device info detection failed, using fallback:', error);
+      
+      // Fallback logic without Device dependency
+      let cpuCores = 4;
+      let year = 2020;
+      
+      if (Platform.OS === 'ios') {
+        cpuCores = 6; // Modern iOS devices typically have 6 cores
+        year = 2021; // Reasonable default for iOS
+      } else if (Platform.OS === 'android') {
+        cpuCores = 4; // Safe default for Android
+        year = 2020;
+      }
+
       return {
-        cpuCores: 4,
+        cpuCores,
         modelName: 'Unknown',
-        year: 2020,
-        isTablet: false
+        year,
+        isTablet: false // Safe default
       };
     }
   }
 
   /**
-   * 🧠 Get memory information
+   * 🧠 Get memory information with react-native-device-info
    */
   public static async getMemoryInfo(): Promise<{
     totalMemoryMB: number;
@@ -159,35 +216,33 @@ export class HardwareProfiler {
     memoryPressure: 'low' | 'medium' | 'high';
   }> {
     try {
-      // Estimate memory based on device class and platform
-      let totalMemoryMB = 4096; // 4GB default
-      let availableMemoryMB = 2048; // 2GB available default
+      // Get actual memory values from react-native-device-info
+      const [totalMemory, usedMemory] = await Promise.all([
+        DeviceInfo.getTotalMemory().catch(() => 0),
+        DeviceInfo.getUsedMemory().catch(() => 0)
+      ]);
 
-      if (Platform.OS === 'ios') {
-        const year = Device.deviceYearClass || 2020;
-        const modelName = Device.modelName || '';
-        
-        if (modelName.includes('Pro') || year >= 2022) {
-          totalMemoryMB = 8192; // 8GB for Pro models
-          availableMemoryMB = 4096;
-        } else if (year >= 2020) {
-          totalMemoryMB = 6144; // 6GB for recent devices
-          availableMemoryMB = 3072;
+      let totalMemoryMB: number;
+      let availableMemoryMB: number;
+
+      if (totalMemory > 0) {
+        // Use actual values from device-info
+        totalMemoryMB = Math.round(totalMemory / (1024 * 1024));
+        const usedMemoryMB = Math.round(usedMemory / (1024 * 1024));
+        availableMemoryMB = Math.max(totalMemoryMB - usedMemoryMB, Math.round(totalMemoryMB * 0.1));
+      } else {
+        // Fallback estimation without Device dependency
+        if (Platform.OS === 'ios') {
+          // iOS defaults - typically have more RAM
+          totalMemoryMB = 6144; // 6GB for modern iOS devices
+          availableMemoryMB = 3072; // ~50% available
+        } else if (Platform.OS === 'android') {
+          // Android defaults - more conservative
+          totalMemoryMB = 4096; // 4GB for modern Android devices
+          availableMemoryMB = 2048; // ~50% available
         } else {
-          totalMemoryMB = 3072; // 3GB for older devices
-          availableMemoryMB = 1536;
-        }
-      } else if (Platform.OS === 'android') {
-        const year = Device.deviceYearClass || 2020;
-        
-        if (year >= 2023) {
-          totalMemoryMB = 8192; // 8GB for flagship
-          availableMemoryMB = 4096;
-        } else if (year >= 2021) {
-          totalMemoryMB = 6144; // 6GB for mid-high
-          availableMemoryMB = 3072;
-        } else {
-          totalMemoryMB = 4096; // 4GB for older
+          // Web/other platforms
+          totalMemoryMB = 4096;
           availableMemoryMB = 2048;
         }
       }
@@ -219,10 +274,19 @@ export class HardwareProfiler {
   }
 
   /**
-   * 💾 Get storage information
+   * 💾 Get storage information with react-native-device-info
    */
   private static async getStorageInfo(): Promise<{ availableGB: number }> {
     try {
+      // Try device-info first
+      const freeStorage = await DeviceInfo.getFreeDiskStorage().catch(() => 0);
+      
+      if (freeStorage > 0) {
+        const availableGB = freeStorage / (1024 * 1024 * 1024);
+        return { availableGB };
+      }
+      
+      // Fallback to expo FileSystem (keep existing logic)
       const freeSpace = await FileSystem.getFreeDiskStorageAsync();
       const availableGB = freeSpace / (1024 * 1024 * 1024);
       
@@ -234,17 +298,27 @@ export class HardwareProfiler {
   }
 
   /**
-   * 🔋 Get power mode information
+   * 🔋 Get power mode information with react-native-device-info
    */
   private static async getPowerModeInfo(): Promise<{ isLowPowerMode: boolean }> {
     try {
-      // This would need a native module to detect low power mode
-      // For now, we'll use heuristics
-      const year = Device.deviceYearClass || 2020;
-      const isLowPowerMode = year < 2019; // Assume older devices are in power saving
+      // Get available device info for power heuristics
+      const [batteryLevel, totalMemory] = await Promise.all([
+        DeviceInfo.getBatteryLevel().catch(() => 1),
+        DeviceInfo.getTotalMemory().catch(() => 0)
+      ]);
+      
+      // Heuristics for low power mode:
+      // 1. Very low battery (< 15%)
+      // 2. Low-end device with limited memory (< 3GB)
+      const isLowBattery = batteryLevel < 0.15;
+      const isLowEndDevice = totalMemory > 0 && totalMemory < (3 * 1024 * 1024 * 1024); // < 3GB
+      
+      const isLowPowerMode = isLowBattery || isLowEndDevice;
       
       return { isLowPowerMode };
     } catch (error) {
+      console.warn('⚠️ Power mode detection failed:', error);
       return { isLowPowerMode: false };
     }
   }

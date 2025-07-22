@@ -73,7 +73,7 @@ export class VoiceStateManager {
   }
 
   // Error management
-  setError(error: VoiceError | null): void {
+  setError(error: VoiceError | undefined): void {
     this.updateState({ error });
   }
 

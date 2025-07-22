@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet, Text, Alert, Platform } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { 
-  useAudioRecorder,
-  AudioModule
-} from 'expo-audio';
+import { useAudioRecorder, RecordingPresets } from 'expo-audio';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 import { useApp } from '../contexts/AppContext';
 import { CREDIT_COSTS } from '../utils/creditPurchaseManager';
 import { getCurrentTheme } from '../utils/theme';
-import { LangChainAgent } from '../utils/langchainAgent';
+import { useVoiceInput } from '../hooks/useVoiceInput';
+import { VoiceError, VoiceErrorCode } from '../utils/voice/types/VoiceTypes';
 
 /**
  * This is the main chatbar for the AI Sorting feature. This is the main entry point for the user to sort their images through natural language.
@@ -30,31 +28,61 @@ export function PictureHackBar({
 }: PictureHackBarProps) {
   const { userFlags, deductCredits } = useApp();
   const [prompt, setPrompt] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
   const theme = getCurrentTheme();
   
-  // Initialize LangChain agent for transcription
-  const langChainAgent = new LangChainAgent();
+  // Move useAudioRecorder here (React hook at component level)
+  // Using RecordingPresets for proper configuration
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   
-  // Use type assertion to bypass TypeScript issues
-  const audioRecorder = useAudioRecorder({
-    extension: '.m4a',
-    sampleRate: 44100,
-    numberOfChannels: 1,
-    bitRate: 128000,
-    android: {
-      extension: '.m4a',
-      outputFormat: 'mpeg4',
-      audioEncoder: 'aac',
+  // Initialize voice input with OpenAI transcription
+  const voice = useVoiceInput({
+    audio: {
+      maxDuration: 60,
       sampleRate: 44100,
+      channels: 1,
+      bitRate: 128000,
+      recorderInstance: audioRecorder, // Pass the recorder instance
     },
-    ios: {
-      extension: '.m4a',
-      outputFormat: 'mpeg4aac',
-      sampleRate: 44100,
+    transcription: {
+      primaryProvider: 'openai',
+      retryAttempts: 3,
+    }
+  }, {
+    onTranscriptionComplete: (result) => {
+      setPrompt(result.text);
     },
-  } as any);
+    onError: (error) => {
+      handleVoiceError(error);
+    }
+  });
+
+  const handleVoiceError = (error: VoiceError) => {
+    console.error('Voice error:', error);
+    
+    switch (error.code) {
+      case VoiceErrorCode.PERMISSION_DENIED:
+        Alert.alert('Permission Required', 'Please grant microphone permission to use voice input.');
+        break;
+      case VoiceErrorCode.UNSUPPORTED_PLATFORM:
+        Alert.alert('Voice Input Not Available', 'Voice recording is not available on this platform. Please type your request instead.');
+        break;
+      case VoiceErrorCode.TRANSCRIPTION_FAILED:
+        Alert.alert('Transcription Error', 'Failed to transcribe audio. Please try again or check your internet connection.');
+        break;
+      case VoiceErrorCode.API_QUOTA_EXCEEDED:
+        Alert.alert('Service Limit', 'Voice transcription service limit reached. Please try again later.');
+        break;
+      default:
+        // Handle audio recorder released errors specifically
+        if (error.message.includes('released') || error.message.includes('Audio recorder')) {
+          Alert.alert('Voice Recording Error', 'The voice recorder needs to be restarted. Please try recording again.');
+          // Force re-render to get a fresh recorder instance
+          setPrompt('');
+        } else {
+          Alert.alert('Voice Error', error.message || 'An error occurred with voice input. Please try again.');
+        }
+    }
+  };
   
   const sendScale = useSharedValue(1);
   const micScale = useSharedValue(1);
@@ -62,7 +90,7 @@ export function PictureHackBar({
   const micPulse = useSharedValue(1);
 
   const handleSubmit = () => {
-    if (prompt.trim() && !disabled && !isRecording && !isTranscribing) {
+    if (prompt.trim() && !disabled && !voice.state.isRecording && !voice.state.isTranscribing) {
       // Check if user has sufficient credits for the query
       if (userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY) {
         Alert.alert(
@@ -83,142 +111,58 @@ export function PictureHackBar({
 
   const startRecording = async () => {
     try {
-      if (Platform.OS === 'web') {
-        Alert.alert('Voice Input Not Available', 'Voice recording is not available on web. Please type your request instead.');
-        return;
-      }
 
-      console.log('Requesting permissions...');
-      const permission = await AudioModule.requestRecordingPermissionsAsync();
-      
-      if (!permission.granted) {
-        Alert.alert('Permission Required', 'Please grant microphone permission to use voice input.');
-        return;
-      }
+      console.log('🎬 Starting recording...');
+    console.log(' audioRecorder.isRecording:', audioRecorder.isRecording);
+    console.log(' voice.state.isRecording:', voice.state.isRecording);
 
-      console.log('Starting recording...');
-      console.log('Recorder before start:', audioRecorder);
+      setPrompt(''); // Clear any existing text
       
-      await audioRecorder.record();
-      setIsRecording(true);
-      
-      console.log('Recorder after start:', audioRecorder);
-      console.log('Recording state:', audioRecorder.isRecording);
+      // Start recording
+      await voice.startVoiceInput();
+      console.log('Recording started with new voice system');
+       console.log(' audioRecorder.isRecording:', audioRecorder.isRecording);
+    console.log(' voice.state.isRecording:', voice.state.isRecording);
       
       // Start pulsing animation
       const pulse = () => {
         micPulse.value = withTiming(1.2, { duration: 500 }, () => {
           micPulse.value = withTiming(1, { duration: 500 }, () => {
-            if (isRecording) pulse(); // Continue pulsing while recording
+            if (voice.state.isRecording) pulse(); // Continue pulsing while recording
           });
         });
       };
       pulse();
 
-      console.log('Recording started');
+     
     } catch (err) {
       console.error('Failed to start recording', err);
-      Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
+      // Error handling is done in the voice error callback
     }
   };
 
   const stopRecording = async () => {
     try {
-      console.log('Stopping recording...');
-      setIsRecording(false);
-      
-      // Stop the recording first
-      await audioRecorder.stop();
-      
-      // Wait a moment for the recording to be processed
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Try different ways to get the URI
-      let recordingUri = audioRecorder.uri;
-      
-      // If uri is not available, try other properties
-      if (!recordingUri) {
-        // Check if there's a different property name
-        recordingUri = (audioRecorder as any).getURI?.() || 
-                      (audioRecorder as any).recordingUri || 
-                      (audioRecorder as any).fileUri;
-      }
-      
-      console.log('Available recorder properties:', Object.keys(audioRecorder));
-      console.log('Recorder object:', audioRecorder);
-      
-      if (!recordingUri) {
-        console.warn('No recording URI available, using mock transcription');
-        // Skip transcription and use mock data
-        const mockTranscriptions = [
-          'Find all my vacation photos from last summer',
-          'Show me pictures of my dog',
-          'Sort photos by date taken',
-          'Find all selfies',
-          'Show me photos from the beach'
-        ];
-        
-        const randomTranscription = mockTranscriptions[Math.floor(Math.random() * mockTranscriptions.length)];
-        setPrompt(randomTranscription);
-        
-        Alert.alert(
-          'Recording Saved', 
-          'Recording completed but transcription is not available. Using sample text.',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-
-      console.log('Recording stopped, URI:', recordingUri);
-      
-      // Start transcription
-      setIsTranscribing(true);
+      console.log('Stopping recording and transcribing...');
       setPrompt('Transcribing audio...');
       
-      try {
-        const transcription = await langChainAgent.transcribeAudio(recordingUri);
-        setPrompt(transcription);
-        console.log('Transcription completed:', transcription);
-      } catch (transcriptionError) {
-        console.error('Transcription failed:', transcriptionError);
-        
-        // Fallback to mock transcription if API fails
-        const mockTranscriptions = [
-          'Find all my vacation photos from last summer',
-          'Show me pictures of my dog',
-          'Sort photos by date taken',
-          'Find all selfies',
-          'Show me photos from the beach'
-        ];
-        
-        const randomTranscription = mockTranscriptions[Math.floor(Math.random() * mockTranscriptions.length)];
-        setPrompt(randomTranscription);
-        
-        Alert.alert(
-          'Transcription Error', 
-          'Failed to transcribe audio. Using sample text instead. Please check your OpenAI API key configuration.',
-          [{ text: 'OK' }]
-        );
-      }
-      
-      setIsTranscribing(false);
-      
+      const result = await voice.completeVoiceInput();
+      // The transcription result will be set via the onTranscriptionComplete callback
+      console.log('Transcription completed:', result.text);
     } catch (error) {
-      console.error('Error stopping recording:', error);
-      setIsRecording(false);
-      setIsTranscribing(false);
-      Alert.alert('Recording Error', 'Failed to stop recording. Please try again.');
+      console.error('Error in voice input:', error);
+      // Error handling is done in the voice error callback
     }
   };
 
   const handleVoiceInput = () => {
-    if (disabled || isTranscribing) return;
+    if (disabled || voice.state.isTranscribing) return;
     
     micScale.value = withSpring(0.9, { damping: 15, stiffness: 300 }, () => {
       micScale.value = withSpring(1);
     });
 
-    if (isRecording) {
+    if (voice.state.isRecording) {
       stopRecording();
     } else {
       startRecording();
@@ -245,8 +189,8 @@ export function PictureHackBar({
     transform: [{ scale: containerScale.value }],
   }));
 
-  const isVoiceDisabled = Platform.OS === 'web' || disabled || isTranscribing;
-  const isSubmitDisabled = !prompt.trim() || disabled || isRecording || isTranscribing || userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY;
+  const isVoiceDisabled = !voice.isAvailable || disabled || voice.state.isTranscribing;
+  const isSubmitDisabled = !prompt.trim() || disabled || voice.state.isRecording || voice.state.isTranscribing || userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY;
 
   // Create styles with current theme
   const styles = createStyles(theme);
@@ -256,13 +200,13 @@ export function PictureHackBar({
       <View style={styles.header}>
         <Ionicons name="sparkles" size={16} color={theme.colors.primary} />
         <Text style={styles.headerText}>Picture Hack</Text>
-        {isRecording && (
+        {voice.state.isRecording && (
           <View style={styles.recordingIndicator}>
             <View style={styles.recordingDot} />
             <Text style={styles.recordingText}>Recording...</Text>
           </View>
         )}
-        {isTranscribing && (
+        {voice.state.isTranscribing && (
           <View style={styles.transcribingIndicator}>
             <Text style={styles.transcribingText}>Transcribing...</Text>
           </View>
@@ -272,7 +216,7 @@ export function PictureHackBar({
         <TextInput
           style={[
             styles.textInput,
-            isTranscribing && styles.textInputDisabled,
+            voice.state.isTranscribing && styles.textInputDisabled,
             userFlags.creditBalance < CREDIT_COSTS.NATURAL_LANGUAGE_QUERY && styles.textInputLowCredits
           ]}
           value={prompt}
@@ -281,7 +225,7 @@ export function PictureHackBar({
           placeholderTextColor={theme.colors.textSecondary}
           multiline
           maxLength={200}
-          editable={!disabled && !isTranscribing}
+          editable={!disabled && !voice.state.isTranscribing}
           onFocus={handleFocus}
           onBlur={handleBlur}
         />
@@ -289,14 +233,14 @@ export function PictureHackBar({
           <AnimatedTouchableOpacity
             style={[
               styles.iconButton, 
-              isRecording && styles.recordingButton,
+              voice.state.isRecording && styles.recordingButton,
               isVoiceDisabled && styles.disabledButton,
               micAnimatedStyle
             ]}
             onPress={handleVoiceInput}
             disabled={isVoiceDisabled}
           >
-            {isRecording ? (
+            {voice.state.isRecording ? (
               <MaterialIcons name="stop" size={20} color="white" />
             ) : (
               <Ionicons 

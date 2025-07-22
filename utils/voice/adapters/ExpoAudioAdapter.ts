@@ -25,15 +25,15 @@ export class ExpoAudioAdapter implements AudioRecorderAdapter {
     try {
       this.config = config;
       
-      // Initialize the recorder with proper configuration
-      this.recorder = useAudioRecorder({
-        extension: config.format.startsWith('.') ? config.format : `.${config.format}`,
-        sampleRate: config.sampleRate,
-        numberOfChannels: config.channels,
-        bitRate: config.bitRate,
-        android: config.android,
-        ios: config.ios,
-      } as any);
+      if (config.recorderInstance) {
+        // Use the passed recorder instance from React hook
+        this.recorder = config.recorderInstance;
+      } else {
+        throw new VoiceError({
+          code: VoiceErrorCode.RECORDING_FAILED,
+          message: 'No recorder instance provided. useAudioRecorder hook must be called at component level.'
+        });
+      }
 
       this.isInitialized = true;
     } catch (error) {
@@ -54,8 +54,71 @@ export class ExpoAudioAdapter implements AudioRecorderAdapter {
     }
 
     try {
+      console.log('🎤 ExpoAudioAdapter: Starting recording...');
+      console.log('🎤 Recorder state before:', {
+        isRecording: this.recorder.isRecording,
+        isPaused: this.recorder.isPaused,
+        isReleased: this.recorder._isReleased,
+        hasNative: this.recorder._native !== null
+      });
+      
+      // Check if recorder is still valid (not released)
+      if (this.recorder._isReleased || this.recorder._native === null) {
+        console.log('❌ Recorder is released or has no native object');
+        throw new VoiceError({
+          code: VoiceErrorCode.RECORDING_FAILED,
+          message: 'Audio recorder has been released. Please reinitialize.'
+        });
+      }
+      
+      console.log('🎤 Preparing recorder...');
+      await this.recorder.prepareToRecordAsync();
+      
+      console.log('🎤 Calling recorder.record()...');
       await this.recorder.record();
+      
+      console.log('🎤 recorder.record() completed, waiting for state update...');
+      
+      // Wait for React hook state to update (hooks are async)
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('🎤 Recorder state after delay:', {
+        isRecording: this.recorder.isRecording,
+        isPaused: this.recorder.isPaused,
+        duration: this.recorder.duration
+      });
+      
+      // Give it one more chance with longer delay if still not recording
+      if (!this.recorder.isRecording) {
+        console.log('🎤 First check failed, waiting longer...');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        console.log('🎤 Recorder state after longer delay:', {
+          isRecording: this.recorder.isRecording,
+          isPaused: this.recorder.isPaused,
+          duration: this.recorder.duration
+        });
+      }
+      
+      // Verify recording actually started
+      if (!this.recorder.isRecording) {
+        console.log('❌ Recording failed to start after delays - isRecording is still false');
+        throw new VoiceError({
+          code: VoiceErrorCode.RECORDING_FAILED,
+          message: 'Recording failed to start. This might be an expo-audio configuration issue.'
+        });
+      }
+      
+      console.log('✅ Recording successfully started');
     } catch (error) {
+      // Handle specific Expo Audio errors
+      if (error instanceof Error && error.message.includes('shared object that was already released')) {
+        throw new VoiceError({
+          code: VoiceErrorCode.RECORDING_FAILED,
+          message: 'Audio recorder was released. Please restart the recording.'
+        });
+      }
+      
       throw new VoiceError({
         code: VoiceErrorCode.RECORDING_FAILED,
         message: 'Failed to start recording',
@@ -73,6 +136,14 @@ export class ExpoAudioAdapter implements AudioRecorderAdapter {
     }
 
     try {
+      // Check if recorder is still valid before stopping
+      if (this.recorder._isReleased || this.recorder._native === null) {
+        throw new VoiceError({
+          code: VoiceErrorCode.RECORDING_FAILED,
+          message: 'Audio recorder has been released'
+        });
+      }
+      
       await this.recorder.stop();
       
       // Wait for recording to be processed
@@ -110,6 +181,15 @@ export class ExpoAudioAdapter implements AudioRecorderAdapter {
       if (error instanceof VoiceError) {
         throw error;
       }
+      
+      // Handle shared object released error
+      if (error instanceof Error && error.message.includes('shared object that was already released')) {
+        throw new VoiceError({
+          code: VoiceErrorCode.RECORDING_FAILED,
+          message: 'Audio recorder was released during recording'
+        });
+      }
+      
       throw new VoiceError({
         code: VoiceErrorCode.RECORDING_FAILED,
         message: 'Failed to stop recording',
@@ -173,7 +253,7 @@ export class ExpoAudioAdapter implements AudioRecorderAdapter {
   }
 
   getRecordingStatus(): AudioRecordingStatus {
-    if (!this.recorder) {
+    if (!this.recorder || this.recorder._isReleased || this.recorder._native === null) {
       return {
         isRecording: false,
         isPaused: false,
@@ -181,12 +261,21 @@ export class ExpoAudioAdapter implements AudioRecorderAdapter {
       };
     }
 
-    return {
-      isRecording: this.recorder.isRecording || false,
-      isPaused: this.recorder.isPaused || false,
-      duration: this.recorder.duration || 0,
-      metering: this.recorder.metering,
-    };
+    try {
+      return {
+        isRecording: this.recorder.isRecording || false,
+        isPaused: this.recorder.isPaused || false,
+        duration: this.recorder.duration || 0,
+        metering: this.recorder.metering,
+      };
+    } catch (error) {
+      // If recorder is released, return default state
+      return {
+        isRecording: false,
+        isPaused: false,
+        duration: 0,
+      };
+    }
   }
 
   async requestPermissions(): Promise<PermissionResult> {
@@ -213,8 +302,15 @@ export class ExpoAudioAdapter implements AudioRecorderAdapter {
 
   async cleanup(): Promise<void> {
     try {
-      if (this.recorder?.isRecording) {
-        await this.cancelRecording();
+      if (this.recorder && !this.recorder._isReleased) {
+        // Only try to stop if recorder is still valid
+        if (this.recorder.isRecording) {
+          try {
+            await this.recorder.stop();
+          } catch (error) {
+            console.warn('Error stopping recorder during cleanup:', error);
+          }
+        }
       }
       this.recorder = null;
       this.config = null;

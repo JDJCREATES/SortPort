@@ -9,8 +9,11 @@ export interface VoiceRecordingState {
 export interface VoiceRecordingResult {
   uri: string;
   duration: number;
-  size: number;
-  format: string;
+  size?: number;
+  format?: string;
+  channels?: number;
+  sampleRate?: number;
+  bitRate?: number;
 }
 
 export interface TranscriptionResult {

@@ -65,12 +65,18 @@ export function useVoiceInput(
     controllerRef.current = controller;
     setIsAvailable(controller.isAvailable());
 
+    // Subscribe to state manager for real-time updates
+    const unsubscribe = controller.subscribe((newState) => {
+      setState(newState);
+    });
+
     // Auto-initialize if enabled
     if (config.autoInitialize !== false) {
       initialize();
     }
 
     return () => {
+      unsubscribe();
       cleanup();
     };
   }, []);

@@ -20,6 +20,7 @@ export interface AudioRecorderConfig {
   format: string;
   maxDuration?: number;
   enableMetering?: boolean;
+  recorderInstance?: any; // For passing React hook instance
   android?: {
     extension: string;
     outputFormat: string;

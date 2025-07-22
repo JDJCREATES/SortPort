@@ -219,12 +219,12 @@ export class WebAudioAdapter implements AudioRecorderAdapter {
   isAvailable(): boolean {
     return Platform.OS === 'web' && 
            typeof navigator !== 'undefined' && 
-           navigator.mediaDevices && 
-           navigator.mediaDevices.getUserMedia &&
+           !!navigator.mediaDevices && 
+           !!navigator.mediaDevices.getUserMedia &&
            typeof MediaRecorder !== 'undefined';
   }
 
-  private cleanup(): void {
+  async cleanup(): Promise<void> {
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
       this.stream = null;
@@ -234,9 +234,5 @@ export class WebAudioAdapter implements AudioRecorderAdapter {
     this.isRecording = false;
     this.isPaused = false;
     this.startTime = 0;
-  }
-
-  async cleanup(): Promise<void> {
-    this.cleanup();
   }
 }

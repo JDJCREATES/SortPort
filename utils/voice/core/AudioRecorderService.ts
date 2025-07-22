@@ -40,14 +40,20 @@ export class AudioRecorderService {
   }
 
   async requestPermissions(): Promise<boolean> {
+    console.log('🔐 AudioRecorderService: Requesting permissions...');
+    
     if (!this.adapter) {
+      console.log('🔐 No adapter, initializing...');
       await this.initialize();
     }
 
     try {
+      console.log('🔐 Calling adapter.requestPermissions()...');
       const result = await this.adapter!.requestPermissions();
+      console.log('🔐 Permission result:', result);
       return result.granted;
     } catch (error) {
+      console.log('❌ Permission request failed:', error);
       this.callbacks.onError?.(error instanceof VoiceError ? error : new VoiceError({
         code: VoiceErrorCode.PERMISSION_DENIED,
         message: 'Failed to request permissions',
@@ -58,24 +64,36 @@ export class AudioRecorderService {
   }
 
   async startRecording(): Promise<void> {
+    console.log('🎧 AudioRecorderService: Starting recording...');
+    
     if (!this.adapter) {
+      console.log('🎧 No adapter, initializing...');
       await this.initialize();
     }
 
     try {
       // Check permissions first
+      console.log('🎧 Checking permissions...');
       const hasPermission = await this.requestPermissions();
+      console.log('🎧 Permission result:', hasPermission);
+      
       if (!hasPermission) {
+        console.log('❌ Permission denied');
         throw new VoiceError({
           code: VoiceErrorCode.PERMISSION_DENIED,
           message: 'Microphone permission required'
         });
       }
 
+      console.log('🎧 Calling adapter.startRecording()...');
       await this.adapter!.startRecording();
+      console.log('🎧 Adapter startRecording completed successfully');
+      
       this.startTime = Date.now();
       
+      console.log('🎧 Firing onRecordingStart callback...');
       this.callbacks.onRecordingStart?.();
+      console.log('🎧 Starting timers...');
       this.startTimers();
       
     } catch (error) {
