@@ -139,5 +139,7 @@ export async function withTransaction<T>(
   // Note: Supabase doesn't support explicit transactions in the JS client
   // This is a placeholder for transaction-like behavior
   // In practice, we'd need to implement this at the SQL level or use batch operations
+
+  // JDJ ~> We are using RevenueCat for billing, so we need to just link it all correctly!
   return await callback(supabaseService);
 }

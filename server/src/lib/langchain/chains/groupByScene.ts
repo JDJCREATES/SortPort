@@ -586,7 +586,7 @@ export class GroupBySceneChain {
           confidence: item.metadata?.confidence || 0.8,
           ...item.metadata
         }
-      })).filter(item => item.image);
+      })).filter((item: any) => item.image);
 
     } catch (error) {
       console.error('Failed to parse LLM response for scene sorting');

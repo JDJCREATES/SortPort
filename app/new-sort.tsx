@@ -6,7 +6,7 @@ import { PictureHackBar } from '../components/PictureHackBar';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { AlbumCard } from '../components/AlbumCard';
 import { PhotoLoader, PermissionStatus } from '../utils/photoLoader';
-import { LangChainAgent } from '../utils/langchainAgent';
+
 import { AlbumUtils } from '../utils/albumUtils';
 import { CreditPurchaseManager, CREDIT_COSTS } from '../utils/creditPurchaseManager';
 import { useApp } from '../contexts/AppContext';
@@ -76,6 +76,7 @@ export default function NewSortScreen() {
     }
   };
 
+  // Should be calling edge function that then calls our custom backend server
   const handleSort = async (prompt: string) => {
     if (photos.length === 0 && permissionStatus === 'granted') {
       Alert.alert('No Photos', 'No photos found to sort. Please add some photos to your gallery and try again.');
@@ -121,7 +122,7 @@ export default function NewSortScreen() {
         photos,
         userFlags,
         deductCredits,
-        (completed, total) => {
+        (completed: any, total: any) => {
           const progressPercent = (completed / total) * 100;
           setProgress(progressPercent);
           setCurrentMessage(`Analyzing photo ${completed} of ${total}...`);

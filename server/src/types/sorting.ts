@@ -89,6 +89,16 @@ export interface SortedImageResult {
     isAlbumHeader?: boolean;
     albumTheme?: string;
     inAlbum?: string;
+    // Added for relevance-based sorting
+    componentScores?: {
+      content?: number;
+      temporal?: number;
+      quality?: number;
+      similarity?: number;
+      semantic?: number;
+      custom?: number;
+    };
+    sortingMethod?: string;
   };
 }
 
@@ -104,6 +114,12 @@ export interface ChainMetadata {
     processing: number;
     total: number;
   };
+  // Additional placeholder properties for chain adapter compatibility
+  isPlaceholder?: boolean;
+  groupCount?: number;
+  thumbnailCount?: number;
+  successRate?: number;
+  qualityScore?: number;
 }
 
 // Embedding and vector operations

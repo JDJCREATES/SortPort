@@ -609,7 +609,7 @@ export class PickThumbnailsChain {
             }
           };
         })
-        .filter(item => item.image);
+        .filter((item: any) => item.image);
 
       return selected;
 

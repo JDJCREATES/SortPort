@@ -210,8 +210,8 @@ export default function HomeScreen() {
         }
       >
         <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
-          <Text style={styles.title}>SnapSort</Text>
-          <Text style={styles.subtitle}>Your AI-powered photo organization companion</Text>
+          <Text style={styles.title}>SortPort</Text>
+          <Text style={styles.subtitle}>Your agentic photo organization companion</Text>
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(200)}>

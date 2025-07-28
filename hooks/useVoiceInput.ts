@@ -51,6 +51,7 @@ export function useVoiceInput(
   });
   const [isAvailable, setIsAvailable] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const hasCleanedUp = useRef(false);
 
   // Create controller instance
   useEffect(() => {
@@ -202,14 +203,16 @@ export function useVoiceInput(
     }
   };
 
-  const cleanup = async (): Promise<void> => {
-    if (controllerRef.current) {
-      await controllerRef.current.cleanup();
-      controllerRef.current = null;
-    }
-    setIsInitialized(false);
-    setIsAvailable(false);
-  };
+const cleanup = async (): Promise<void> => {
+  if (hasCleanedUp.current) return;
+  hasCleanedUp.current = true;
+  if (controllerRef.current) {
+    await controllerRef.current.cleanup();
+    controllerRef.current = null;
+  }
+  setIsInitialized(false);
+  setIsAvailable(false);
+};
 
   return {
     // State

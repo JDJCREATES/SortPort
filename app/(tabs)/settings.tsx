@@ -310,7 +310,7 @@ export default function SettingsScreen(): React.ReactElement {
         />
 
         <Animated.View entering={FadeInUp.delay(450)} style={styles.footer}>
-          <Text style={styles.footerText}>SnapSort v1.0.0</Text>
+          <Text style={styles.footerText}>SortPort v1.0.0</Text>
           <Text style={styles.footerSubtext}>
             Your photos stay on your device. Only AI analysis metadata is stored securely.
           </Text>

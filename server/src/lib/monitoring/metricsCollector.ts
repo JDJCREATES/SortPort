@@ -474,14 +474,18 @@ export class MetricsCollector {
     });
 
     // Convert to array and clean up
-    return Array.from(aggregates.values()).map(agg => ({
-      ...agg,
-      unique_users_count: agg.unique_users.size,
-      avg_duration: agg.count > 0 ? agg.total_duration / agg.count : 0,
-      success_rate: agg.count > 0 ? agg.success_count / agg.count : 0,
-      unique_users: undefined, // Remove Set object
-      metadata: JSON.stringify(agg.metadata)
-    }));
+    return Array.from(aggregates.values()).map(agg => {
+      const result: any = {
+        ...agg,
+        unique_users_count: agg.unique_users.size,
+        avg_duration: agg.count > 0 ? agg.total_duration / agg.count : 0,
+        success_rate: agg.count > 0 ? agg.success_count / agg.count : 0,
+        metadata: JSON.stringify(agg.metadata)
+      };
+      // Remove the Set object before sending to database
+      delete result.unique_users;
+      return result;
+    });
   }
 
   /**

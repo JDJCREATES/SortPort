@@ -14,6 +14,7 @@ import { sortRoutes } from './routes/sort.js';
 import { healthRoutes } from './routes/health.js';
 import { atlasRoutes } from './routes/atlas.js';
 import monitoringRoutes from './routes/monitoring.js';
+import lcelSortRoutes from './routes/lcel_sort.js';
 
 // Import middleware
 import { errorHandler } from './middleware/errorHandler.js';
@@ -68,8 +69,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Legacy rate limiting (deprecated, will be removed)
-// app.use(rateLimiter);
+// Note: Legacy rateLimiter deprecated in favor of production security middleware
 
 // Health check (no auth required)
 app.use('/health', healthRoutes);
@@ -78,7 +78,8 @@ app.use('/health', healthRoutes);
 app.use('/api/monitoring', monitoringRoutes);
 
 // Protected routes (require auth)
-app.use('/api/sort', authMiddleware, productionSecurity.getCostBasedRateLimit(), sortRoutes);
+app.use('/api/sort', authMiddleware, productionSecurity.getCostBasedRateLimit(), sortRoutes); // Legacy LangChain system
+app.use('/api/lcel', authMiddleware, productionSecurity.getCostBasedRateLimit(), lcelSortRoutes); // New LCEL system
 app.use('/api/atlas', authMiddleware, productionSecurity.getExpensiveOperationsLimit(), atlasRoutes);
 
 // 404 handler
@@ -116,6 +117,11 @@ server.listen(PORT, () => {
   console.log(`📈 Monitoring dashboard: http://localhost:${PORT}/api/monitoring/health`);
   console.log(`🔍 Metrics endpoint: http://localhost:${PORT}/api/monitoring/prometheus`);
   console.log(`💰 Cost analytics: http://localhost:${PORT}/api/monitoring/costs`);
+  console.log('');
+  console.log('🎯 Sorting Systems:');
+  console.log(`   Legacy: http://localhost:${PORT}/api/sort`);
+  console.log(`   LCEL:   http://localhost:${PORT}/api/lcel`);
+  console.log(`   Status: http://localhost:${PORT}/api/lcel/status`);
   
   if (process.env.NODE_ENV === 'production') {
     console.log('🔒 Production security middleware enabled');

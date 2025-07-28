@@ -46,7 +46,7 @@ export interface SortingResult {
   usedVision: boolean;
   processingTime: number;
   cost: {
-    credits: number;
+    balance: number;
     breakdown: {
       embedding: number;
       vision: number;
@@ -95,9 +95,9 @@ export class SortingService {
       // Validate request
       this.validateRequest(request);
 
-      // Estimate cost and check credits
+      // Estimate cost and check balance
       const estimatedCost = this.estimateCost(request);
-      await this.checkCredits(estimatedCost);
+      await this.checkbalance(estimatedCost);
 
       // Update progress
       this.updateProgress({
@@ -108,8 +108,8 @@ export class SortingService {
 
       // Call Supabase Edge Function
       const { data, error } = await supabase.functions.invoke('sort-by-language', {
-        body: request,
-        signal: this.abortController.signal
+        body: request
+       //may need to implement request cancellation workaround ~> JDJ
       });
 
       if (error) {
@@ -131,7 +131,7 @@ export class SortingService {
 
       return response.data!;
 
-    } catch (error) {
+    } catch (error: any) {
       this.updateProgress({
         stage: 'error',
         progress: 0,
@@ -356,9 +356,9 @@ export class SortingService {
   }
 
   /**
-   * Check if user has sufficient credits
+   * Check if user has sufficient balance
    */
-  private async checkCredits(requiredCredits: number) {
+  private async checkbalance(requiredbalance: number) {
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
@@ -366,20 +366,20 @@ export class SortingService {
     }
 
     const { data: profile, error } = await supabase
-      .from('user_profiles')
-      .select('credits')
+      .from('user_credits')
+      .select('balance')
       .eq('id', user.id)
       .single();
 
     if (error) {
-      console.warn('Could not check credits:', error);
-      // Don't block the request if we can't check credits
+      console.warn('Could not check balance:', error);
+      // Don't block the request if we can't check balance
       return;
     }
 
-    if (!profile || profile.credits < requiredCredits) {
+    if (!profile || profile.balance < requiredbalance) {
       throw new Error(
-        `Insufficient credits. Required: ${requiredCredits}, Available: ${profile?.credits || 0}`
+        `Insufficient balance. Required: ${requiredbalance}, Available: ${profile?.balance || 0}`
       );
     }
   }
@@ -397,10 +397,3 @@ export class SortingService {
 // Export singleton instance
 export const sortingService = new SortingService();
 
-// Export types for use in components
-export type {
-  SortingRequest,
-  SortedImage,
-  SortingResult,
-  SortingProgress
-};

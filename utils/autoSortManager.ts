@@ -1,5 +1,12 @@
+/**
+ * AutoSortManager.ts
+ * 
+ * Manages automatic sorting of photos into albums based on user-defined criteria and existing album structures.
+ * It uses a LangChain agent call to intelligently categorize new photos into existing albums or create new ones
+ */
+
 import { PhotoLoader } from './photoLoader';
-import { LangChainAgent } from './langchainAgent';
+
 import { AlbumUtils } from './albumUtils';
 import { MediaStorage } from './mediaStorage';
 import { UserFlags } from '../types';
@@ -68,7 +75,7 @@ export class AutoSortManager {
         sortPrompt,
         filteredPhotos,
         userFlags,
-        (completed, total) => {
+        (completed: number, total: number) => {
           console.log(`Auto-sort progress: ${completed}/${total}`);
         }
       );

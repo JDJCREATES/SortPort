@@ -1,8 +1,6 @@
 -- Create function to safely update user credits
--- This function handles atomic credit updates with proper error handling
-
 CREATE OR REPLACE FUNCTION update_user_credits(
-  user_id UUID,
+  p_user_id UUID,
   credit_change INTEGER
 )
 RETURNS JSON
@@ -15,9 +13,9 @@ DECLARE
   new_credits INTEGER;
 BEGIN
   -- Get current credits with row lock
-  SELECT credits INTO current_credits
-  FROM user_profiles
-  WHERE id = user_id
+  SELECT balance INTO current_credits
+  FROM user_credits
+  WHERE user_id = p_user_id
   FOR UPDATE;
 
   -- Check if user exists
@@ -42,11 +40,11 @@ BEGIN
   END IF;
 
   -- Update credits
-  UPDATE user_profiles
+  UPDATE user_credits
   SET 
-    credits = new_credits,
+    balance = new_credits,
     updated_at = NOW()
-  WHERE id = user_id;
+  WHERE user_id = p_user_id;
 
   -- Return success result
   RETURN json_build_object(
@@ -70,7 +68,9 @@ $$;
 GRANT EXECUTE ON FUNCTION update_user_credits(UUID, INTEGER) TO authenticated;
 
 -- Create function for getting user image stats
-CREATE OR REPLACE FUNCTION get_user_image_stats(user_id UUID)
+CREATE OR REPLACE FUNCTION get_user_image_stats(
+  p_user_id UUID
+)
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -88,8 +88,8 @@ BEGIN
     COUNT(*),
     COUNT(CASE WHEN embedding IS NOT NULL THEN 1 END),
     COUNT(CASE WHEN vision_sorted = true THEN 1 END),
-    COUNT(DISTINCT virtualAlbum),
-    AVG(nsfwScore)
+    COUNT(DISTINCT virtualalbum),
+    AVG(nsfwscore)
   INTO 
     total_count,
     embedding_count,
@@ -97,7 +97,7 @@ BEGIN
     album_count,
     avg_nsfw
   FROM virtual_image
-  WHERE user_id = get_user_image_stats.user_id;
+  WHERE user_id = p_user_id;
 
   -- Return stats as JSON
   RETURN json_build_object(
@@ -127,7 +127,7 @@ GRANT EXECUTE ON FUNCTION get_user_image_stats(UUID) TO authenticated;
 -- Create function for vector similarity search
 CREATE OR REPLACE FUNCTION vector_similarity_search(
   query_embedding vector(384),
-  user_id UUID,
+  p_user_id UUID,
   similarity_threshold DOUBLE PRECISION DEFAULT 0.5,
   max_results INTEGER DEFAULT 20
 )
@@ -162,28 +162,28 @@ BEGIN
   SELECT 
     vi.id,
     vi.user_id,
-    vi.originalPath,
-    vi.originalName,
+    vi.originalpath,
+    vi.originalname,
     vi.hash,
     vi.thumbnail,
-    vi.virtualName,
-    vi.virtualTags,
-    vi.virtualAlbum,
+    vi.virtualname,
+    vi.virtualtags,
+    vi.virtualalbum,
     vi.virtual_description,
-    vi.nsfwScore,
-    vi.isFlagged,
+    vi.nsfwscore,
+    vi.isflagged,
     vi.caption,
-    vi.visionSummary,
+    vi.visionsummary,
     vi.vision_sorted,
     vi.metadata,
     vi.embedding,
     vi.created_at,
     vi.updated_at,
-    vi.sortOrder,
+    vi.sortorder,
     (1 - (vi.embedding <-> query_embedding)) AS similarity
   FROM virtual_image vi
   WHERE 
-    vi.user_id = vector_similarity_search.user_id
+    vi.user_id = p_user_id
     AND vi.embedding IS NOT NULL
     AND (1 - (vi.embedding <-> query_embedding)) >= similarity_threshold
   ORDER BY vi.embedding <-> query_embedding

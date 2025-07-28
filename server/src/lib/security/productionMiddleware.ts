@@ -75,7 +75,7 @@ const defaultConfig: SecurityConfig = {
   },
   authentication: {
     required: true,
-    allowedOrigins: ['https://snapsort.app', 'https://app.snapsort.com']
+    allowedOrigins: ['https://snapsort.app']
   },
   validation: {
     maxImageSize: 10 * 1024 * 1024, // 10MB

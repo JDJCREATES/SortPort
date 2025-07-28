@@ -587,7 +587,7 @@ export class CustomQueryChain {
           criteriaUsed: analysis.primaryCriteria.type,
           ...item.metadata
         }
-      })).filter(item => item.image);
+      })).filter((item: any) => item.image);
 
     } catch (error) {
       console.error('LLM scoring failed, using algorithmic results');

@@ -1,3 +1,9 @@
+/**
+ *  Methods to load and save sort sessions to Supabase database
+ *  This allows tracking of user sort sessions, including prompt, results, and processing time.
+ */
+
+
 import { supabase } from '../supabase';
 import { SortSession } from '../../types';
 

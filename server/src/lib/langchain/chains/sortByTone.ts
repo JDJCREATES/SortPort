@@ -358,7 +358,7 @@ export class SortByToneChain {
           confidence: item.metadata?.confidence || 0.8,
           ...item.metadata
         }
-      })).filter(item => item.image); // Remove any that couldn't be matched
+      })).filter((item: any) => item.image); // Remove any that couldn't be matched
 
     } catch (error) {
       console.error('Failed to parse LLM response, using fallback sorting');
