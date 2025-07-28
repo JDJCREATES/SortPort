@@ -17,10 +17,10 @@
  * - orchestrateParallel(agents, input): Orchestrate parallel agent execution
  */
 
-import { RunnableSequence } from './lcel/runnable_sequence.js';
-import { RunnableParallel } from './lcel/runnable_parallel.js';
-import { ChainEngine, ChainDefinition, ChainExecutionConfig } from '../chains/chain_engine.js';
-import { QueryProcessor, ProcessedQuery } from '../agents/query/query_processor.js';
+import { RunnableSequence } from './lcel/runnable_sequence';
+import { RunnableParallel } from './lcel/runnable_parallel';
+import { ChainEngine, ChainDefinition, ChainExecutionConfig } from '../chains/chain_engine';
+import { QueryProcessor, ProcessedQuery } from '../agents/query/query_processor';
 
 export interface CoordinationRequest {
   taskId: string;

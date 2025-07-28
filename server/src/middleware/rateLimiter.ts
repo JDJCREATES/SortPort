@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { RateLimitError } from '../types/api.js';
+import { RateLimitError } from '../types/api';
 
 interface RateLimitStore {
   [key: string]: {

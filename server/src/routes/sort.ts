@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { ApiResponse, SortRequestSchema, SortResponse } from '../types/api.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
-import { strictRateLimiter, visionRateLimiter } from '../middleware/rateLimiter.js';
-import { requireCredits, updateCreditsMiddleware } from '../middleware/auth.js';
-import { ValidationError } from '../types/api.js';
-import { sortingDispatcher } from '../lib/langchain/index.js';
+import { ApiResponse, SortRequestSchema, SortResponse } from '../types/api';
+import { asyncHandler } from '../middleware/errorHandler';
+import { strictRateLimiter, visionRateLimiter } from '../middleware/rateLimiter';
+import { requireCredits, updateCreditsMiddleware } from '../middleware/auth';
+import { ValidationError } from '../types/api';
+import { sortingDispatcher } from '../lib/langchain/index';
 
 const router = Router();
 

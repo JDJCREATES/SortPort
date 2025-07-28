@@ -3,24 +3,43 @@
 export interface VirtualImage {
   id: string;
   user_id: string;
-  originalPath: string;
-  originalName: string;
-  hash: string;
+  original_path: string | null;
+  original_name: string | null;
+  hash: string | null;
   thumbnail: string | null;
-  virtualName: string | null;
-  virtualTags: string[] | null;
-  virtualAlbum: string | null;
+  virtual_name: string | null;
+  virtual_tags: string[] | null;
+  virtual_albums: string[] | undefined;
   virtual_description: string | null;
-  nsfwScore: number | null;
-  isFlagged: boolean | null;
+  nsfw_score: number | null;
+  isflagged: boolean | null;
   caption: string | null;
-  visionSummary: string | null;
+  vision_summary: string | null;
   vision_sorted: boolean | null;
   metadata: Record<string, any> | null;
   embedding: number[] | null;
   created_at: string;
   updated_at: string;
-  sortOrder: number;
+  sortorder: number | null;
+  date_taken?: string | null;
+  date_modified?: string | null;
+  date_imported?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
+  location_name?: string | null;
+  location_country?: string | null;
+  location_city?: string | null;
+  dominant_colors?: string[] | null;
+  detected_objects?: string[] | null;
+  detected_faces_count?: number | null;
+  scene_type?: string | null;
+  brightness_score?: number | null;
+  blur_score?: number | null;
+  quality_score?: number | null;
+  aesthetic_score?: number | null;
+  emotion_detected?: string[] | null;
+  activity_detected?: string[] | null;
+  image_orientation?: string | null;
 }
 
 export interface SortingContext {

@@ -1,5 +1,5 @@
-import { supabaseService, handleDatabaseError } from './client.js';
-import { VirtualImage } from '../../types/sorting.js';
+import { supabaseService, handleDatabaseError } from './client';
+import { VirtualImage } from '../../types/sorting';
 
 // Query builders for virtual_image table
 export class VirtualImageQueries {
@@ -12,7 +12,7 @@ export class VirtualImageQueries {
       tags?: string[];
       limit?: number;
       offset?: number;
-      sortBy?: 'created_at' | 'updated_at' | 'sortOrder' | 'virtualName';
+      sortBy?: string; // Allow any schema field
       sortOrder?: 'asc' | 'desc';
       includeEmbeddings?: boolean;
     } = {}
@@ -23,17 +23,23 @@ export class VirtualImageQueries {
         .select(
           options.includeEmbeddings 
             ? '*' 
-            : 'id, user_id, originalPath, originalName, hash, thumbnail, virtualName, virtualTags, virtualAlbum, virtual_description, nsfwScore, isFlagged, caption, visionSummary, vision_sorted, metadata, created_at, updated_at, sortOrder'  // Exclude embeddings by default
+            : [
+                'id', 'user_id', 'original_path', 'original_name', 'hash', 'thumbnail', 'virtual_name', 'virtual_tags', 'virtual_albums', 'virtual_description',
+                'nsfw_score', 'isflagged', 'caption', 'vision_summary', 'vision_sorted', 'metadata', 'embedding', 'created_at', 'updated_at', 'sortorder',
+                'date_taken', 'date_modified', 'date_imported', 'location_lat', 'location_lng', 'location_name', 'location_country', 'location_city',
+                'dominant_colors', 'detected_objects', 'detected_faces_count', 'scene_type', 'brightness_score', 'blur_score', 'quality_score', 'aesthetic_score',
+                'emotion_detected', 'activity_detected', 'image_orientation'
+              ].join(',')
         )
         .eq('user_id', userId);
 
       // Apply filters
       if (options.albumId) {
-        query = query.eq('virtualAlbum', options.albumId);
+        query = query.overlaps('virtual_albums', [options.albumId]);
       }
 
       if (options.tags && options.tags.length > 0) {
-        query = query.overlaps('virtualTags', options.tags);
+        query = query.overlaps('virtual_tags', options.tags);
       }
 
       // Apply sorting
@@ -58,7 +64,6 @@ export class VirtualImageQueries {
       return (data || []) as unknown as VirtualImage[];
     } catch (error) {
       handleDatabaseError(error, 'virtual_image', 'getByUserId');
-      return []; // This line should never be reached due to handleDatabaseError throwing
     }
   }
 
@@ -143,7 +148,7 @@ export class VirtualImageQueries {
         });
 
       if (options.albumId) {
-        query = query.eq('virtualAlbum', options.albumId);
+            query = query.eq('virtual_albums', options.albumId);
       }
 
       const { data, error } = await query;

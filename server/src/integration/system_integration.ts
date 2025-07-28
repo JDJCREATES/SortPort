@@ -12,15 +12,15 @@
  * - Provide unified system interface
  */
 
-import { ChainEngine } from '../chains/chain_engine.js';
-import { AgentCoordinator } from '../core/agent_coordinator.js';
-import { AgentRouter } from '../core/agent_router.js';
-import { QueryProcessor } from '../agents/query/query_processor.js';
-import { ToolRegistry } from '../tools/tool_registry.js';
-import { ChainIntegrationAdapter } from './chain_adapter.js';
-import { VisionAnalysisTool } from '../tools/vision/vision_analysis.js';
-import { ImageSortingTool } from '../tools/search/image_sort.js';
-import { VisionChainBuilder } from '../tools/vision/vision_chains.js';
+import { ChainEngine } from '../chains/chain_engine';
+import { AgentCoordinator } from '../core/agent_coordinator';
+import { AgentRouter } from '../core/agent_router';
+import { QueryProcessor } from '../agents/query/query_processor';
+import { ToolRegistry } from '../tools/tool_registry';
+import { ChainIntegrationAdapter } from './chain_adapter';
+import { VisionAnalysisTool } from '../tools/vision/vision_analysis';
+import { ImageSortingTool } from '../tools/search/image_sort';
+import { VisionChainBuilder } from '../tools/vision/vision_chains';
 
 export interface SystemConfiguration {
   apiKeys: {

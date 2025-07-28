@@ -18,12 +18,12 @@
  */
 
 import { Runnable, RunnableConfig } from '@langchain/core/runnables';
-import { RunnableSequence } from '../core/lcel/runnable_sequence.js';
-import { RunnableParallel } from '../core/lcel/runnable_parallel.js';
-import { RunnableBranch } from '../core/lcel/runnable_branch.js';
-import { RunnableLambda } from '../core/lcel/runnable_lambda.js';
-import { RunnableAssign } from '../core/lcel/runnable_assign.js';
-import { RunnableMap } from '../core/lcel/runnable_map.js';
+import { RunnableSequence } from '../core/lcel/runnable_sequence';
+import { RunnableParallel } from '../core/lcel/runnable_parallel';
+import { RunnableBranch } from '../core/lcel/runnable_branch';
+import { RunnableLambda } from '../core/lcel/runnable_lambda';
+import { RunnableAssign } from '../core/lcel/runnable_assign';
+import { RunnableMap } from '../core/lcel/runnable_map';
 // import { BasicChainValidator, ValidationResult as ChainValidationResult } from './utils/chain_validator';
 
 export interface ChainExecutionRequest {

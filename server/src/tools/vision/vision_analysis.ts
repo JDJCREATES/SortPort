@@ -20,7 +20,7 @@
 
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage } from '@langchain/core/messages';
-import { RunnableLambda } from '../../core/lcel/runnable_lambda.js';
+import { RunnableLambda } from '../../core/lcel/runnable_lambda';
 
 export interface VisionAnalysisRequest {
   images: ImageInput[];

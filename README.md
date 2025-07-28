@@ -37,7 +37,7 @@ SnapSort is a React Native Expo application that uses AI to automatically organi
 
 Create a `.env` file in the root directory:
 
-```env
+env
 # OpenAI
 EXPO_PUBLIC_OPENAI_API_KEY=your_openai_api_key
 
@@ -49,7 +49,9 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 EXPO_PUBLIC_REVENUECAT_API_KEY=your_revenuecat_key
 EXPO_PUBLIC_REVENUECAT_IOS_KEY=your_ios_key
 EXPO_PUBLIC_REVENUECAT_ANDROID_KEY=your_android_key
-```
+
+# Backend
+SERVER_API_URL
 
 ## Supabase Setup
 

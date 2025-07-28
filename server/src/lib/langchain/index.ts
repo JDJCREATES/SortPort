@@ -17,20 +17,20 @@
 import { RunnableSequence, RunnableLambda } from '@langchain/core/runnables';
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
-import { SortRequest, SortResponse, RequestContext } from '../../types/api.js';
-import { ChainInput, ChainOutput, SortingContext, SortType } from '../../types/sorting.js';
-import { VirtualImageQueries } from '../supabase/queries.js';
+import { SortRequest, SortResponse, RequestContext } from '../../types/api';
+import { ChainInput, ChainOutput, SortingContext, SortType } from '../../types/sorting';
+import { VirtualImageQueries } from '../supabase/queries';
 
 // Import specialized chains
-import { SortByToneChain } from './chains/sortByTone.js';
-import { GroupBySceneChain } from './chains/groupByScene.js';
-import { PickThumbnailsChain } from './chains/pickThumbnails.js';
-import { CustomQueryChain } from './chains/customQuery.js';
-import { SmartAlbumsChain } from './chains/smartAlbums.js';
+import { SortByToneChain } from './chains/sortByTone';
+import { GroupBySceneChain } from './chains/groupByScene';
+import { PickThumbnailsChain } from './chains/pickThumbnails';
+import { CustomQueryChain } from './chains/customQuery';
+import { SmartAlbumsChain } from './chains/smartAlbums';
 
 // Import utilities
-import { EmbeddingService } from './utils/embeddings.js';
-import { CacheService } from './utils/cache.js';
+import { EmbeddingService } from './utils/embeddings';
+import { CacheService } from './utils/cache';
 
 const llm = new ChatOpenAI({
   model: 'gpt-4o',
@@ -251,8 +251,8 @@ export class SortingDispatcher {
     return {
       sortedImages: chainOutput.sortedImages.map(result => ({
         id: result.image.id,
-        originalPath: result.image.originalPath,
-        virtualName: result.image.virtualName,
+        originalPath: result.image.original_path || '',
+        virtualName: result.image.virtual_name || null,
         sortScore: result.sortScore,
         reasoning: result.reasoning,
         position: result.position,
@@ -280,8 +280,8 @@ export class SortingDispatcher {
     return {
       sortedImages: cachedOutput.sortedImages.map(result => ({
         id: result.image.id,
-        originalPath: result.image.originalPath,
-        virtualName: result.image.virtualName,
+        originalPath: result.image.original_path || '',
+        virtualName: result.image.virtual_name || null,
         sortScore: result.sortScore,
         reasoning: result.reasoning + ' (cached)',
         position: result.position,

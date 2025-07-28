@@ -19,7 +19,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage } from '@langchain/core/messages';
 import { z } from 'zod';
-import { AtlasResult } from '../imageProcessing/atlasGenerator.js';
+import { AtlasResult } from '../imageProcessing/atlasGenerator';
 
 export interface VisionAnalysisRequest {
   atlas: AtlasResult;

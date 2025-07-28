@@ -10,20 +10,20 @@ import { createServer } from 'http';
 dotenv.config();
 
 // Import routes
-import { sortRoutes } from './routes/sort.js';
-import { healthRoutes } from './routes/health.js';
-import { atlasRoutes } from './routes/atlas.js';
-import monitoringRoutes from './routes/monitoring.js';
-import lcelSortRoutes from './routes/lcel_sort.js';
+import { sortRoutes } from './routes/sort';
+import { healthRoutes } from './routes/health';
+import { atlasRoutes } from './routes/atlas';
+import monitoringRoutes from './routes/monitoring';
+import lcelSortRoutes from './routes/lcel_sort';
 
 // Import middleware
-import { errorHandler } from './middleware/errorHandler.js';
-import { rateLimiter } from './middleware/rateLimiter.js';
-import { authMiddleware } from './middleware/auth.js';
+import { errorHandler } from './middleware/errorHandler';
+import { rateLimiter } from './middleware/rateLimiter';
+import { authMiddleware } from './middleware/auth';
 
-// Import Phase 4 production components
-import { productionSecurity } from './lib/security/productionMiddleware.js';
-import { metricsCollector } from './lib/monitoring/metricsCollector.js';
+// Import production components
+import { productionSecurity } from './lib/security/productionMiddleware';
+import { metricsCollector } from './lib/monitoring/metricsCollector';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -78,8 +78,8 @@ app.use('/health', healthRoutes);
 app.use('/api/monitoring', monitoringRoutes);
 
 // Protected routes (require auth)
-app.use('/api/sort', authMiddleware, productionSecurity.getCostBasedRateLimit(), sortRoutes); // Legacy LangChain system
-app.use('/api/lcel', authMiddleware, productionSecurity.getCostBasedRateLimit(), lcelSortRoutes); // New LCEL system
+app.use('/api/sort', authMiddleware, productionSecurity.getCostBasedRateLimit(), sortRoutes);
+app.use('/api/lcel', authMiddleware, productionSecurity.getCostBasedRateLimit(), lcelSortRoutes); // LCEL system
 app.use('/api/atlas', authMiddleware, productionSecurity.getExpensiveOperationsLimit(), atlasRoutes);
 
 // 404 handler
@@ -119,7 +119,6 @@ server.listen(PORT, () => {
   console.log(`💰 Cost analytics: http://localhost:${PORT}/api/monitoring/costs`);
   console.log('');
   console.log('🎯 Sorting Systems:');
-  console.log(`   Legacy: http://localhost:${PORT}/api/sort`);
   console.log(`   LCEL:   http://localhost:${PORT}/api/lcel`);
   console.log(`   Status: http://localhost:${PORT}/api/lcel/status`);
   

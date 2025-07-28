@@ -18,9 +18,9 @@
  */
 
 import { RunnableInterface } from '@langchain/core/runnables';
-import { RunnableSequence } from '../core/lcel/runnable_sequence.js';
-import { RunnableParallel } from '../core/lcel/runnable_parallel.js';
-import { ChainDefinition } from '../chains/chain_engine.js';
+import { RunnableSequence } from '../core/lcel/runnable_sequence';
+import { RunnableParallel } from '../core/lcel/runnable_parallel';
+import { ChainDefinition } from '../chains/chain_engine';
 
 export interface ToolDefinition {
   id: string;

@@ -21,7 +21,8 @@ export interface SafetyCheck {
 }
 
 export class SafetyFilter {
-  private safetyChain: RunnableParallel;
+  // Safety chain is set up in the constructor and used for parallel safety checks
+  private safetyChain!: RunnableParallel<any>;
   
   constructor() {
     this.setupSafetyChain();

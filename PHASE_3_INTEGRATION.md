@@ -20,7 +20,7 @@ Successfully integrated the LangChain-powered sorting system with the existing R
 - [`components/SortingResults.tsx`](file:///p:/WERK_IT_2025/SnapSort - 2025/components/SortingResults.tsx) - Interactive results display
 - Updated [`components/PictureHackBar.tsx`](file:///p:/WERK_IT_2025/SnapSort - 2025/components/PictureHackBar.tsx) - Full integration
 
-### **Database Functions**
+### **Database Functions** // MAY NOT EXIST/NOT IMPLEMENTED
 - [`supabase/migrations/create_update_credits_function.sql`](file:///p:/WERK_IT_2025/SnapSort - 2025/supabase/migrations/create_update_credits_function.sql) - Credit management & vector search
 
 ## 🎯 Key Features

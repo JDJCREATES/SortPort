@@ -17,12 +17,12 @@
  * - createContentAnalysisChain(): Content understanding chain
  */
 
-import { RunnableSequence } from '../../core/lcel/runnable_sequence.js';
-import { RunnableParallel } from '../../core/lcel/runnable_parallel.js';
-import { RunnableLambda } from '../../core/lcel/runnable_lambda.js';
-import { RunnableAssign } from '../../core/lcel/runnable_assign.js';
-import { RunnableMap } from '../../core/lcel/runnable_map.js';
-import { VisionAnalysisTool, VisionAnalysisConfig, AnalysisType, ImageInput, VisionAnalysisResult } from './vision_analysis.js';
+import { RunnableSequence } from '../../core/lcel/runnable_sequence';
+import { RunnableParallel } from '../../core/lcel/runnable_parallel';
+import { RunnableLambda } from '../../core/lcel/runnable_lambda';
+import { RunnableAssign } from '../../core/lcel/runnable_assign';
+import { RunnableMap } from '../../core/lcel/runnable_map';
+import { VisionAnalysisTool, VisionAnalysisConfig, AnalysisType, ImageInput, VisionAnalysisResult } from './vision_analysis';
 
 export interface VisionChainInput {
   images: ImageInput[];

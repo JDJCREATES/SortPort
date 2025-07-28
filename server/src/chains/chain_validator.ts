@@ -18,9 +18,9 @@
  */
 
 import { Runnable, RunnableInterface } from '@langchain/core/runnables';
-import { RunnableSequence } from '../core/lcel/runnable_sequence.js';
-import { RunnableParallel } from '../core/lcel/runnable_parallel.js';
-import { RunnableBranch } from '../core/lcel/runnable_branch.js';
+import { RunnableSequence } from '../core/lcel/runnable_sequence';
+import { RunnableParallel } from '../core/lcel/runnable_parallel';
+import { RunnableBranch } from '../core/lcel/runnable_branch';
 import { z, ZodSchema, ZodError } from 'zod';
 
 export interface ChainValidationSpec {

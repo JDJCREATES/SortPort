@@ -18,9 +18,9 @@
 import { RunnableSequence, RunnableLambda, RunnablePassthrough } from '@langchain/core/runnables';
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
-import { ChainInput, ChainOutput, SortedImageResult } from '../../../types/sorting.js';
-import { EmbeddingService } from '../utils/embeddings.js';
-import { SortingPrompts, formatImageDataForPrompt, formatUserPreferences } from '../prompts/sorting.js';
+import { ChainInput, ChainOutput, SortedImageResult } from '../../../types/sorting';
+import { EmbeddingService } from '../utils/embeddings';
+import { SortingPrompts, formatImageDataForPrompt, formatUserPreferences } from '../prompts/sorting';
 
 // Query decomposition prompt
 const QUERY_DECOMPOSITION_PROMPT = PromptTemplate.fromTemplate(`
@@ -701,8 +701,13 @@ export class CustomQueryChain {
     // Simple diversity check based on metadata
     for (const existingResult of existing) {
       // Check album diversity
-      if (candidate.image.virtualAlbum && 
-          candidate.image.virtualAlbum === existingResult.image.virtualAlbum) {
+      const candidateAlbums = candidate.image.virtual_albums ?? [];
+      const existingAlbums = existingResult.image.virtual_albums ?? [];
+      if (
+        candidateAlbums.length > 0 &&
+        existingAlbums.length > 0 &&
+        candidateAlbums.some(album => existingAlbums.includes(album))
+      ) {
         return false;
       }
 
@@ -710,7 +715,7 @@ export class CustomQueryChain {
       const candidateDate = new Date(candidate.image.created_at).getTime();
       const existingDate = new Date(existingResult.image.created_at).getTime();
       const timeDiff = Math.abs(candidateDate - existingDate);
-      
+
       if (timeDiff < 24 * 60 * 60 * 1000) { // Less than 24 hours apart
         return false;
       }

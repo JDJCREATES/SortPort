@@ -18,15 +18,15 @@
  */
 
 import { Runnable } from '@langchain/core/runnables';
-import { RunnableSequence } from '../core/lcel/runnable_sequence.js';
-import { RunnableLambda } from '../core/lcel/runnable_lambda.js';
-import { RunnableAssign } from '../core/lcel/runnable_assign.js';
-import { ChainEngine, ChainDefinition, ChainExecutionConfig } from '../chains/chain_engine.js';
-import { ToolRegistry, ToolDefinition, ToolCategory, PerformanceProfile } from '../tools/tool_registry.js';
-import { ChainInput, ChainOutput, ChainMetadata, SortedImageResult } from '../types/sorting.js';
+import { RunnableSequence } from '../core/lcel/runnable_sequence';
+import { RunnableLambda } from '../core/lcel/runnable_lambda';
+import { RunnableAssign } from '../core/lcel/runnable_assign';
+import { ChainEngine, ChainDefinition, ChainExecutionConfig } from '../chains/chain_engine';
+import { ToolRegistry, ToolDefinition, ToolCategory, PerformanceProfile } from '../tools/tool_registry';
+import { ChainInput, ChainOutput, ChainMetadata, SortedImageResult } from '../types/sorting';
 
 // Import existing chains
-import { SmartAlbumsChain } from '../lib/langchain/chains/smartAlbums.js';
+import { SmartAlbumsChain } from '../lib/langchain/chains/smartAlbums';
 
 export interface LegacyChainConfig {
   chainId: string;
@@ -548,7 +548,7 @@ export class ChainIntegrationAdapter {
     const groups = new Map<string, any[]>();
     
     for (const image of input.images) {
-      const groupKey = image.originalName?.split('.').pop() || 'unknown';
+      const groupKey = image.original_name?.split('.').pop() || 'unknown';
       if (!groups.has(groupKey)) {
         groups.set(groupKey, []);
       }

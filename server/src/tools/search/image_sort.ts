@@ -18,7 +18,7 @@
  */
 
 
-import { SortedImageResult, ChainInput, ChainOutput } from '../../types/sorting.js';
+import { SortedImageResult, ChainInput, ChainOutput } from '../../types/sorting';
 
 export interface SortingCriteria {
   type: SortType;

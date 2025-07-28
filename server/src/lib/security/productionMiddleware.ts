@@ -24,7 +24,7 @@ import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import Redis from 'ioredis';
 
-import { metricsCollector } from '../monitoring/metricsCollector.js';
+import { metricsCollector } from '../monitoring/metricsCollector';
 import NodeCache from 'node-cache';
 
 const supabase = createClient(

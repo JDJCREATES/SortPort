@@ -17,9 +17,9 @@
 
 import { RunnableSequence, RunnableLambda } from '@langchain/core/runnables';
 import { ChatOpenAI } from '@langchain/openai';
-import { ChainInput, ChainOutput, SortedImageResult } from '../../../types/sorting.js';
-import { EmbeddingService } from '../utils/embeddings.js';
-import { SortingPrompts, formatImageDataForPrompt, formatUserPreferences } from '../prompts/sorting.js';
+import { ChainInput, ChainOutput, SortedImageResult } from '../../../types/sorting';
+import { EmbeddingService } from '../utils/embeddings';
+import { SortingPrompts, formatImageDataForPrompt, formatUserPreferences } from '../prompts/sorting';
 
 interface AlbumGroup {
   name: string;
@@ -587,18 +587,18 @@ Respond with JSON:
         image: {
           id: `album_${album.name.replace(/\s+/g, '_').toLowerCase()}`,
           user_id: '',
-          originalPath: '',
-          originalName: album.name,
+          original_path: '',
+          original_name: album.name,
           hash: '',
           thumbnail: null,
-          virtualName: album.name,
-          virtualTags: Array.isArray(album.metadata.tags) ? album.metadata.tags : (album.metadata.tags ? [album.metadata.tags] : []),
-          virtualAlbum: null,
+          virtual_name: album.name,
+          virtual_tags: Array.isArray(album.metadata.tags) ? album.metadata.tags : (album.metadata.tags ? [album.metadata.tags] : []),
+          virtual_albums: [],
           virtual_description: album.description,
-          nsfwScore: null,
-          isFlagged: null,
+          nsfw_score: 0,
+          isflagged: null,
           caption: `Album: ${album.name}`,
-          visionSummary: album.description,
+          vision_summary: album.description,
           vision_sorted: null,
           metadata: {
             albumType: 'smart_album',
@@ -608,7 +608,7 @@ Respond with JSON:
           embedding: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          sortOrder: 0
+          sortorder: 0
         },
         sortScore: album.confidence,
         reasoning: album.reasoning,

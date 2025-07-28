@@ -23,8 +23,8 @@ import {
   Priority, 
   CoordinationStrategy, 
   ResourceRequirements 
-} from './agent_coordinator.js';
-import { ProcessedQuery, QueryIntent, IntentType } from '../agents/query/query_processor.js';
+} from './agent_coordinator';
+import { ProcessedQuery, QueryIntent, IntentType } from '../agents/query/query_processor';
 
 export interface RoutingRequest {
   query: string;

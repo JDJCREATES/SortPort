@@ -221,8 +221,8 @@ export class EmbeddingService {
     const parts: string[] = [];
 
     // Add virtual name if available
-    if (image.virtualName) {
-      parts.push(`Title: ${image.virtualName}`);
+    if (image.virtual_name) {
+      parts.push(`Title: ${image.virtual_name}`);
     }
 
     // Add description
@@ -236,13 +236,13 @@ export class EmbeddingService {
     }
 
     // Add vision summary
-    if (image.visionSummary) {
-      parts.push(`Analysis: ${image.visionSummary}`);
+    if (image.vision_summary) {
+      parts.push(`Analysis: ${image.vision_summary}`);
     }
 
     // Add tags
-    if (image.virtualTags && image.virtualTags.length > 0) {
-      parts.push(`Tags: ${image.virtualTags.join(', ')}`);
+    if (image.virtual_tags && image.virtual_tags.length > 0) {
+      parts.push(`Tags: ${image.virtual_tags.join(', ')}`);
     }
 
     // Add metadata insights
@@ -255,7 +255,7 @@ export class EmbeddingService {
 
     // Fallback to filename if no other content
     if (parts.length === 0) {
-      parts.push(`Image: ${image.originalName}`);
+      parts.push(`Image: ${image.original_name}`);
     }
 
     return parts.join('. ');

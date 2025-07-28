@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import { AuthenticationError } from '../types/api.js';
-import { AuthenticatedUser, RequestContext } from '../types/api.js';
+import { AuthenticationError } from '../types/api';
+import { AuthenticatedUser, RequestContext } from '../types/api';
 
 // Extend Request interface to include user and context
 declare global {
