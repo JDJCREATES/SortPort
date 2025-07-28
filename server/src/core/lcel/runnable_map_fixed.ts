@@ -31,7 +31,8 @@ export class RunnableMap<RunInput = any, RunOutput = any> extends Runnable<RunIn
   private concurrencyLimit: number;
   private batchSize: number;
   private preserveOrder: boolean;
-  
+  public lc_namespace = ["runnable_map_fixed"];
+
   constructor(
     mapRunnable: RunnableInterface<RunInput, RunOutput>,
     options: {
@@ -52,7 +53,6 @@ export class RunnableMap<RunInput = any, RunOutput = any> extends Runnable<RunIn
    */
   async invoke(input: RunInput[], config?: MapConfig): Promise<RunOutput[]> {
     const startTime = Date.now();
-    
     try {
       const concurrency = config?.concurrency || this.concurrencyLimit;
       const batchSize = config?.batchSize || this.batchSize;
@@ -72,36 +72,27 @@ export class RunnableMap<RunInput = any, RunOutput = any> extends Runnable<RunIn
         options
       );
 
-      // Log execution metrics if config includes callbacks
-      if (config?.callbacks) {
+      // Log execution metrics if config includes callbackManager
+      if (config?.callbacks && typeof config.callbacks === 'object' && 'onChainEnd' in config.callbacks && typeof config.callbacks.onChainEnd === 'function') {
         const duration = Date.now() - startTime;
-        config.callbacks.forEach(callback => {
-          if ('onChainEnd' in callback && typeof callback.onChainEnd === 'function') {
-            callback.onChainEnd?.({
-              chainId: 'runnable_map',
-              inputs: { input, count: input.length },
-              outputs: { results, count: results.length },
-              executionTime: duration
-            });
-          }
+        config.callbacks.onChainEnd({
+          chainId: 'runnable_map',
+          inputs: { input, count: input.length },
+          outputs: { results, count: results.length },
+          executionTime: duration
         });
       }
 
       return results;
     } catch (error) {
-      // Log error if config includes callbacks
-      if (config?.callbacks) {
-        config.callbacks.forEach(callback => {
-          if ('onChainError' in callback && typeof callback.onChainError === 'function') {
-            callback.onChainError?.({
-              chainId: 'runnable_map',
-              inputs: { input, count: input.length },
-              error: error as Error
-            });
-          }
+      // Log error if config includes callbackManager
+      if (config?.callbacks && typeof config.callbacks === 'object' && 'onChainError' in config.callbacks && typeof config.callbacks.onChainError === 'function') {
+        config.callbacks.onChainError({
+          chainId: 'runnable_map',
+          inputs: { input, count: input.length },
+          error: error as Error
         });
       }
-
       throw error;
     }
   }
@@ -117,26 +108,21 @@ export class RunnableMap<RunInput = any, RunOutput = any> extends Runnable<RunIn
   /**
    * Stream mapping results
    */
-  async *stream(input: RunInput[], config?: MapConfig): AsyncGenerator<RunOutput[]> {
+  async mapStream(input: RunInput[], config?: MapConfig): Promise<AsyncIterable<RunOutput[]>> {
     const concurrency = config?.concurrency || this.concurrencyLimit;
     const batchSize = config?.batchSize || Math.min(this.batchSize, 20);
-
     const options: ConcurrencyOptions = {
       concurrency,
       batchSize,
       preserveOrder: config?.preserveOrder !== false
     };
-
-    // Stream results in batches
-    for await (const batchResults of ConcurrencyManager.processStream(
+    return ConcurrencyManager.processStream(
       input,
       async (item: RunInput, index: number) => {
         return await this.mapRunnable.invoke(item, config);
       },
       options
-    )) {
-      yield batchResults;
-    }
+    );
   }
 
   /**
@@ -175,7 +161,7 @@ export class RunnableMap<RunInput = any, RunOutput = any> extends Runnable<RunIn
   /**
    * Create new map with config
    */
-  withConfig(config: MapConfig): RunnableMap<RunInput, RunOutput> {
+  mapWithConfig(config: Partial<MapConfig>): RunnableMap<RunInput, RunOutput> {
     return new RunnableMap(this.mapRunnable, {
       concurrency: config.concurrency || this.concurrencyLimit,
       batchSize: config.batchSize || this.batchSize,
@@ -226,14 +212,17 @@ export class RunnableMap<RunInput = any, RunOutput = any> extends Runnable<RunIn
    * Create map from function
    */
   static from<Input, Output>(
-    mapFunction: (input: Input) => Output | Promise<Output>,
+    mapFunction: (input: Input) => Promise<Output> | Output,
     options?: {
       concurrency?: number;
       batchSize?: number;
       preserveOrder?: boolean;
     }
   ): RunnableMap<Input, Output> {
-    const lambdaRunnable = RunnableLambda.from(mapFunction);
+    const lambdaRunnable = RunnableLambda.from(async (input: Input) => {
+      const result = mapFunction(input);
+      return await Promise.resolve(result);
+    });
     return new RunnableMap(lambdaRunnable, options);
   }
 
@@ -291,10 +280,10 @@ export class RunnableMap<RunInput = any, RunOutput = any> extends Runnable<RunIn
   /**
    * Combine with reduce operation
    */
-  withReduce<ReduceOutput>(
+  mapWithReduce<ReduceOutput>(
     reducer: (acc: ReduceOutput, current: RunOutput, index: number) => ReduceOutput,
     initialValue: ReduceOutput
-  ): Runnable<RunInput[], ReduceOutput> {
+  ): RunnableLambda<RunInput[], Promise<ReduceOutput>> {
     return RunnableLambda.from(async (inputs: RunInput[]) => {
       const mappedResults = await this.invoke(inputs);
       return mappedResults.reduce(reducer, initialValue);
@@ -304,23 +293,22 @@ export class RunnableMap<RunInput = any, RunOutput = any> extends Runnable<RunIn
   /**
    * Create a map that retries failed items
    */
-  withRetry(maxRetries: number = 3, baseDelay: number = 1000): RunnableMap<RunInput, RunOutput> {
+  mapWithRetry(maxRetries: number = 3, baseDelay: number = 1000): RunnableMap<RunInput, RunOutput> {
     const retryRunnable = RunnableLambda.from(async (input: RunInput) => {
       let attempt = 0;
       while (attempt <= maxRetries) {
         try {
-          return await this.mapRunnable.invoke(input);
+          const result = this.mapRunnable.invoke(input);
+          return await Promise.resolve(result);
         } catch (error) {
           attempt++;
           if (attempt > maxRetries) throw error;
-          
           const delay = baseDelay * Math.pow(2, attempt - 1);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
       throw new Error('Max retries exceeded');
     });
-
     return new RunnableMap(retryRunnable, {
       concurrency: this.concurrencyLimit,
       batchSize: this.batchSize,
@@ -331,14 +319,13 @@ export class RunnableMap<RunInput = any, RunOutput = any> extends Runnable<RunIn
   /**
    * Create a map with rate limiting
    */
-  withRateLimit(requestsPerSecond: number): RunnableMap<RunInput, RunOutput> {
+  mapWithRateLimit(requestsPerSecond: number): RunnableMap<RunInput, RunOutput> {
     const rateLimitedRunnable = RunnableLambda.from(async (input: RunInput) => {
-      // Simple rate limiting implementation
       const delay = 1000 / requestsPerSecond;
       await new Promise(resolve => setTimeout(resolve, delay));
-      return await this.mapRunnable.invoke(input);
+      const result = this.mapRunnable.invoke(input);
+      return await Promise.resolve(result);
     });
-
     return new RunnableMap(rateLimitedRunnable, {
       concurrency: Math.min(this.concurrencyLimit, requestsPerSecond),
       batchSize: this.batchSize,

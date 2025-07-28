@@ -1,3 +1,4 @@
+import 'dotenv/config';
 /**
  * LCEL API Bridge
  * 
@@ -6,13 +7,13 @@
  */
 
 import { Request, Response } from 'express';
-import { QueryChains } from '../agents/query/query_chains.js';
-import { QueryProcessor } from '../agents/query/query_processor.js';
-import { TaskAgent } from '../agents/task/task_agent.js';
-import { ToolAgent } from '../agents/tool/tool_agent.js';
-import { VisionAggregator, VisionResult } from '../tools/vision/vision_aggregator.js';
-import { SearchRanker, RankingCriteria } from '../tools/search/search_ranker.js';
-import { ContentAggregator, ContentSource } from '../tools/content/content_aggregator.js';
+import { QueryChains } from '../agents/query/query_chains';
+import { QueryProcessor } from '../agents/query/query_processor';
+import { TaskAgent } from '../agents/task/task_agent';
+import { ToolAgent } from '../agents/tool/tool_agent';
+import { VisionAggregator, VisionResult } from '../tools/vision/vision_aggregator';
+import { SearchRanker, RankingCriteria } from '../tools/search/search_ranker';
+import { ContentAggregator, ContentSource } from '../tools/content/content_aggregator';
 
 export interface SortRequest {
   query: string;
@@ -148,7 +149,7 @@ export class LCELApiBridge {
    * Determine the best execution strategy based on query and data
    */
   private determineExecutionStrategy(processedQuery: any, sortRequest: SortRequest): { method: string; confidence: number } {
-    const hasVisionQuery = this.hasVisionRelatedTerms(processedQuery.query.original);
+    const hasVisionQuery = this.hasVisionRelatedTerms(sortRequest.query);
     const hasMetadata = sortRequest.images.some(img => img.metadata);
     const imageCount = sortRequest.images.length;
 
@@ -378,11 +379,21 @@ export class LCELApiBridge {
   }
 
   private extractRelevanceFeatures(analysis: any, processedQuery: any): any {
+    if (!analysis) {
+      // Production logging for monitoring missing analysis
+      console.warn('Vision analysis returned null for image, using defaults.');
+      return {
+        objects: [],
+        scenes: [],
+        colors: [],
+        queryMatch: 0
+      };
+    }
     return {
       objects: analysis.objects || [],
       scenes: analysis.scenes || [],
       colors: analysis.colors || [],
-      queryMatch: this.calculateQueryMatch(analysis, processedQuery.query.original)
+      queryMatch: this.calculateQueryMatch(analysis, processedQuery.query)
     };
   }
 
@@ -401,7 +412,7 @@ export class LCELApiBridge {
     const topScoreType = Object.entries(scores)
       .sort(([,a], [,b]) => (b as number) - (a as number))[0][0];
     
-    return `Ranked primarily by ${topScoreType} (${(scores as any)[topScoreType].toFixed(3)}) matching query "${processedQuery.query.original}"`;
+    return `Ranked primarily by ${topScoreType} (${(scores as any)[topScoreType].toFixed(3)}) matching query "${processedQuery.query}"`;
   }
 
   private assessMetadataQuality(metadata: any): number {

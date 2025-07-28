@@ -25,32 +25,122 @@ npm start
 ## 📁 Project Structure
 
 ```
-server/
-├── src/
-│   ├── index.ts                 # Express app entry point
-│   ├── types/
-│   │   ├── api.ts              # API request/response types
-│   │   └── sorting.ts          # LangChain sorting types
-│   ├── middleware/
-│   │   ├── auth.ts             # Supabase authentication
-│   │   ├── errorHandler.ts     # Global error handling
-│   │   └── rateLimiter.ts      # Request rate limiting
-│   ├── routes/
-│   │   ├── health.ts           # Health check endpoints
-│   │   ├── sort.ts             # Main sorting endpoints
-│   │   └── atlas.ts            # Atlas generation endpoints
-│   └── lib/
-│       ├── supabase/
-│       │   ├── client.ts       # Database connection
-│       │   └── queries.ts      # Reusable queries
-│       └── langchain/          # LangChain integration
-│           ├── prompts/        # LangChain prompts
-│           ├── chains/         # LangChain chains
-│           └── utils/          # Utility files
-
-├── package.json
-├── tsconfig.json
-└── .env.example
+└── 📁src
+    └── 📁agents
+        └── 📁query
+            ├── query_chains.ts
+            ├── query_planner.ts
+            ├── query_processor.ts
+        └── 📁task
+            ├── task_agent.ts
+            ├── task_chains.ts
+            ├── task_prompts.ts
+        └── 📁tool
+            ├── tool_agent.ts
+            ├── tool_chain_supervisor.ts
+            ├── tool_chains.ts
+            ├── tool_prompts.ts
+    └── 📁chains
+        └── 📁io
+            ├── input_processor.ts
+            ├── output_processor.ts
+            ├── parser_suite.ts
+            ├── validation_suite.ts
+        └── 📁utils
+            ├── chain_validator.ts
+        ├── chain_composer.ts
+        ├── chain_engine.ts
+        ├── chain_validator.ts
+        ├── runnable_utils.ts
+    └── 📁core
+        └── 📁lcel
+            └── 📁utils
+                ├── concurrency_manager.ts
+                ├── condition_evaluator.ts
+            ├── runnable_assign.ts
+            ├── runnable_branch.ts
+            ├── runnable_lambda.ts
+            ├── runnable_map_fixed.ts
+            ├── runnable_map.ts
+            ├── runnable_parallel.ts
+            ├── runnable_sequence.ts
+        ├── agent_coordinator.ts
+        ├── agent_router.ts
+    └── 📁integration
+        ├── chain_adapter.ts
+        ├── lcel_api_bridge.ts
+        ├── system_integration.ts
+    └── 📁lcel
+        ├── index.ts
+    └── 📁lib
+        └── 📁analytics
+            ├── costAnalyzer.ts
+        └── 📁imageProcessing
+            ├── atlasGenerator.ts
+        └── 📁integration
+            ├── productionAtlasService.ts
+        └── 📁langchain
+            └── 📁chains
+                ├── customQuery.ts
+                ├── groupByScene.ts
+                ├── pickThumbnails.ts
+                ├── smartAlbums.ts
+                ├── sortByTone.ts
+            └── 📁prompts
+                ├── sorting.ts
+            └── 📁utils
+                ├── atlas.ts
+                ├── cache.ts
+                ├── embeddings.ts
+            ├── index.ts
+        └── 📁monitoring
+            ├── execution_monitor.ts
+            ├── metricsCollector.ts
+            ├── performance_tracker.ts
+        └── 📁security
+            ├── productionMiddleware.ts
+        └── 📁supabase
+            ├── client.ts
+            ├── queries.ts
+        └── 📁vision
+            ├── gptVisionAnalyzer.ts
+    └── 📁middleware
+        ├── auth.ts
+        ├── errorHandler.ts
+        ├── rateLimiter.ts
+    └── 📁routes
+        ├── atlas.ts
+        ├── health.ts
+        ├── lcel_sort.ts
+        ├── monitoring.ts
+        ├── sort.ts
+    └── 📁test
+        ├── api_integration_test.ts
+        ├── component_unit_test.ts
+        ├── lcel_integration_test.ts
+    └── 📁tools
+        └── 📁content
+            ├── aggregation_chains.ts
+            ├── content_aggregator.ts
+        └── 📁organization
+            ├── grouping_chains.ts
+            ├── smart_grouper.ts
+        └── 📁safety
+            ├── safety_chains.ts
+            ├── safety_filter.ts
+        └── 📁search
+            ├── image_sort.ts
+            ├── ranking_chains.ts
+            ├── search_ranker.ts
+        └── 📁vision
+            ├── vision_aggregator.ts
+            ├── vision_analysis.ts
+            ├── vision_chains.ts
+        ├── tool_registry.ts
+    └── 📁types
+        ├── api.ts
+        ├── sorting.ts
+    └── index.ts
 ```
 
 ## 🔧 Environment Variables
@@ -164,11 +254,3 @@ Health endpoints provide monitoring data:
 
 ## 🔧 Next Steps (TODO)
 
-Phase 2 implementation:
-- [ ] LangChain chain implementations
-- [ ] Vector similarity search
-- [ ] Atlas generation logic
-- [ ] Vision analysis integration
-- [ ] Embedding operations
-- [ ] Result caching
-- [ ] Performance optimization

@@ -4,6 +4,7 @@
  * NEW: LCEL query analysis, semantic parsing, and context enrichment.
  */
 
+import 'dotenv/config';
 import { RunnableSequence, RunnableLambda, RunnableParallel } from '@langchain/core/runnables';
 import { RunnableBranch } from '../../core/lcel/runnable_branch';
 import { ChatOpenAI } from '@langchain/openai';
@@ -133,15 +134,14 @@ export class QueryChains {
   }
 
   private classifyGenericIntent(input: any): any {
-    const { parsedQuery } = input;
-    
+    const parsedQuery = input.parsedQuery || {};
     return {
       intent: 'generic',
       subIntent: 'general_query',
       confidence: 0.5,
       parameters: {
-        query: parsedQuery.original,
-        keywords: parsedQuery.keywords,
+        query: parsedQuery.original || input.query || '',
+        keywords: parsedQuery.keywords || [],
         context: 'general'
       }
     };

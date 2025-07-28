@@ -140,6 +140,7 @@ export async function withTransaction<T>(
   // This is a placeholder for transaction-like behavior
   // In practice, we'd need to implement this at the SQL level or use batch operations
 
-  // JDJ ~> We are using RevenueCat for billing, so we need to just link it all correctly!
+  // JDJ ~> We are using RevenueCat for billing, so we need to just link it all correctly to supabase!
+  
   return await callback(supabaseService);
 }
