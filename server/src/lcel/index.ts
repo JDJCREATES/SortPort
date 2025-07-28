@@ -5,23 +5,32 @@
  */
 
 // Core LCEL Primitives
-export { RunnableBranch, BranchDefinition } from '../core/lcel/runnable_branch.js';
-export { RunnableAssign, AssignmentMap } from '../core/lcel/runnable_assign.js';
+export { RunnableBranch } from '../core/lcel/runnable_branch.js';
+export type { BranchDefinition } from '../core/lcel/runnable_branch.js';
+export { RunnableAssign } from '../core/lcel/runnable_assign.js';
+export type { AssignmentMap } from '../core/lcel/runnable_assign.js';
 export { RunnableMap } from '../core/lcel/runnable_map.js';
 
 // Agents
-export { QueryProcessor, QueryInput, ProcessedQuery } from '../agents/query/query_processor.js';
+export { QueryProcessor } from '../agents/query/query_processor.js';
+export type { QueryInput, ProcessedQuery } from '../agents/query/query_processor.js';
 export { QueryChains } from '../agents/query/query_chains.js';
-export { TaskAgent, TaskRequest, TaskResult } from '../agents/task/task_agent.js';
-export { ToolAgent, ToolRequest, ToolResult } from '../agents/tool/tool_agent.js';
+export { TaskAgent } from '../agents/task/task_agent.js';
+export type { TaskRequest, TaskResult } from '../agents/task/task_agent.js';
+export { ToolAgent } from '../agents/tool/tool_agent.js';
+export type { ToolRequest, ToolResult } from '../agents/tool/tool_agent.js';
 
 // Tools
-export { VisionAggregator, VisionResult, AggregatedVisionResult } from '../tools/vision/vision_aggregator.js';
-export { SearchRanker, RankingCriteria, RankedResult } from '../tools/search/search_ranker.js';
-export { ContentAggregator, ContentSource, AggregatedContent } from '../tools/content/content_aggregator.js';
+export { VisionAggregator } from '../tools/vision/vision_aggregator.js';
+export type { VisionResult, AggregatedVisionResult } from '../tools/vision/vision_aggregator.js';
+export { SearchRanker } from '../tools/search/search_ranker.js';
+export type { RankingCriteria, RankedResult } from '../tools/search/search_ranker.js';
+export { ContentAggregator } from '../tools/content/content_aggregator.js';
+export type { ContentSource, AggregatedContent } from '../tools/content/content_aggregator.js';
 
 // Integration
-export { LCELApiBridge, SortRequest, SortResponse } from '../integration/lcel_api_bridge.js';
+export { LCELApiBridge } from '../integration/lcel_api_bridge.js';
+export type { SortRequest, SortResponse } from '../integration/lcel_api_bridge.js';
 
 // Utilities
 export { ConditionEvaluator } from '../core/lcel/utils/condition_evaluator.js';

@@ -144,10 +144,17 @@ export class AtlasGenerator {
 
     for (const image of images) {
       try {
+        // Skip images without original_path
+        if (!image.original_path) {
+          console.warn(`Image ${image.id} has no original_path, creating placeholder`);
+          imageDataList.push(await this.createPlaceholderImage());
+          continue;
+        }
+
         // Download from Supabase storage
         const { data, error } = await supabaseService.storage
           .from('images') // Assuming 'images' bucket
-          .download(image.originalPath);
+          .download(image.original_path);
 
         if (error) {
           console.warn(`Failed to download image ${image.id}:`, error);
@@ -252,7 +259,7 @@ export class AtlasGenerator {
 
       imageMap[position] = {
         imageId: image.id,
-        originalPath: image.originalPath,
+        originalPath: image.original_path || '', // Handle null case
         bounds: {
           x: col * (imageWidth + padding) + padding,
           y: row * (imageHeight + padding) + padding,
@@ -398,24 +405,24 @@ export class AtlasGenerator {
       const testImages: VirtualImage[] = [{
         id: 'test',
         user_id: 'test',
-        originalPath: 'test/path',
-        originalName: 'test.jpg',
+        original_path: 'test/path',
+        original_name: 'test.jpg',
         hash: 'test',
-        virtualName: null,
-        virtualTags: null,
-        virtualAlbum: null,
+        virtual_name: null,
+        virtual_tags: null,
+        virtual_albums: undefined,
         virtual_description: null,
         thumbnail: null,
-        nsfwScore: null,
-        isFlagged: null,
+        nsfw_score: null,
+        isflagged: null,
         caption: null,
-        visionSummary: null,
+        vision_summary: null,
         vision_sorted: null,
         metadata: null,
         embedding: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        sortOrder: 0
+        sortorder: 0
       }];
 
       // Test image map generation (doesn't require actual images)

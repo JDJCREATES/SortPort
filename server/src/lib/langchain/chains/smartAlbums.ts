@@ -15,7 +15,6 @@
  * - Smart naming for generated albums
  */
 
-import { RunnableSequence, RunnableLambda } from '@langchain/core/runnables';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChainInput, ChainOutput, SortedImageResult } from '../../../types/sorting';
 import { EmbeddingService } from '../utils/embeddings';

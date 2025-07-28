@@ -124,6 +124,11 @@ export interface AuthenticatedUser {
   email?: string;
   credits: number;
   tier: 'free' | 'pro' | 'enterprise';
+  lastActive?: Date;
+  sessionId?: string;
+  preferences?: Record<string, any>;
+  subscriptionStatus?: string;
+  rateLimitTier?: string;
 }
 
 // Request context
@@ -131,4 +136,7 @@ export interface RequestContext {
   user: AuthenticatedUser;
   requestId: string;
   startTime: number;
+  userAgent?: string;
+  ip?: string;
+  metadata?: Record<string, any>;
 }

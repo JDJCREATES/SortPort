@@ -34,7 +34,7 @@ export interface GroupingMetadata {
 }
 
 export class SmartGrouper {
-  private groupingChain: RunnableSequence;
+  private groupingChain!: RunnableSequence; // Definite assignment assertion
   
   constructor() {
     this.setupGroupingChain();
@@ -56,7 +56,7 @@ export class SmartGrouper {
       RunnableParallel.from({
         similarity: RunnableLambda.from((input: any) => this.calculateSimilarities(input)),
         clustering: RunnableLambda.from((input: any) => this.performClustering(input))
-      }),
+      }) as RunnableParallel<any>,
       RunnableLambda.from((results: any) => this.optimizeGroups(results))
     ]);
   }

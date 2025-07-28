@@ -8,7 +8,7 @@ import { RunnableSequence, RunnableLambda, RunnableParallel } from '@langchain/c
 import { RunnableBranch } from '../../core/lcel/runnable_branch';
 
 export class GroupingChains {
-  createMultiCriteriaGroupingChain(): RunnableParallel {
+  createMultiCriteriaGroupingChain(): RunnableParallel<any> {
     return RunnableParallel.from({
       semanticGrouping: RunnableLambda.from((input: any) => this.groupBySemantic(input)),
       temporalGrouping: RunnableLambda.from((input: any) => this.groupByTemporal(input)),

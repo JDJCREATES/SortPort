@@ -15,7 +15,7 @@ export class AggregationChains {
     ]);
   }
 
-  createParallelAggregationChain(): RunnableParallel {
+  createParallelAggregationChain(): RunnableParallel<any> {
     return RunnableParallel.from({
       metadata: RunnableLambda.from((input: any) => this.aggregateMetadata(input)),
       content: RunnableLambda.from((input: any) => this.aggregateContent(input)),
