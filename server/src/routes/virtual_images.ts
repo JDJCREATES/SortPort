@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import { authMiddleware, requireCredits } from '../middleware/auth';
+import { authMiddleware, requireCredits, serviceAuthMiddleware } from '../middleware/auth';
 import { virtualImageManager } from '../lib/imageProcessing/virtual_image_manager';
 import { z } from 'zod';
 
@@ -97,8 +97,160 @@ router.post('/webhook/rekognition-complete',
   })
 );
 
-// Create virtual image (for initial upload before Rekognition)
-router.post('/', 
+// SERVICE ENDPOINTS - for Edge Function integration via virtual-image-bridge
+
+// Batch create virtual images (service endpoint)
+router.post('/',
+  serviceAuthMiddleware,
+  asyncHandler(async (req, res) => {
+    const { userId, jobId, images } = req.body;
+
+    if (!userId || !jobId || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'userId, jobId, and images array are required'
+      });
+    }
+
+    console.log(`🔧 [SERVICE] Creating ${images.length} virtual images for job ${jobId}, user ${userId}`);
+
+    try {
+      const results = await virtualImageManager.processBatch(images, {
+        batchSize: 50,
+        concurrency: 10,
+        enableCaching: true
+      });
+
+      const successful = results.filter(r => r !== null);
+      const failed = results.length - successful.length;
+
+      console.log(`✅ [SERVICE] Batch create completed: ${successful.length} success, ${failed} failed`);
+
+      res.json({
+        success: true,
+        data: {
+          processed: results.length,
+          successful: successful.length,
+          failed,
+          images: successful
+        }
+      });
+
+    } catch (error) {
+      console.error('Service batch create error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  })
+);
+
+// Batch update virtual images (service endpoint)
+router.post('/batch-update',
+  serviceAuthMiddleware,
+  asyncHandler(async (req, res) => {
+    const { jobId, updates } = req.body;
+
+    if (!jobId) {
+      return res.status(400).json({
+        success: false,
+        error: 'jobId is required'
+      });
+    }
+
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'updates array is required'
+      });
+    }
+
+    console.log(`🔧 [SERVICE] Updating ${updates.length} virtual images for job ${jobId}`);
+
+    try {
+      const results = [];
+      let successCount = 0;
+      let failCount = 0;
+
+      // Process updates in batches for performance
+      const BATCH_SIZE = 20;
+      for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+        const batch = updates.slice(i, i + BATCH_SIZE);
+        
+        const batchPromises = batch.map(async (update) => {
+          try {
+            // Find virtual image by image path
+            const virtualImage = await virtualImageManager.findByPath(update.imagePath);
+            
+            if (!virtualImage) {
+              console.warn(`Virtual image not found for path: ${update.imagePath}`);
+              return { success: false, imagePath: update.imagePath, error: 'Not found' };
+            }
+
+            // Update the virtual image with NSFW detection results
+            const updateData = {
+              nsfw_score: update.nsfwDetection?.confidenceScore || 0,
+              isflagged: update.nsfwDetection?.isNsfw || false,
+              moderation_labels: update.nsfwDetection?.moderationLabels || [],
+              processed_at: update.nsfwDetection?.processedAt || new Date().toISOString()
+            };
+
+            const updatedImage = await virtualImageManager.updateVirtualImage(virtualImage.id, updateData);
+            
+            if (updatedImage) {
+              successCount++;
+              return { success: true, imageId: updatedImage.id, imagePath: update.imagePath };
+            } else {
+              failCount++;
+              return { success: false, imagePath: update.imagePath, error: 'Update failed' };
+            }
+
+          } catch (updateError) {
+            console.error(`Error updating virtual image for path ${update.imagePath}:`, updateError);
+            failCount++;
+            return { 
+              success: false, 
+              imagePath: update.imagePath, 
+              error: updateError instanceof Error ? updateError.message : 'Unknown error' 
+            };
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+      }
+
+      console.log(`✅ [SERVICE] Batch update completed: ${successCount} success, ${failCount} failed`);
+
+      res.json({
+        success: true,
+        data: {
+          jobId,
+          processed: updates.length,
+          successful: successCount,
+          failed: failCount,
+          updated: results.filter(r => r.success),
+          errors: results.filter(r => !r.success)
+        }
+      });
+
+    } catch (error) {
+      console.error('Service batch update error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  })
+);
+
+// USER ENDPOINTS - for authenticated user access
+
+// Create virtual image (for individual uploads)
+router.post('/user', 
   authMiddleware,
   requireCredits(0), // No credits required for creating placeholder
   asyncHandler(async (req, res) => {
@@ -147,7 +299,7 @@ router.post('/',
 );
 
 // Get virtual image by ID
-router.get('/:id',
+router.get('/user/:id',
   authMiddleware,
   asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -186,7 +338,7 @@ router.get('/:id',
 );
 
 // Update virtual image
-router.put('/:id',
+router.put('/user/:id',
   authMiddleware,
   asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -280,8 +432,8 @@ router.get('/user/:userId',
   })
 );
 
-// Batch create virtual images (for bulk uploads)
-router.post('/batch',
+// Batch create virtual images (for bulk uploads) - USER ENDPOINT
+router.post('/user/batch',
   authMiddleware,
   requireCredits(0), // No credits for creating placeholders
   asyncHandler(async (req, res) => {
@@ -334,7 +486,7 @@ router.post('/batch',
 );
 
 // Delete virtual image
-router.delete('/:id',
+router.delete('/user/:id',
   authMiddleware,
   asyncHandler(async (req, res) => {
     const { id } = req.params;

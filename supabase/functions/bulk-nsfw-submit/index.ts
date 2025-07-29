@@ -271,6 +271,10 @@ serve(async (req: Request): Promise<Response> => {
   const requestId = generateRequestId();
   let bucketName: string | null = null;
   
+  // VIRTUAL IMAGE INTEGRATION: Log bulk processing flow
+  console.log(`🔍 [FLOW-TRACE] [${requestId}] bulk-nsfw-submit: Starting Rekognition job submission`);
+  console.log(`🔍 [FLOW-TRACE] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
+  
   console.log(`🚀 [${requestId}] === BULK NSFW SUBMIT START ===`);
   console.log(`🚀 [${requestId}] Method: ${req.method}`);
   console.log(`🚀 [${requestId}] URL: ${req.url}`);
@@ -555,6 +559,10 @@ serve(async (req: Request): Promise<Response> => {
       console.log(`   - Output: ${bucketName}/output/`);
       console.log(`   - Images to process: ${s3Verification.objectCount}`);
 
+      // INTEGRATION POINT: This is where virtual image creation should happen after Rekognition job starts
+      console.log(`📍 [INTEGRATION-POINT] [${requestId}] Rekognition job started - virtual image creation should happen here`);
+      console.log(`📍 [INTEGRATION-POINT] [${requestId}] Job details: jobId=${jobId}, awsJobId=${awsJobId}, bucket=${bucketName}`);
+
       // Update database with AWS job ID and status
       console.log(`💾 [${requestId}] Updating database with AWS job ID...`);
       const { error: updateError } = await supabase
@@ -586,6 +594,10 @@ serve(async (req: Request): Promise<Response> => {
 
       console.log(`🎉 [${requestId}] === BULK NSFW SUBMIT SUCCESS ===`);
       console.log(`🎉 [${requestId}] Response:`, successResponse);
+      
+      // FLOW TRACE: Log successful completion
+      console.log(`🔍 [FLOW-TRACE] [${requestId}] bulk-nsfw-submit: Request completed successfully`);
+      console.log(`🔍 [FLOW-TRACE] [${requestId}] Next step: bulk-nsfw-status will monitor jobId=${jobId}, awsJobId=${awsJobId}`);
 
       return new Response(JSON.stringify(successResponse), {
         status: 200,

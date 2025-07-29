@@ -503,6 +503,79 @@ function generateRequestId(): string {
 
 export { authService };
 
+// Service Authentication Middleware - for Edge Function to LCEL server communication
+export const serviceAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        error: 'Service authorization required',
+        code: 'SERVICE_AUTH_REQUIRED'
+      });
+    }
+    
+    const token = authHeader.substring(7);
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!serviceRoleKey || token !== serviceRoleKey) {
+      return res.status(403).json({
+        success: false,
+        error: 'Invalid service authorization',
+        code: 'SERVICE_AUTH_INVALID'
+      });
+    }
+    
+    // For service requests, create a mock user context from headers
+    const userId = req.headers['x-user-id'] as string;
+    const jobId = req.headers['x-job-id'] as string;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'X-User-ID header required for service requests',
+        code: 'SERVICE_USER_ID_REQUIRED'
+      });
+    }
+    
+    // Create service user context
+    req.user = {
+      id: userId,
+      email: `service+${userId}@internal.system`,
+      credits: 999999, // Service requests have unlimited credits
+      tier: 'enterprise' as const,
+      sessionId: jobId || `service-${Date.now()}`,
+      lastActive: new Date(),
+      subscriptionStatus: 'active',
+      rateLimitTier: 'unlimited'
+    };
+    
+    req.context = {
+      user: req.user, // Add user reference
+      requestId: generateRequestId(),
+      startTime: Date.now(),
+      userAgent: req.headers['user-agent'] || 'Service/1.0',
+      ip: '127.0.0.1', // Internal service IP
+      metadata: {
+        service: true, // Mark as service request
+        jobId
+      }
+    };
+    
+    console.log(`🔧 Service auth successful for user ${userId}, job ${jobId}`);
+    next();
+    
+  } catch (error) {
+    console.error('Service auth error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Service authentication error',
+      code: 'SERVICE_AUTH_ERROR'
+    });
+  }
+};
+
 // Legacy support for existing code
 export async function updateUserCredits(userId: string, creditChange: number): Promise<void> {
   return authService.updateUserCredits(userId, creditChange);

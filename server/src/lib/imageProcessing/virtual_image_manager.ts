@@ -718,6 +718,65 @@ export class VirtualImageManager extends EventEmitter {
     }
   }
 
+  async findByPath(imagePath: string): Promise<VirtualImage | null> {
+    try {
+      // Clean the path - remove s3:// prefix and temp bucket prefixes
+      let cleanPath = imagePath;
+      if (cleanPath.startsWith('s3://')) {
+        cleanPath = cleanPath.replace(/^s3:\/\/[^\/]+\//, '');
+      }
+      if (cleanPath.startsWith('temp-')) {
+        cleanPath = cleanPath.replace(/^temp-[^\/]+\//, '');
+      }
+
+      console.log(`🔍 Looking for virtual image with path: ${imagePath} (cleaned: ${cleanPath})`);
+
+      // Try exact match first
+      let { data, error } = await supabaseService
+        .from('virtual_image')
+        .select('*')
+        .eq('original_path', imagePath)
+        .single();
+
+      if (data && !error) {
+        console.log(`✅ Found virtual image by exact path match: ${data.id}`);
+        return data;
+      }
+
+      // Try with cleaned path
+      ({ data, error } = await supabaseService
+        .from('virtual_image')
+        .select('*')
+        .eq('original_path', cleanPath)
+        .single());
+
+      if (data && !error) {
+        console.log(`✅ Found virtual image by cleaned path match: ${data.id}`);
+        return data;
+      }
+
+      // Try partial match using LIKE
+      ({ data, error } = await supabaseService
+        .from('virtual_image')
+        .select('*')
+        .or(`original_path.like.%${cleanPath},original_path.like.%${imagePath}`)
+        .limit(1)
+        .single());
+
+      if (data && !error) {
+        console.log(`✅ Found virtual image by partial path match: ${data.id}`);
+        return data;
+      }
+
+      console.warn(`⚠️ No virtual image found for path: ${imagePath}`);
+      return null;
+
+    } catch (error) {
+      console.error('Error finding image by path:', error);
+      return null;
+    }
+  }
+
   async updateVirtualImage(id: string, updates: Partial<VirtualImage>): Promise<VirtualImage | null> {
     try {
       const { data, error } = await supabaseService

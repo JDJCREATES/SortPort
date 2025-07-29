@@ -283,6 +283,10 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
 serve(async (req: Request): Promise<Response> => {
   const requestId = req.headers.get('X-Request-ID') || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   
+  // VIRTUAL IMAGE INTEGRATION: Log bulk processing flow
+  console.log(`🔍 [FLOW-TRACE] [${requestId}] bulk-nsfw-status: Starting status check/result processing`);
+  console.log(`🔍 [FLOW-TRACE] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
+  
   logWithContext('INFO', `Incoming bulk status request`, {
     requestId,
     method: req.method,
@@ -709,6 +713,45 @@ serve(async (req: Request): Promise<Response> => {
             requestId
           })
 
+          // INTEGRATION POINT: This is where virtual image updates should happen after processing completes
+          console.log(`📍 [INTEGRATION-POINT] [${requestId}] Processing completed - virtual image updates should happen here`);
+          console.log(`📍 [INTEGRATION-POINT] [${requestId}] Results: ${processedResults.length} images, ${nsfwCount} NSFW detected`);
+          console.log(`📍 [INTEGRATION-POINT] [${requestId}] Job details: jobId=${jobId}, tempBucket=${tempBucketName}`);
+
+          // VIRTUAL IMAGE INTEGRATION: Update virtual images with NSFW results
+          try {
+            console.log(`🔗 [${requestId}] Calling virtual-image-bridge to update ${processedResults.length} virtual images`);
+            
+            const updateData = processedResults.map((result: any) => ({
+              imagePath: result.image_path.replace(`temp-${tempBucketName}/`, `s3://${tempBucketName}/`),
+              isNsfw: result.is_nsfw,
+              confidenceScore: result.confidence_score,
+              moderationLabels: Array.isArray(result.moderation_labels) ? result.moderation_labels : []
+            }));
+            
+            const supabase = createClient(
+              Deno.env.get('SUPABASE_URL') ?? '',
+              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            );
+            
+            const bridgeResponse = await supabase.functions.invoke('virtual-image-bridge/update', {
+              body: {
+                jobId,
+                results: updateData
+              }
+            });
+            
+            if (bridgeResponse.error) {
+              console.error(`❌ [${requestId}] Virtual image update failed:`, bridgeResponse.error);
+            } else {
+              console.log(`✅ [${requestId}] Updated ${bridgeResponse.data?.processedCount || 0} virtual images with NSFW results`);
+            }
+            
+          } catch (virtualUpdateError) {
+            console.error(`❌ [${requestId}] Virtual image update error:`, virtualUpdateError);
+            // Don't fail the processing, but log the issue
+          }
+
           // Cleanup temp S3 bucket (don't await - let it run in background)
           TempS3BucketManager.deleteTempBucket(tempBucketName).then(() => {
             logWithContext('INFO', 'Temp bucket cleanup completed', {
@@ -736,6 +779,10 @@ serve(async (req: Request): Promise<Response> => {
             }),
             { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           )
+          
+          // FLOW TRACE: Log successful completion
+          console.log(`🔍 [FLOW-TRACE] [${requestId}] bulk-nsfw-status: Processing completed successfully`);
+          console.log(`🔍 [FLOW-TRACE] [${requestId}] Final results: ${processedResults.length} processed, ${nsfwCount} NSFW`);
           
         } else if (awsResponse.JobStatus === 'FAILED') {
           const errorMessage = awsResponse.StatusMessage || 'AWS processing failed'

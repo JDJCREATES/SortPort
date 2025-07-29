@@ -8,12 +8,18 @@
 // Environment Detection
 const isDevelopment = __DEV__;
 const isWeb = typeof window !== 'undefined';
+const isAndroidEmulator = !isWeb && isDevelopment;
 
 // LCEL Server Configuration
 export const LCEL_CONFIG = {
-  // Server URL - use environment variable or fallback to localhost for development
+  // Server URL - use environment variable or fallback based on platform
+  // For USB debugging on Android: use your computer's IP address
+  // For iOS simulator: use localhost
+  // For Android emulator: use 10.0.2.2
   SERVER_URL: process.env.EXPO_PUBLIC_LCEL_SERVER_URL || 
-    (isDevelopment ? 'http://localhost:3001' : 'https://your-production-server.com'),
+    (isDevelopment ? 
+      'http://localhost:3001' : // Change this to your computer's IP for USB debugging
+      'https://your-production-server.com'),
   
   // API Endpoints
   ENDPOINTS: {

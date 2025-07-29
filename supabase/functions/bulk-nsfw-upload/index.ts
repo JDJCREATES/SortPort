@@ -732,6 +732,54 @@ async function handleRequest(req: Request): Promise<Response> {
 
     console.log(`✅ [${requestId}] Binary upload complete: ${uploadResult.successCount}/${imageCount} images uploaded to session ${sessionJobId}`);
 
+    // VIRTUAL IMAGE INTEGRATION: Create virtual images after successful S3 upload
+    console.log(`📍 [INTEGRATION-POINT] [${requestId}] Creating virtual images for uploaded files`);
+    
+    try {
+      // Prepare image data for virtual image creation
+      const imageFiles: Array<{ imagePath: string; originalFileName?: string; fileSize?: number; contentType?: string }> = [];
+      
+      // Collect image file information from FormData
+      for (let i = 0; i < imageCount; i++) {
+        const key = `image_${i}`;
+        const file = formData.get(key);
+        if (file && typeof file === 'object' && 'arrayBuffer' in file) {
+          const fileObj = file as File;
+          const s3Key = `input/batch-${batchIndex}-image-${i.toString().padStart(4, '0')}.jpg`;
+          
+          imageFiles.push({
+            imagePath: `s3://${bucketName}/${s3Key}`,
+            originalFileName: fileObj.name || 'unknown.jpg',
+            fileSize: fileObj.size || 0,
+            contentType: fileObj.type || 'image/jpeg'
+          });
+        }
+      }
+      
+      if (imageFiles.length > 0) {
+        console.log(`🔗 [${requestId}] Calling virtual-image-bridge to create ${imageFiles.length} virtual images`);
+        
+        const bridgeResponse = await supabase.functions.invoke('virtual-image-bridge/create', {
+          body: {
+            jobId: sessionJobId,
+            bucketName,
+            userId,
+            images: imageFiles
+          }
+        });
+        
+        if (bridgeResponse.error) {
+          console.error(`❌ [${requestId}] Virtual image creation failed:`, bridgeResponse.error);
+          // Don't fail the upload, but log the issue
+        } else {
+          console.log(`✅ [${requestId}] Created ${bridgeResponse.data?.processedCount || 0} virtual images`);
+        }
+      }
+    } catch (virtualImageError) {
+      console.error(`❌ [${requestId}] Virtual image creation error:`, virtualImageError);
+      // Don't fail the upload, but log the issue
+    }
+
     // FIXED: Database record management - always use sessionJobId
     console.log(`💾 [${requestId}] Managing database record for session: ${sessionJobId}`);
 
@@ -839,6 +887,12 @@ async function handleRequest(req: Request): Promise<Response> {
 
 // Serve with timeout protection
 serve(async (req: Request): Promise<Response> => {
+  const requestId = generateRequestId();
+  
+  // VIRTUAL IMAGE INTEGRATION: Log bulk processing flow
+  console.log(`🔍 [FLOW-TRACE] [${requestId}] bulk-nsfw-upload: Starting request processing`);
+  console.log(`🔍 [FLOW-TRACE] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
+  
   try {
     // Create a timeout promise
     const timeoutPromise = new Promise<Response>((_, reject) => {
@@ -848,20 +902,25 @@ serve(async (req: Request): Promise<Response> => {
     });
 
     // Race between actual request and timeout
-    const response = await Promise.race([
+    console.log(`🔍 [FLOW-TRACE] [${requestId}] About to call handleRequest`);
+    const response: Response = await Promise.race([
       handleRequest(req),
       timeoutPromise
     ]);
 
+    // Simple success logging without touching response
+    console.log(`🔍 [FLOW-TRACE] [${requestId}] bulk-nsfw-upload: Request completed successfully`);
+    console.log(`📍 [INTEGRATION-POINT] [${requestId}] S3 upload complete - virtual image creation should happen here`); 
+
     return response;
   } catch (error) {
-    console.error(`❌ Request timeout or error:`, error);
+    console.error(`❌ [FLOW-TRACE] [${requestId}] Request timeout or error:`, error);
     
     return new Response(JSON.stringify({
       error: 'Request timeout',
       details: error instanceof Error ? error.message : 'Unknown timeout error',
       type: 'TIMEOUT_ERROR',
-      request_id: generateRequestId()
+      request_id: requestId
     }), {
       status: 504,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },

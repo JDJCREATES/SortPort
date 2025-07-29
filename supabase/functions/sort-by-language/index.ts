@@ -19,7 +19,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const LCEL_SERVER_URL = Deno.env.get('LCEL_SERVER_URL') || 'http://localhost:3001'
+const LCEL_SERVER_URL = Deno.env.get('LCEL_SERVER_URL') 
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

@@ -98,102 +98,38 @@ export class SortingService {
   }
 
   /**
-   * Get authentication headers for LCEL server
+   * Transform edge function response to frontend format
    */
-  private async getAuthHeaders(): Promise<Record<string, string>> {
-    const { data: { session } } = await supabase.auth.getSession();
+  private transformFromLCELResponse(edgeResponse: any): SortingResult {
+    // Edge function returns { success: true, data: { sortedImages, reasoning, etc. } }
+    const data = edgeResponse.data || {};
+    const sortedImages = data.sortedImages || [];
     
     return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session?.access_token || ''}`,
-    };
-  }
-
-  /**
-   * Transform frontend request to LCEL server format
-   */
-  private async transformToLCELRequest(request: SortingRequest): Promise<any> {
-    // Get virtual images from database if imageIds provided
-    let images: any[] = [];
-    
-    if (request.imageIds && request.imageIds.length > 0) {
-      const { data: virtualImages, error } = await supabase
-        .from('virtual_image')
-        .select('*')
-        .in('id', request.imageIds)
-        .limit(request.maxResults || 50);
-
-      if (error) {
-        throw new Error(`Failed to fetch images: ${error.message}`);
-      }
-
-      images = virtualImages?.map(img => ({
-        id: img.id,
-        url: img.original_path,
-        metadata: {
-          originalName: img.original_name,
-          virtualName: img.virtual_name,
-          tags: img.virtual_tags,
-          description: img.virtual_description,
-          nsfwScore: img.nsfw_score,
-          detectedObjects: img.detected_objects,
-          dominantColors: img.dominant_colors,
-          location: img.location_name,
-          dateTaken: img.date_taken,
-          ...img.metadata
-        }
-      })) || [];
-    }
-
-    return {
-      query: request.query,
-      images,
-      options: {
-        maxResults: request.maxResults || 50,
-        sortCriteria: [request.sortType || 'custom'],
-        includeAnalysis: true,
-        userContext: request.userContext
-      }
-    };
-  }
-
-  /**
-   * Transform LCEL server response to frontend format
-   */
-  private transformFromLCELResponse(lcelResponse: any): SortingResult {
-    const results = lcelResponse.results || [];
-    
-    return {
-      sortedImages: results.map((result: any, index: number) => ({
-        id: result.image?.id || `unknown_${index}`,
-        originalPath: result.image?.url || '',
-        virtualName: result.image?.metadata?.virtualName || null,
-        sortScore: result.sortScore || 0,
-        reasoning: result.reasoning || '',
-        position: result.position || index + 1,
-        metadata: {
-          confidence: result.metadata?.confidence || 0,
-          features: result.metadata?.features || [],
-          tone: result.metadata?.tone,
-          scene: result.metadata?.scene,
-          ...result.metadata
-        }
+      sortedImages: sortedImages.map((image: any, index: number) => ({
+        id: image.id || `unknown_${index}`,
+        originalPath: image.originalPath || '',
+        virtualName: image.virtualName || null,
+        sortScore: image.sortScore || 0,
+        reasoning: image.reasoning || '',
+        position: image.position || index + 1,
+        metadata: image.metadata || {}
       })),
-      reasoning: lcelResponse.metadata?.queryAnalysis?.intent || 'Sorted based on query',
-      confidence: lcelResponse.metadata?.confidence || 0,
-      usedVision: lcelResponse.metadata?.methodUsed?.includes('vision') || false,
-      processingTime: lcelResponse.metadata?.processingTime || 0,
-      cost: {
-        balance: 0, // Will be updated by credit system
+      reasoning: data.reasoning || 'Sorted based on query',
+      confidence: data.confidence || 0,
+      usedVision: data.usedVision || false,
+      processingTime: data.processingTime || 0,
+      cost: data.cost || {
+        balance: 0,
         breakdown: {
           embedding: 1,
-          vision: lcelResponse.metadata?.methodUsed?.includes('vision') ? 2 : 0,
+          vision: data.usedVision ? 2 : 0,
           processing: 1
         }
       },
       metadata: {
-        methodUsed: lcelResponse.metadata?.methodUsed || 'unknown',
-        queryAnalysis: lcelResponse.metadata?.queryAnalysis || {}
+        methodUsed: data.usedVision ? 'vision' : 'metadata',
+        queryAnalysis: edgeResponse.meta || {}
       }
     };
   }
@@ -216,8 +152,10 @@ export class SortingService {
         message: 'Preparing images for analysis...'
       });
 
-      // Transform request to LCEL format
-      const lcelRequest = await this.transformToLCELRequest(request);
+      // Validate request
+      if (!request.query?.trim()) {
+        throw new Error('Search query is required');
+      }
 
       this.updateProgress({
         stage: 'analyzing',
@@ -225,8 +163,8 @@ export class SortingService {
         message: 'Sending request to AI sorting server...'
       });
 
-      // Call LCEL server with retry logic
-      const lcelResponse = await this.callLCELServerWithRetry(lcelRequest);
+      // Call LCEL server via edge function with retry logic
+      const lcelResponse = await this.callLCELServerWithRetry(request);
 
       this.updateProgress({
         stage: 'sorting',
@@ -258,31 +196,50 @@ export class SortingService {
   }
 
   /**
-   * Call LCEL server with retry logic
+   * Call LCEL server via Supabase Edge Function with retry logic
    */
-  private async callLCELServerWithRetry(lcelRequest: any, attempt = 1): Promise<any> {
+  private async callLCELServerWithRetry(request: SortingRequest, attempt = 1): Promise<any> {
     try {
-      const headers = await this.getAuthHeaders();
-      
-      const response = await fetch(`${CONFIG.LCEL.SERVER_URL}${CONFIG.LCEL.ENDPOINTS.SORT}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(lcelRequest),
-        signal: this.abortController?.signal
+      // Use Supabase Edge Function instead of direct LCEL server call
+      const { data, error } = await supabase.functions.invoke('sort-by-language', {
+        body: {
+          query: request.query,
+          imageIds: request.imageIds,
+          albumId: request.albumId,
+          sortType: request.sortType || 'custom',
+          useVision: request.useVision || false,
+          maxResults: request.maxResults || 50
+        }
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
       
-      if (!result.success) {
-        throw new Error(result.error || 'Sorting request failed');
+      if (CONFIG.DEBUG.LOG_API_CALLS) {
+        console.log(`🌐 Called sort-by-language edge function (attempt ${attempt}):`, {
+          success: !error,
+          imageCount: request.imageIds?.length || 0,
+          query: request.query?.substring(0, 50) + '...',
+          error: error?.message
+        });
       }
 
-      return result;
+      if (error) {
+        console.error(`Edge function error:`, error);
+        throw new Error(error.message || 'Edge function call failed');
+      }
+
+      if (!data?.success) {
+        console.error(`Sort request failed:`, data);
+        throw new Error(data?.error || 'Sort request failed');
+      }
+
+      if (CONFIG.DEBUG.LOG_API_CALLS) {
+        console.log(`✅ Edge function success:`, {
+          resultCount: data.data?.sortedImages?.length || 0,
+          processingTime: data.data?.processingTime || 0,
+          confidence: data.data?.confidence || 0
+        });
+      }
+
+      return data;
 
     } catch (error: any) {
       // Handle abort
@@ -290,22 +247,35 @@ export class SortingService {
         throw new Error('Sorting was cancelled');
       }
 
+      console.error(`LCEL server call failed (attempt ${attempt}):`, {
+        error: error.message,
+        url: CONFIG.LCEL.SERVER_URL,
+        attempt
+      });
+
       // Retry logic
       if (attempt < CONFIG.LCEL.MAX_RETRIES && this.shouldRetry(error)) {
-        console.warn(`LCEL server call failed (attempt ${attempt}), retrying...`, error.message);
+        console.warn(`Retrying edge function call in ${CONFIG.LCEL.RETRY_DELAY * attempt}ms...`);
         
         await new Promise(resolve => 
           setTimeout(resolve, CONFIG.LCEL.RETRY_DELAY * attempt)
         );
         
-        return this.callLCELServerWithRetry(lcelRequest, attempt + 1);
+        return this.callLCELServerWithRetry(request, attempt + 1);
       }
 
-      throw new Error(`LCEL server error after ${attempt} attempts: ${error.message}`);
-    }
-  }
+      // Provide helpful error messages
+      if (error.message?.includes('Network request failed')) {
+        throw new Error(`Cannot connect to sort-by-language edge function. Check your network connection.`);
+      }
+      
+      if (error.message?.includes('Authorization')) {
+        throw new Error('Authentication failed. Please log in again.');
+      }
 
-  /**
+      throw new Error(`Edge function error after ${attempt} attempts: ${error.message}`);
+    }
+  }  /**
    * Determine if error should trigger a retry
    */
   private shouldRetry(error: any): boolean {
