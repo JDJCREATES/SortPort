@@ -2,17 +2,18 @@
  * Sorting Service
  * 
  * Provides high-level interface for natural language image sorting.
- * Integrates with Supabase Edge Functions and handles response processing.
+ * Integrates with LCEL-based LangChain server for advanced AI-powered sorting.
  * 
  * Key Features:
- * - Type-safe API calls to sorting endpoints
+ * - Type-safe API calls to LCEL sorting endpoints
  * - Automatic retry logic with exponential backoff
  * - Progress tracking and cancellation support
- * - Result caching and optimization
- * - Cost estimation and credit validation
+ * - Multiple execution strategies (vision, metadata, hybrid)
+ * - Credit validation and cost estimation
  */
 
 import { supabase } from './supabase';
+import { CONFIG } from './config';
 
 export interface SortingRequest {
   query: string;
@@ -21,6 +22,10 @@ export interface SortingRequest {
   sortType?: 'tone' | 'scene' | 'custom' | 'thumbnail' | 'smart_album';
   useVision?: boolean;
   maxResults?: number;
+  userContext?: {
+    id: string;
+    preferences?: any;
+  };
 }
 
 export interface SortedImage {
@@ -51,6 +56,14 @@ export interface SortingResult {
       embedding: number;
       vision: number;
       processing: number;
+    };
+  };
+  metadata?: {
+    methodUsed: string;
+    queryAnalysis: {
+      intent: string;
+      parameters: any;
+      confidence: number;
     };
   };
 }
@@ -85,7 +98,108 @@ export class SortingService {
   }
 
   /**
-   * Main sorting method
+   * Get authentication headers for LCEL server
+   */
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session?.access_token || ''}`,
+    };
+  }
+
+  /**
+   * Transform frontend request to LCEL server format
+   */
+  private async transformToLCELRequest(request: SortingRequest): Promise<any> {
+    // Get virtual images from database if imageIds provided
+    let images: any[] = [];
+    
+    if (request.imageIds && request.imageIds.length > 0) {
+      const { data: virtualImages, error } = await supabase
+        .from('virtual_image')
+        .select('*')
+        .in('id', request.imageIds)
+        .limit(request.maxResults || 50);
+
+      if (error) {
+        throw new Error(`Failed to fetch images: ${error.message}`);
+      }
+
+      images = virtualImages?.map(img => ({
+        id: img.id,
+        url: img.original_path,
+        metadata: {
+          originalName: img.original_name,
+          virtualName: img.virtual_name,
+          tags: img.virtual_tags,
+          description: img.virtual_description,
+          nsfwScore: img.nsfw_score,
+          detectedObjects: img.detected_objects,
+          dominantColors: img.dominant_colors,
+          location: img.location_name,
+          dateTaken: img.date_taken,
+          ...img.metadata
+        }
+      })) || [];
+    }
+
+    return {
+      query: request.query,
+      images,
+      options: {
+        maxResults: request.maxResults || 50,
+        sortCriteria: [request.sortType || 'custom'],
+        includeAnalysis: true,
+        userContext: request.userContext
+      }
+    };
+  }
+
+  /**
+   * Transform LCEL server response to frontend format
+   */
+  private transformFromLCELResponse(lcelResponse: any): SortingResult {
+    const results = lcelResponse.results || [];
+    
+    return {
+      sortedImages: results.map((result: any, index: number) => ({
+        id: result.image?.id || `unknown_${index}`,
+        originalPath: result.image?.url || '',
+        virtualName: result.image?.metadata?.virtualName || null,
+        sortScore: result.sortScore || 0,
+        reasoning: result.reasoning || '',
+        position: result.position || index + 1,
+        metadata: {
+          confidence: result.metadata?.confidence || 0,
+          features: result.metadata?.features || [],
+          tone: result.metadata?.tone,
+          scene: result.metadata?.scene,
+          ...result.metadata
+        }
+      })),
+      reasoning: lcelResponse.metadata?.queryAnalysis?.intent || 'Sorted based on query',
+      confidence: lcelResponse.metadata?.confidence || 0,
+      usedVision: lcelResponse.metadata?.methodUsed?.includes('vision') || false,
+      processingTime: lcelResponse.metadata?.processingTime || 0,
+      cost: {
+        balance: 0, // Will be updated by credit system
+        breakdown: {
+          embedding: 1,
+          vision: lcelResponse.metadata?.methodUsed?.includes('vision') ? 2 : 0,
+          processing: 1
+        }
+      },
+      metadata: {
+        methodUsed: lcelResponse.metadata?.methodUsed || 'unknown',
+        queryAnalysis: lcelResponse.metadata?.queryAnalysis || {}
+      }
+    };
+  }
+
+  /**
+   * Main sorting method using LCEL server
    */
   async sortImages(request: SortingRequest): Promise<SortingResult> {
     try {
@@ -95,41 +209,41 @@ export class SortingService {
       // Validate request
       this.validateRequest(request);
 
-      // Estimate cost and check balance
-      const estimatedCost = this.estimateCost(request);
-      await this.checkbalance(estimatedCost);
-
       // Update progress
       this.updateProgress({
         stage: 'analyzing',
         progress: 10,
-        message: 'Analyzing your request...'
+        message: 'Preparing images for analysis...'
       });
 
-      // Call Supabase Edge Function
-      const { data, error } = await supabase.functions.invoke('sort-by-language', {
-        body: request
-       //may need to implement request cancellation workaround ~> JDJ
+      // Transform request to LCEL format
+      const lcelRequest = await this.transformToLCELRequest(request);
+
+      this.updateProgress({
+        stage: 'analyzing',
+        progress: 30,
+        message: 'Sending request to AI sorting server...'
       });
 
-      if (error) {
-        throw new Error(error.message || 'Sorting request failed');
-      }
+      // Call LCEL server with retry logic
+      const lcelResponse = await this.callLCELServerWithRetry(lcelRequest);
 
-      const response = data as SortingResponse;
+      this.updateProgress({
+        stage: 'sorting',
+        progress: 80,
+        message: 'Processing sorting results...'
+      });
 
-      if (!response.success) {
-        throw new Error(response.error || 'Sorting failed');
-      }
+      // Transform response to frontend format
+      const sortingResult = this.transformFromLCELResponse(lcelResponse);
 
-      // Update progress
       this.updateProgress({
         stage: 'complete',
         progress: 100,
-        message: `Successfully sorted ${response.data!.sortedImages.length} images`
+        message: `Successfully sorted ${sortingResult.sortedImages.length} images using ${sortingResult.metadata?.methodUsed} method`
       });
 
-      return response.data!;
+      return sortingResult;
 
     } catch (error: any) {
       this.updateProgress({
@@ -144,7 +258,67 @@ export class SortingService {
   }
 
   /**
-   * Sort by emotional tone
+   * Call LCEL server with retry logic
+   */
+  private async callLCELServerWithRetry(lcelRequest: any, attempt = 1): Promise<any> {
+    try {
+      const headers = await this.getAuthHeaders();
+      
+      const response = await fetch(`${CONFIG.LCEL.SERVER_URL}${CONFIG.LCEL.ENDPOINTS.SORT}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(lcelRequest),
+        signal: this.abortController?.signal
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Sorting request failed');
+      }
+
+      return result;
+
+    } catch (error: any) {
+      // Handle abort
+      if (error.name === 'AbortError') {
+        throw new Error('Sorting was cancelled');
+      }
+
+      // Retry logic
+      if (attempt < CONFIG.LCEL.MAX_RETRIES && this.shouldRetry(error)) {
+        console.warn(`LCEL server call failed (attempt ${attempt}), retrying...`, error.message);
+        
+        await new Promise(resolve => 
+          setTimeout(resolve, CONFIG.LCEL.RETRY_DELAY * attempt)
+        );
+        
+        return this.callLCELServerWithRetry(lcelRequest, attempt + 1);
+      }
+
+      throw new Error(`LCEL server error after ${attempt} attempts: ${error.message}`);
+    }
+  }
+
+  /**
+   * Determine if error should trigger a retry
+   */
+  private shouldRetry(error: any): boolean {
+    return (
+      error.message?.includes('network') ||
+      error.message?.includes('timeout') ||
+      error.message?.includes('fetch') ||
+      error.message?.includes('ECONNREFUSED')
+    );
+  }
+
+  /**
+   * Sort by emotional tone using LCEL server
    */
   async sortByTone(
     query: string, 
@@ -153,6 +327,7 @@ export class SortingService {
       targetTone?: string;
       intensity?: 'subtle' | 'moderate' | 'strong';
       maxResults?: number;
+      userContext?: any;
     } = {}
   ): Promise<SortingResult> {
     const enhancedQuery = options.targetTone 
@@ -163,12 +338,13 @@ export class SortingService {
       query: enhancedQuery,
       imageIds: options.imageIds,
       sortType: 'tone',
-      maxResults: options.maxResults
+      maxResults: options.maxResults,
+      userContext: options.userContext
     });
   }
 
   /**
-   * Sort by scene type
+   * Sort by scene type using LCEL server
    */
   async sortByScene(
     query: string,
@@ -178,6 +354,7 @@ export class SortingService {
       locationPreference?: string;
       timeOfDay?: string;
       maxResults?: number;
+      userContext?: any;
     } = {}
   ): Promise<SortingResult> {
     let enhancedQuery = query;
@@ -193,12 +370,13 @@ export class SortingService {
       query: enhancedQuery,
       imageIds: options.imageIds,
       sortType: 'scene',
-      maxResults: options.maxResults
+      maxResults: options.maxResults,
+      userContext: options.userContext
     });
   }
 
   /**
-   * Pick best thumbnails
+   * Pick best thumbnails using LCEL server with vision analysis
    */
   async pickThumbnails(
     query: string,
@@ -207,6 +385,7 @@ export class SortingService {
       quality?: 'high' | 'medium' | 'any';
       count?: number;
       criteria?: string[];
+      userContext?: any;
     } = {}
   ): Promise<SortingResult> {
     let enhancedQuery = 'Select best thumbnails';
@@ -221,12 +400,13 @@ export class SortingService {
       imageIds: options.imageIds,
       sortType: 'thumbnail',
       useVision: true, // Thumbnails benefit from vision analysis
-      maxResults: options.count || 5
+      maxResults: options.count || 5,
+      userContext: options.userContext
     });
   }
 
   /**
-   * Create smart albums
+   * Create smart albums using LCEL server
    */
   async createSmartAlbums(
     query: string,
@@ -234,6 +414,7 @@ export class SortingService {
       imageIds?: string[];
       strategy?: 'content' | 'temporal' | 'people' | 'location' | 'hybrid';
       maxAlbums?: number;
+      userContext?: any;
     } = {}
   ): Promise<SortingResult> {
     const strategy = options.strategy || 'hybrid';
@@ -245,12 +426,13 @@ export class SortingService {
       query: enhancedQuery,
       imageIds: options.imageIds,
       sortType: 'smart_album',
-      maxResults: maxAlbums * 20 // Allow for multiple albums
+      maxResults: maxAlbums * 20, // Allow for multiple albums
+      userContext: options.userContext
     });
   }
 
   /**
-   * Get sorting suggestions based on image collection
+   * Get sorting suggestions using LCEL server analysis
    */
   async getSortingSuggestions(imageIds?: string[]): Promise<{
     suggestions: string[];
@@ -259,18 +441,12 @@ export class SortingService {
     confidence: number;
   }> {
     try {
-      const { data, error } = await supabase.functions.invoke('sort-by-language', {
-        body: {
-          query: 'Analyze this image collection and suggest intelligent ways to sort and organize these images',
-          imageIds,
-          sortType: 'custom',
-          maxResults: 5
-        }
+      const result = await this.sortImages({
+        query: 'Analyze this image collection and suggest intelligent ways to sort and organize these images',
+        imageIds,
+        sortType: 'custom',
+        maxResults: 5
       });
-
-      if (error || !data.success) {
-        throw new Error(error?.message || data.error || 'Failed to get suggestions');
-      }
 
       // Extract suggestions from the sorting result
       const suggestions = [
@@ -284,9 +460,9 @@ export class SortingService {
 
       return {
         suggestions,
-        collectionAnalysis: data.data.reasoning,
-        recommendedSortType: data.data.sortedImages.length > 0 ? 'custom' : 'tone',
-        confidence: data.data.confidence
+        collectionAnalysis: result.reasoning,
+        recommendedSortType: result.sortedImages.length > 0 ? 'custom' : 'tone',
+        confidence: result.confidence
       };
 
     } catch (error) {
@@ -310,46 +486,49 @@ export class SortingService {
   }
 
   /**
-   * Validate sorting request
+   * Validate sorting request using configuration limits
    */
   private validateRequest(request: SortingRequest) {
     if (!request.query || request.query.trim().length === 0) {
       throw new Error('Query is required');
     }
 
-    if (request.query.length > 500) {
-      throw new Error('Query is too long (max 500 characters)');
+    if (request.query.length > CONFIG.LCEL.MAX_QUERY_LENGTH) {
+      throw new Error(`Query is too long (max ${CONFIG.LCEL.MAX_QUERY_LENGTH} characters)`);
     }
 
-    if (request.imageIds && request.imageIds.length > 100) {
-      throw new Error('Too many images (max 100)');
+    if (request.imageIds && request.imageIds.length > CONFIG.LCEL.MAX_IMAGES_PER_REQUEST) {
+      throw new Error(`Too many images (max ${CONFIG.LCEL.MAX_IMAGES_PER_REQUEST})`);
     }
 
-    if (request.maxResults && (request.maxResults < 1 || request.maxResults > 100)) {
-      throw new Error('Max results must be between 1 and 100');
+    if (request.maxResults && (request.maxResults < 1 || request.maxResults > CONFIG.LCEL.MAX_IMAGES_PER_REQUEST)) {
+      throw new Error(`Max results must be between 1 and ${CONFIG.LCEL.MAX_IMAGES_PER_REQUEST}`);
     }
   }
 
   /**
-   * Estimate cost for sorting request
+   * Estimate cost for sorting request using configuration
    */
   private estimateCost(request: SortingRequest): number {
-    let baseCost = 1; // Base sorting cost
+    let baseCost = CONFIG.CREDIT.COSTS.BASIC_SORT;
 
     // Higher cost for vision-enabled operations
     if (request.useVision || request.sortType === 'thumbnail') {
-      baseCost += 2;
+      baseCost = CONFIG.CREDIT.COSTS.VISION_SORT;
     }
 
     // Higher cost for smart albums
     if (request.sortType === 'smart_album') {
-      baseCost += 1;
+      baseCost = CONFIG.CREDIT.COSTS.SMART_ALBUM;
     }
 
-    // Cost scales with number of images
-    const imageCount = request.imageIds?.length || 50; // Assume 50 if not specified
-    if (imageCount > 20) {
-      baseCost += Math.floor(imageCount / 20);
+    // Apply volume multipliers
+    const imageCount = request.imageIds?.length || 50;
+    
+    for (const [, config] of Object.entries(CONFIG.CREDIT.VOLUME_MULTIPLIERS)) {
+      if (imageCount >= config.threshold) {
+        baseCost = Math.ceil(baseCost * config.multiplier);
+      }
     }
 
     return baseCost;

@@ -2,14 +2,14 @@
  * AutoSortManager.ts
  * 
  * Manages automatic sorting of photos into albums based on user-defined criteria and existing album structures.
- * It uses a LangChain agent call to intelligently categorize new photos into existing albums or create new ones
+ * Uses the LCEL-based sorting service to intelligently categorize new photos into existing albums or create new ones
  */
 
 import { PhotoLoader } from './photoLoader';
-
 import { AlbumUtils } from './albumUtils';
 import { MediaStorage } from './mediaStorage';
 import { UserFlags } from '../types';
+import { sortingService, SortingResult } from './sortingService';
 
 export class AutoSortManager {
   private static isRunning = false;
@@ -64,31 +64,40 @@ export class AutoSortManager {
 
       console.log(`Found ${filteredPhotos.length} new photos to sort`);
 
-      // Initialize LangChain agent
-      const agent = new LangChainAgent();
-
-      // Sort new photos using existing albums as context
+      // Use LCEL-based sorting service
       const existingAlbums = await AlbumUtils.loadAlbums();
       const sortPrompt = this.generateAutoSortPrompt(existingAlbums);
 
-      const sortResults = await agent.sortImages(
-        sortPrompt,
-        filteredPhotos,
-        userFlags,
-        (completed: number, total: number) => {
-          console.log(`Auto-sort progress: ${completed}/${total}`);
+      // Extract image IDs for sorting
+      const imageIds = filteredPhotos.map(photo => photo.id);
+
+      // Set up progress tracking
+      sortingService.setProgressCallback((progress) => {
+        console.log(`Auto-sort ${progress.stage}: ${progress.message} (${progress.progress}%)`);
+      });
+
+      // Call sorting service with user context
+      const sortResults = await sortingService.sortImages({
+        query: sortPrompt,
+        imageIds,
+        sortType: 'smart_album',
+        maxResults: 100,
+        userContext: {
+          id: 'auto-sort-user',
+          preferences: {
+            existingAlbums,
+            autoSort: true
+          }
         }
-      );
+      });
 
       // Process results and update existing albums
-      for (const newAlbum of sortResults.albums) {
-        await this.upsertAlbumIntelligently(newAlbum, existingAlbums);
-      }
+      await this.processAutoSortResults(sortResults, existingAlbums);
 
       // Update last auto-sort timestamp
       await MediaStorage.updateLastAutoSortTimestamp(now);
 
-      console.log(`Auto-sort completed: ${sortResults.albums.length} albums updated`);
+      console.log(`Auto-sort completed: ${sortResults.sortedImages.length} images organized using ${sortResults.metadata?.methodUsed} method`);
       return true;
 
     } catch (error) {
@@ -106,6 +115,137 @@ export class AutoSortManager {
 
     const albumNames = existingAlbums.map(album => album.name).join(', ');
     return `Organize these new photos into existing albums (${albumNames}) or create new albums if the content doesn't fit existing categories. Maintain consistency with existing organization patterns.`;
+  }
+
+  /**
+   * Process auto-sort results and update existing albums
+   */
+  private static async processAutoSortResults(sortResults: SortingResult, existingAlbums: any[]): Promise<void> {
+    // Group sorted images by potential album categories
+    const albumGroups = this.groupImagesByAlbum(sortResults.sortedImages, existingAlbums);
+
+    // Process each album group
+    for (const [albumName, images] of Object.entries(albumGroups)) {
+      const existingAlbum = existingAlbums.find(album => 
+        album.name.toLowerCase() === albumName.toLowerCase()
+      );
+
+      if (existingAlbum) {
+        // Update existing album
+        const updatedImageIds = [...new Set([...existingAlbum.imageIds, ...images.map((img: any) => img.id)])];
+        
+        await AlbumUtils.updateAlbum(existingAlbum.id, {
+          imageIds: updatedImageIds,
+          count: updatedImageIds.length,
+          thumbnail: images[0]?.originalPath || existingAlbum.thumbnail
+        });
+
+        console.log(`Updated existing album: ${existingAlbum.name} (+${images.length} photos)`);
+      } else {
+        // Create new album
+        const newAlbum = {
+          id: `album_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          name: albumName,
+          imageIds: images.map((img: any) => img.id),
+          count: images.length,
+          thumbnail: images[0]?.originalPath || '',
+          tags: this.extractTagsFromImages(images),
+          createdAt: Date.now()
+        };
+
+        await AlbumUtils.addAlbum(newAlbum);
+        console.log(`Created new album: ${albumName} (${images.length} photos)`);
+      }
+    }
+  }
+
+  /**
+   * Group sorted images by potential album names based on reasoning
+   */
+  private static groupImagesByAlbum(sortedImages: any[], existingAlbums: any[]): Record<string, any[]> {
+    const albumGroups: Record<string, any[]> = {};
+
+    for (const image of sortedImages) {
+      // Extract album name from reasoning or metadata
+      let albumName = this.extractAlbumNameFromImage(image, existingAlbums);
+      
+      if (!albumName) {
+        albumName = 'Unsorted Photos';
+      }
+
+      if (!albumGroups[albumName]) {
+        albumGroups[albumName] = [];
+      }
+      
+      albumGroups[albumName].push(image);
+    }
+
+    return albumGroups;
+  }
+
+  /**
+   * Extract album name from image reasoning or metadata
+   */
+  private static extractAlbumNameFromImage(image: any, existingAlbums: any[]): string | null {
+    const reasoning = image.reasoning?.toLowerCase() || '';
+    const metadata = image.metadata || {};
+
+    // Check if reasoning mentions existing album names
+    for (const album of existingAlbums) {
+      if (reasoning.includes(album.name.toLowerCase())) {
+        return album.name;
+      }
+    }
+
+    // Extract potential album names from reasoning
+    const albumKeywords = [
+      'vacation', 'holiday', 'trip', 'family', 'friends', 'birthday', 'wedding',
+      'nature', 'outdoor', 'indoor', 'work', 'food', 'pets', 'sports',
+      'portrait', 'landscape', 'event', 'celebration', 'travel'
+    ];
+
+    for (const keyword of albumKeywords) {
+      if (reasoning.includes(keyword)) {
+        return this.capitalizeFirst(keyword) + ' Photos';
+      }
+    }
+
+    // Use scene type from metadata
+    if (metadata.scene) {
+      return this.capitalizeFirst(metadata.scene) + ' Photos';
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract tags from sorted images
+   */
+  private static extractTagsFromImages(images: any[]): string[] {
+    const tags = new Set<string>();
+
+    for (const image of images) {
+      if (image.metadata?.features) {
+        image.metadata.features.forEach((feature: string) => tags.add(feature));
+      }
+      
+      if (image.metadata?.tone) {
+        tags.add(image.metadata.tone);
+      }
+      
+      if (image.metadata?.scene) {
+        tags.add(image.metadata.scene);
+      }
+    }
+
+    return Array.from(tags).slice(0, 10); // Limit to 10 tags
+  }
+
+  /**
+   * Capitalize first letter of string
+   */
+  private static capitalizeFirst(str: string): string {
+    return str.charAt(0).toUpperCase() + str.slice(1);
   }
 
   private static async upsertAlbumIntelligently(newAlbum: any, existingAlbums: any[]): Promise<void> {

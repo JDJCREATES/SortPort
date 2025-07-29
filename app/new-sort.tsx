@@ -6,9 +6,9 @@ import { PictureHackBar } from '../components/PictureHackBar';
 import { LoadingOverlay } from '../components/LoadingOverlay';
 import { AlbumCard } from '../components/AlbumCard';
 import { PhotoLoader, PermissionStatus } from '../utils/photoLoader';
-
 import { AlbumUtils } from '../utils/albumUtils';
 import { CreditPurchaseManager, CREDIT_COSTS } from '../utils/creditPurchaseManager';
+import { sortingService, SortedImage } from '../utils/sortingService';
 import { useApp } from '../contexts/AppContext';
 import { ImageMeta, AlbumOutput, SortSession } from '../types';
 import { getCurrentTheme } from '../utils/theme';
@@ -111,23 +111,37 @@ export default function NewSortScreen() {
     setError(null);
 
     try {
-      // Initialize LangChain agent
-      const agent = new LangChainAgent();
-
-      setCurrentMessage('Analyzing photos with AI...');
-
-      // Sort images
-      const sortResults = await agent.sortImages(
-        prompt,
-        photos,
-        userFlags,
-        deductCredits,
-        (completed: any, total: any) => {
-          const progressPercent = (completed / total) * 100;
-          setProgress(progressPercent);
-          setCurrentMessage(`Analyzing photo ${completed} of ${total}...`);
+      // Use LCEL-based sorting service
+      const { deductCredits } = useApp();
+      const sortingResult = await sortingService.sortImages({
+        query: prompt,
+        imageIds: limitedImages.map(img => img.id),
+        sortType: 'custom',
+        maxResults: 50,
+        userContext: {
+          id: 'new-sort-user',
+          preferences: {
+            deductCredits: true
+          }
         }
-      );
+      });
+
+      setCurrentMessage('Organizing albums...');
+      setProgress(100);
+
+      // Transform sorting result to expected format
+      const sortResults: AlbumOutput = {
+        albums: [{
+          id: `sorted_${Date.now()}`,
+          name: `Sorted: ${prompt.slice(0, 30)}...`,
+          imageIds: sortingResult.sortedImages.map((img: SortedImage) => img.id),
+          tags: [], // Extract from sortingResult if needed
+          createdAt: Date.now(),
+          thumbnail: sortingResult.sortedImages[0]?.originalPath || '',
+          count: sortingResult.sortedImages.length
+        }],
+        unsorted: [] // Images that couldn't be sorted would go here
+      };
 
       setCurrentMessage('Organizing albums...');
       setProgress(100);
@@ -141,7 +155,7 @@ export default function NewSortScreen() {
         prompt,
         timestamp: Date.now(),
         results: sortResults,
-        processingTime: 0, // Calculate if needed
+        processingTime: sortingResult.processingTime,
       };
 
       await AlbumUtils.saveSortSession(session);

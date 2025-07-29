@@ -1,7 +1,7 @@
 /**
  * Supabase Edge Function: Natural Language Image Sorting
  * 
- * Bridges the React Native client with the Express LangChain server.
+ * Bridges the React Native client with the LCEL-based Express server.
  * Handles authentication, request validation, and response formatting.
  * 
  * Input: Natural language sorting queries from client
@@ -11,6 +11,7 @@
  * - Authentication via Supabase JWT
  * - Request/response validation and sanitization
  * - Credit checking and deduction
+ * - LCEL server integration
  * - Error handling and logging
  * - CORS support for React Native
  */
@@ -18,8 +19,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-
-const EXPRESS_SERVER_URL = Deno.env.get('EXPRESS_SERVER_URL') || 'http://localhost:3001'
+const LCEL_SERVER_URL = Deno.env.get('LCEL_SERVER_URL') || 'http://localhost:3001'
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -115,56 +115,87 @@ serve(async (req: any) => {
       maxResults: Math.min(maxResults || 50, 100) // Cap at 100 results
     }
 
-    // Determine endpoint based on sort type
-    let endpoint = '/api/sort'
-    switch (sortType) {
-      case 'tone':
-        endpoint = '/api/sort/tone'
-        break
-      case 'scene':
-        endpoint = '/api/sort/scene'
-        break
-      case 'thumbnail':
-        endpoint = '/api/sort/thumbnails'
-        break
-      case 'smart_album':
-        endpoint = '/api/sort/albums'
-        break
+    // Transform request for LCEL server
+    const lcelRequest = {
+      query,
+      images: imageIds ? await getVirtualImagesForLCEL(supabaseClient, imageIds) : [],
+      options: {
+        maxResults: maxResults || 50,
+        sortCriteria: [sortType || 'custom'],
+        includeAnalysis: true,
+        userContext: {
+          id: user.id,
+          preferences: {
+            sortType,
+            useVision
+          }
+        }
+      }
     }
 
-    console.log(`📤 Forwarding ${sortType} request to Express server:`, {
-      endpoint,
+    console.log(`📤 Forwarding request to LCEL server:`, {
       userId: user.id,
       queryLength: query.length,
-      imageCount: imageIds?.length || 0
+      imageCount: lcelRequest.images.length,
+      sortType
     })
 
-    // Forward request to Express server
-    const expressResponse = await fetch(`${EXPRESS_SERVER_URL}${endpoint}`, {
+    // Forward request to LCEL server
+    const lcelResponse = await fetch(`${LCEL_SERVER_URL}/api/lcel/sort`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': req.headers.get('Authorization') || '',
       },
-      body: JSON.stringify(sortRequest),
+      body: JSON.stringify(lcelRequest),
     })
 
-    const expressData = await expressResponse.json()
+    const lcelData = await lcelResponse.json()
 
     // Log response for monitoring
-    console.log(`📥 Express server response:`, {
-      status: expressResponse.status,
-      success: expressData.success,
-      imageCount: expressData.data?.sortedImages?.length || 0,
-      processingTime: expressData.data?.processingTime || 0,
-      usedVision: expressData.data?.usedVision || false
+    console.log(`📥 LCEL server response:`, {
+      status: lcelResponse.status,
+      success: lcelData.success,
+      imageCount: lcelData.results?.length || 0,
+      processingTime: lcelData.metadata?.processingTime || 0,
+      methodUsed: lcelData.metadata?.methodUsed || 'unknown'
     })
+
+    // Transform LCEL response to match expected frontend format
+    const transformedResponse = {
+      success: lcelData.success,
+      data: lcelData.success ? {
+        sortedImages: lcelData.results?.map((result: any, index: number) => ({
+          id: result.image?.id || `unknown_${index}`,
+          originalPath: result.image?.url || '',
+          virtualName: result.image?.metadata?.virtualName || null,
+          sortScore: result.sortScore || 0,
+          reasoning: result.reasoning || '',
+          position: result.position || index + 1,
+          metadata: result.metadata || {}
+        })) || [],
+        reasoning: lcelData.metadata?.queryAnalysis?.intent || 'Sorted based on query',
+        confidence: lcelData.metadata?.confidence || 0,
+        usedVision: lcelData.metadata?.methodUsed?.includes('vision') || false,
+        processingTime: lcelData.metadata?.processingTime || 0,
+        cost: {
+          balance: 0, // Updated by credit system
+          breakdown: {
+            embedding: 1,
+            vision: lcelData.metadata?.methodUsed?.includes('vision') ? 2 : 0,
+            processing: 1
+          }
+        }
+      } : undefined,
+      error: lcelData.error,
+      meta: lcelData.metadata
+    }
 
     // Return response with CORS headers
     return new Response(
-      JSON.stringify(expressData),
+      JSON.stringify(transformedResponse),
       {
-        status: expressResponse.status,
+        status: lcelResponse.status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     )
@@ -176,7 +207,7 @@ serve(async (req: any) => {
       JSON.stringify({
         success: false,
         error: 'Internal server error',
-        message: error.message,
+        message: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString()
       }),
       {
@@ -186,3 +217,36 @@ serve(async (req: any) => {
     )
   }
 })
+
+/**
+ * Helper function to get virtual images formatted for LCEL server
+ */
+async function getVirtualImagesForLCEL(supabaseClient: any, imageIds: string[]) {
+  const { data: virtualImages, error } = await supabaseClient
+    .from('virtual_image')
+    .select('*')
+    .in('id', imageIds)
+    .limit(100)
+
+  if (error) {
+    console.error('Failed to fetch virtual images:', error)
+    return []
+  }
+
+  return virtualImages?.map((img: any) => ({
+    id: img.id,
+    url: img.original_path,
+    metadata: {
+      originalName: img.original_name,
+      virtualName: img.virtual_name,
+      tags: img.virtual_tags,
+      description: img.virtual_description,
+      nsfwScore: img.nsfw_score,
+      detectedObjects: img.detected_objects,
+      dominantColors: img.dominant_colors,
+      location: img.location_name,
+      dateTaken: img.date_taken,
+      ...img.metadata
+    }
+  })) || []
+}

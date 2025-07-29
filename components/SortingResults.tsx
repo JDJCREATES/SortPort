@@ -183,7 +183,7 @@ export function SortingResults({
         </View>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryLabel}>Cost</Text>
-          <Text style={styles.summaryValue}>{result.cost.credits} credits</Text>
+          <Text style={styles.summaryValue}>{result.cost.balance} credits</Text>
         </View>
       </View>
     </View>

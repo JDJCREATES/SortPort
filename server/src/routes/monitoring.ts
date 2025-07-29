@@ -18,9 +18,9 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { metricsCollector } from '../lib/monitoring/metricsCollector.js';
-import { costAnalyzer } from '../lib/analytics/costAnalyzer.js';
-import { productionSecurity } from '../lib/security/productionMiddleware.js';
+import { metricsCollector } from '../lib/monitoring/metricsCollector';
+import { costAnalyzer } from '../lib/analytics/costAnalyzer';
+import { productionSecurity } from '../lib/security/productionMiddleware';
 
 const router = Router();
 

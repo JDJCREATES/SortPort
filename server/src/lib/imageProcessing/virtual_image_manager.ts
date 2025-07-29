@@ -1,12 +1,12 @@
 /**
  * Virtual Image Manager
  * 
- * Scalable, modular system for managing virtual_image data with AWS Rekognition integration.
- * Designed for production use with thousands of images.
+ * Streamlined system for managing virtual_image data with AWS Rekognition integration.
+ * Designed to work seamlessly with existing Edge Functions.
  */
 
-import { supabaseService } from '../../supabase/client';
-import { VirtualImage } from '../../../types/sorting';
+import { supabaseService } from '../supabase/client';
+import { VirtualImage } from '../../types/sorting';
 import { EventEmitter } from 'events';
 
 export interface RekognitionData {

@@ -15,7 +15,7 @@
  * - Atomic operations for concurrent access
  */
 
-import { ChainOutput } from '../../../types/sorting.js';
+import { ChainOutput } from '../../../types/sorting';
 
 interface CacheEntry<T> {
   value: T;

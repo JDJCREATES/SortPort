@@ -16,8 +16,8 @@
  */
 
 import { OpenAIEmbeddings } from '@langchain/openai';
-import { VirtualImage, EmbeddingQuery, VectorSearchResult } from '../../../types/sorting.js';
-import { VirtualImageQueries } from '../../supabase/queries.js';
+import { VirtualImage, EmbeddingQuery, VectorSearchResult } from '../../../types/sorting';
+import { VirtualImageQueries } from '../../supabase/queries';
 import { supabaseService } from '../../supabase/client.js';
 
 export class EmbeddingService {

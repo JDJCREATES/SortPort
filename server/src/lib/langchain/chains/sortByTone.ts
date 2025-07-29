@@ -17,9 +17,9 @@
 
 import { RunnableSequence, RunnableLambda } from '@langchain/core/runnables';
 import { ChatOpenAI } from '@langchain/openai';
-import { ChainInput, ChainOutput, ToneChainInput, SortedImageResult, ChainMetadata } from '../../../types/sorting.js';
-import { EmbeddingService } from '../utils/embeddings.js';
-import { SortingPrompts, formatImageDataForPrompt, formatUserPreferences } from '../prompts/sorting.js';
+import { ChainInput, ChainOutput, ToneChainInput, SortedImageResult, ChainMetadata } from '../../../types/sorting';
+import { EmbeddingService } from '../utils/embeddings';
+import { SortingPrompts, formatImageDataForPrompt, formatUserPreferences } from '../prompts/sorting';
 
 export class SortByToneChain {
   private llm: ChatOpenAI;

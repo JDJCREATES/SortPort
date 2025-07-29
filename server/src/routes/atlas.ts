@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { ApiResponse, AtlasRequestSchema, AtlasResponse } from '../types/api.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
-import { visionRateLimiter } from '../middleware/rateLimiter.js';
-import { requireCredits, updateCreditsMiddleware } from '../middleware/auth.js';
-import { ValidationError } from '../types/api.js';
-import { VirtualImageQueries } from '../lib/supabase/queries.js';
-import { atlasGenerator, atlasVisionAnalyzer } from '../lib/langchain/utils/atlas.js';
+import { ApiResponse, AtlasRequestSchema, AtlasResponse } from '../types/api';
+import { asyncHandler } from '../middleware/errorHandler';
+import { visionRateLimiter } from '../middleware/rateLimiter';
+import { requireCredits, updateCreditsMiddleware } from '../middleware/auth';
+import { ValidationError } from '../types/api';
+import { VirtualImageQueries } from '../lib/supabase/queries';
+import { atlasGenerator, atlasVisionAnalyzer } from '../lib/langchain/utils/atlas';
 
 const router = Router();
 

@@ -15,9 +15,9 @@
  * - Fallback handling for missing or corrupt images
  */
 
-import { VirtualImage, AtlasGeneration, AtlasResult } from '../../../types/sorting.js';
-import { AtlasImageMap } from '../../../types/api.js';
-import { supabaseService } from '../../supabase/client.js';
+import { VirtualImage, AtlasGeneration, AtlasResult } from '../../../types/sorting';
+import { AtlasImageMap } from '../../../types/api';
+import { supabaseService } from '../../supabase/client';
 
 // Canvas would be used in Node.js environment for image processing
 // For now, we'll create a simplified implementation

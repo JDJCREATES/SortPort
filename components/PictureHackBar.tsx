@@ -142,7 +142,13 @@ export function PictureHackBar({
           imageIds,
           albumId,
           sortType: 'custom',
-          maxResults: 50
+          maxResults: 50,
+          userContext: {
+            id: 'picture-hack-bar-user',
+            preferences: {
+              albumId
+            }
+          }
         });
 
         setSortingResult(result);

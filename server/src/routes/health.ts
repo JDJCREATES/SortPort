@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { ApiResponse } from '../types/api.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
+import { ApiResponse } from '../types/api';
+import { asyncHandler } from '../middleware/errorHandler';
 
 const router = Router();
 

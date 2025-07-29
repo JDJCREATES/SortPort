@@ -5,7 +5,7 @@
  */
 
 import express from 'express';
-import { LCELApiBridge } from '../integration/lcel_api_bridge.js';
+import { LCELApiBridge } from '../integration/lcel_api_bridge';
 
 const router = express.Router();
 const lcelBridge = new LCELApiBridge();
