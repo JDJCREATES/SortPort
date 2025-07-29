@@ -43,20 +43,36 @@ docker push YOUR_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/snapsort-lcel:latest
 5. Click "Create"
 
 ### Step 4: Create Task Definition
+
+**Option A: Using JSON (Faster - Recommended)**
+1. Edit `ecs-task-definition.json` and replace the placeholder values:
+   - Update `SUPABASE_URL` with your actual Supabase project URL
+   - Update `SUPABASE_SERVICE_ROLE_KEY` with your service role key
+   - Update `OPENAI_API_KEY` with your OpenAI API key
+   - Confirm the ECR image URI matches your region (us-east-2)
+
+2. Create the task definition via AWS CLI:
+   ```bash
+   aws ecs register-task-definition --cli-input-json file://ecs-task-definition.json
+   ```
+
+**Option B: Using Console (Manual)**
 1. In ECS Console → Task Definitions → "Create new task definition"
 2. Choose "AWS Fargate"
 3. Configuration:
    - Task definition name: `snapsort-lcel-task`
    - Task role: Create new role or use existing
    - Task execution role: ecsTaskExecutionRole
-   - Task memory: 1GB
-   - Task CPU: 0.5 vCPU
+   - Task memory: **2GB** (improved from 1GB)
+   - Task CPU: **1 vCPU** (improved from 0.5 vCPU)
 
 4. Container Definition:
    - Container name: `snapsort-lcel`
-   - Image URI: `YOUR_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/snapsort-lcel:latest`
-   - Memory limit: 1024
+   - Image URI: `072928014978.dkr.ecr.us-east-2.amazonaws.com/snapsort-lcel:latest`
+   - Memory limit: **2048** (2GB)
+   - Memory reservation: **1536** (1.5GB soft limit)
    - Port mappings: 3001 (TCP)
+   - Health check command: `wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1`
 
 5. Environment Variables (Add these):
    ```
