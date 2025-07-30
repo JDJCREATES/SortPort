@@ -29,11 +29,11 @@ export class BulkNSFWProcessor {
   private static readonly UPLOAD_TIMEOUT_MS = 180000;
   private static readonly MAX_RETRIES = 2;
   
-  // 🚀 AGGRESSIVE SETTINGS for native processing <__should be overwritten by hardware profiler
+  // 🚀 OPTIMIZED SETTINGS for faster uploading
   private static currentSettings: ProcessingSettings = {
     compressionWorkers: 8,
-    uploadStreams: 12,            // 3x more parallel uploads
-    batchSize: 25,                // Larger batches
+    uploadStreams: 12,            // Keep parallel uploads high
+    batchSize: 12,                // Reduced for faster individual batch processing
     compressionQuality: 0.7,
     maxImageSize: 512,
     cacheSize: 100,
@@ -47,6 +47,7 @@ export class BulkNSFWProcessor {
   
   // Enhanced caching and queuing
   private static compressionCache = new Map<string, string>();
+  private static compressionCacheReverse = new Map<string, string>(); // OPTIMIZATION: Reverse lookup O(1)
   private static compressionQueue: string[] = [];
   private static uploadQueue: { batch: string[], index: number }[] = [];
   private static activeCompressions = 0;
@@ -64,7 +65,9 @@ export class BulkNSFWProcessor {
     totalTimeMs: 0,
     averageTimeMs: 0,
     successCount: 0,
-    errorCount: 0
+    errorCount: 0,
+    batchSizes: [] as number[], // Track batch sizes to detect anomalies
+    recentBatchSizes: [] as number[] // Track recent batch sizes for analysis
   };
 
   /**
@@ -76,12 +79,12 @@ export class BulkNSFWProcessor {
       
       this.hardwareProfile = await HardwareProfiler.getHardwareProfile();
       
-      // Override with more aggressive settings for native processing
+      // Override with optimized settings while respecting hardware profiler recommendations
       this.currentSettings = {
         ...this.hardwareProfile.recommendedSettings,
         compressionWorkers: Math.min(12, this.hardwareProfile.recommendedSettings.compressionWorkers * 2),
         uploadStreams: Math.min(6, this.hardwareProfile.recommendedSettings.uploadStreams * 2),
-        batchSize: Math.min(20, this.hardwareProfile.recommendedSettings.batchSize * 1.5),
+        batchSize: this.hardwareProfile.recommendedSettings.batchSize, // FIXED: Respect hardware profiler's batchSize calculation
         enableAggressive: true
       };
       
@@ -151,7 +154,7 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * 🧹 Clear old cache entries - FIXED: More conservative clearing
+   * 🧹 Clear old cache entries - OPTIMIZED: Clear both forward and reverse caches
    */
   private static clearOldCache(): void {
     // FIXED: Only clear when significantly over limit to avoid clearing during active processing
@@ -161,7 +164,13 @@ export class BulkNSFWProcessor {
       const entriesToClear = this.compressionCache.size - this.currentSettings.cacheSize;
       const keysToDelete = Array.from(this.compressionCache.keys()).slice(0, entriesToClear);
       
-      keysToDelete.forEach(key => this.compressionCache.delete(key));
+      keysToDelete.forEach(originalUri => {
+        const compressedUri = this.compressionCache.get(originalUri);
+        this.compressionCache.delete(originalUri);
+        if (compressedUri) {
+          this.compressionCacheReverse.delete(compressedUri); // OPTIMIZATION: Clean reverse cache too
+        }
+      });
       console.log(`🧹 Cleared ${keysToDelete.length} cache entries (${this.compressionCache.size} remaining)`);
     }
   }
@@ -297,12 +306,12 @@ export class BulkNSFWProcessor {
         const compressedUri = await this.compressImageNative(uri);
         
         // Cache management
+        
         this.compressionCache.set(uri, compressedUri);
+        this.compressionCacheReverse.set(compressedUri, uri); // OPTIMIZATION: Store reverse mapping
         if (this.compressionCache.size > this.currentSettings.cacheSize) {
           this.clearOldCache();
-        }
-        
-        onComplete();
+        }        onComplete();
         
       } catch (error) {
         console.error(`❌ Native worker ${workerId} compression failed for ${uri}:`, error);
@@ -335,15 +344,36 @@ export class BulkNSFWProcessor {
     let totalUploaded = 0;
     let uploadedBatches = 0;
     
-    // Create batches
+    // Create batches with smart merging for small final batches
     const batches: string[][] = [];
     for (let i = 0; i < imageUris.length; i += this.currentSettings.batchSize) {
       batches.push(imageUris.slice(i, i + this.currentSettings.batchSize));
     }
     
-    console.log(`📦 Created ${batches.length} batches of ${this.currentSettings.batchSize} images each`);
+    // OPTIMIZATION: Merge small final batch with previous batch to avoid single-image uploads
+    if (batches.length > 1) {
+      const lastBatch = batches[batches.length - 1];
+      const secondLastBatch = batches[batches.length - 2];
+      
+      // If last batch has 3 or fewer images, merge with previous batch
+      if (lastBatch.length <= 3 && secondLastBatch.length + lastBatch.length <= this.currentSettings.batchSize * 1.5) {
+        console.log(`🔧 Merging small final batch (${lastBatch.length} images) with previous batch (${secondLastBatch.length} images)`);
+        secondLastBatch.push(...lastBatch);
+        batches.pop(); // Remove the small final batch
+      }
+    }
     
-    // FIXED: Process ALL batches sequentially to ensure session consistency
+    console.log(`📦 Created ${batches.length} batches (avg: ${Math.round(imageUris.length / batches.length)} images each)`);
+    
+    // REDUCED LOGGING: Only log batch sizes in debug mode or for unusual distributions
+    if (batches.length <= 3 || batches.some(b => b.length <= 3)) {
+      batches.forEach((batch, index) => {
+        console.log(`📦 Batch ${index + 1}: ${batch.length} images`);
+      });
+    }
+    
+    // FIXED: Process batches sequentially to maintain session consistency
+    // The concurrent approach was creating separate sessions - reverting to sequential with optimized S3 parallelization
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
       
@@ -485,49 +515,49 @@ export class BulkNSFWProcessor {
       formData.append('totalImages', batchUris.length.toString());
       formData.append('isLastBatch', (batchIndex === totalBatches - 1).toString());
 
+      // REDUCED LOGGING: Less verbose FormData logging
+      console.log(`📦 Preparing FormData for ${batchUris.length} images...`);
+      
       let successfulImages = 0;
-      for (let i = 0; i < batchUris.length; i++) {
-        const compressedUri = batchUris[i]; // Already compressed by native worker
-        try {
-          console.log(`📷 Processing image ${i + 1}/${batchUris.length} in batch ${batchIndex + 1}`);
-          
-          // SAME DATA FLOW - just using pre-compressed URIs
-          const fileObject = {
-            uri: compressedUri,
-            type: 'image/jpeg',
-            name: `image_${i}.jpg`,
-          };
-          
-          (formData as any).append(`image_${i}`, fileObject);
-          
-          // CRITICAL FIX: Include the original device path as metadata
-          // Find the original URI that was compressed to this compressedUri
-          let originalDevicePath = compressedUri;
-          for (const [original, compressed] of this.compressionCache.entries()) {
-            if (compressed === compressedUri) {
-              originalDevicePath = original;
-              break;
-            }
+      const formDataEntries = await Promise.all(
+        batchUris.map(async (compressedUri, i) => {
+          try {
+            // OPTIMIZATION: O(1) reverse cache lookup instead of O(n) search
+            const originalDevicePath = this.compressionCacheReverse.get(compressedUri) || compressedUri;
+            
+            const fileObject = {
+              uri: compressedUri,
+              type: 'image/jpeg',
+              name: `image_${i}.jpg`,
+            };
+            
+            return {
+              success: true,
+              imageEntry: [`image_${i}`, fileObject],
+              pathEntry: [`original_path_${i}`, originalDevicePath]
+            };
+          } catch (error) {
+            console.error(`❌ Failed to process image ${i} in batch ${batchIndex + 1}:`, error);
+            return { success: false };
           }
-          
-          // Add original device path as separate metadata field
-          formData.append(`original_path_${i}`, originalDevicePath);
-          
+        })
+      );
+      
+      // OPTIMIZATION: Batch append to FormData
+      formDataEntries.forEach(entry => {
+        if (entry.success && entry.imageEntry && entry.pathEntry) {
+          (formData as any).append(entry.imageEntry[0], entry.imageEntry[1]);
+          formData.append(entry.pathEntry[0], entry.pathEntry[1]);
           successfulImages++;
-          
-          console.log(`✅ Image ${i + 1} added to FormData with URI: ${compressedUri}, originalPath: ${originalDevicePath}`);
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`❌ Failed to process image ${i} in batch ${batchIndex + 1}:`, errorMessage);
-          continue;
         }
-      }
+      });
 
       if (successfulImages === 0) {
         throw new Error(`No images could be processed in batch ${batchIndex + 1}`);
       }
 
-      console.log(`📦 FormData prepared with ${successfulImages}/${batchUris.length} images for batch ${batchIndex + 1}`);
+      // REDUCED LOGGING: Summary logging instead of per-image logging
+      console.log(`✅ FormData prepared: ${successfulImages}/${batchUris.length} images`);
 
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) {
@@ -541,10 +571,17 @@ export class BulkNSFWProcessor {
       console.log(`🔗 Uploading to: ${functionUrl}`);
 
       const controller = new AbortController();
+      
+      // OPTIMIZATION: Dynamic timeout based on batch size - smaller batches get shorter timeouts
+      const baseTimeout = this.UPLOAD_TIMEOUT_MS;
+      const dynamicTimeout = batchUris.length <= 3 ? 
+        Math.min(baseTimeout, 60000) : // Small batches: max 60 seconds
+        baseTimeout; // Normal batches: full timeout
+      
       const timeoutId = setTimeout(() => {
-        console.log(`⏰ Upload timeout after ${this.UPLOAD_TIMEOUT_MS}ms for batch ${batchIndex + 1}`);
+        console.log(`⏰ Upload timeout after ${dynamicTimeout}ms for batch ${batchIndex + 1} (${batchUris.length} images)`);
         controller.abort();
-      }, this.UPLOAD_TIMEOUT_MS);
+      }, dynamicTimeout);
 
       const uploadStartTime = Date.now();
       
@@ -563,7 +600,8 @@ export class BulkNSFWProcessor {
         clearTimeout(timeoutId);
         const uploadTime = Date.now() - uploadStartTime;
 
-        console.log(`📡 Upload response for batch ${batchIndex + 1}: ${response.status} ${response.statusText}`);
+        // REDUCED LOGGING: Simplified response logging
+        console.log(`📡 Batch ${batchIndex + 1}: ${response.status} (${uploadTime}ms)`);
 
         if (!response.ok) {
           let errorText = 'Unknown error';
@@ -579,7 +617,12 @@ export class BulkNSFWProcessor {
         let result;
         try {
           const responseText = await response.text();
-          console.log(`📄 Raw response for batch ${batchIndex + 1}:`, responseText.substring(0, 200) + '...');
+          // OPTIMIZATION: Reduced verbose logging - only log first 100 chars for debugging
+          if (responseText.length > 200) {
+            console.log(`📄 Response for batch ${batchIndex + 1}: ${responseText.substring(0, 100)}...`);
+          } else {
+            console.log(`📄 Response for batch ${batchIndex + 1}: ${responseText}`);
+          }
           result = JSON.parse(responseText);
         } catch (parseError) {
           const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
@@ -599,7 +642,7 @@ export class BulkNSFWProcessor {
         }
         
         // Track successful upload
-        this.updateUploadStats(true, uploadTime);
+        this.updateUploadStats(true, uploadTime, batchUris.length);
         
         return {
           jobId: result.jobId,
@@ -612,7 +655,7 @@ export class BulkNSFWProcessor {
         
         // Track failed upload with estimated time
         const uploadTime = Date.now() - uploadStartTime;
-        this.updateUploadStats(false, uploadTime);
+        this.updateUploadStats(false, uploadTime, batchUris.length);
         
         if (error instanceof Error) {
           if (error.name === 'AbortError') {
@@ -689,7 +732,15 @@ export class BulkNSFWProcessor {
       this.currentSettings.cacheSize = Math.max(imageUris.length * 1.5, 200); // Ensure cache can hold all images
       this.compressionCache.clear();
       this.compressionStats = { totalProcessed: 0, totalTimeMs: 0, averageTimeMs: 0 };
-      this.uploadStats = { totalUploads: 0, totalTimeMs: 0, averageTimeMs: 0, successCount: 0, errorCount: 0 };
+      this.uploadStats = { 
+        totalUploads: 0, 
+        totalTimeMs: 0, 
+        averageTimeMs: 0, 
+        successCount: 0, 
+        errorCount: 0,
+        batchSizes: [],
+        recentBatchSizes: []
+      };
       
       if (onProgress) {
         onProgress({
@@ -1336,12 +1387,30 @@ export class BulkNSFWProcessor {
   }
 
   /**
-   * Update upload statistics
+   * Update upload statistics with warmup period consideration
    */
-  private static updateUploadStats(success: boolean, timeMs: number): void {
+  private static updateUploadStats(success: boolean, timeMs: number, batchSize?: number): void {
     this.uploadStats.totalUploads++;
-    this.uploadStats.totalTimeMs += timeMs;
-    this.uploadStats.averageTimeMs = this.uploadStats.totalTimeMs / this.uploadStats.totalUploads;
+    
+    // Track batch size if provided
+    if (batchSize !== undefined) {
+      this.uploadStats.batchSizes.push(batchSize);
+      this.uploadStats.recentBatchSizes.push(batchSize);
+      
+      // Keep only recent 10 batch sizes for analysis
+      if (this.uploadStats.recentBatchSizes.length > 10) {
+        this.uploadStats.recentBatchSizes.shift();
+      }
+    }
+    
+    // Skip the first upload from average calculation to handle connection warmup
+    if (this.uploadStats.totalUploads === 1) {
+      console.log(`🔥 First batch warmup: ${timeMs}ms (excluding from performance metrics)`);
+    } else {
+      this.uploadStats.totalTimeMs += timeMs;
+      // Calculate average excluding the first upload
+      this.uploadStats.averageTimeMs = this.uploadStats.totalTimeMs / (this.uploadStats.totalUploads - 1);
+    }
     
     if (success) {
       this.uploadStats.successCount++;
@@ -1354,9 +1423,27 @@ export class BulkNSFWProcessor {
    * 🎯 Dynamic performance adjustment based on real-time metrics
    */
   private static adjustSettingsBasedOnPerformance(): void {
+    // Skip adjustments during warmup period (first 2 uploads)
+    if (this.uploadStats.totalUploads <= 2) {
+      console.log('🔄 Skipping performance adjustment during warmup period');
+      return;
+    }
+    
+    // OPTIMIZATION: Detect if recent uploads were small batches (≤3 images) and adjust metrics accordingly
+    const recentBatchSizes = this.uploadStats.recentBatchSizes.slice(-3); // Last 3 batches
+    const hasSmallBatches = recentBatchSizes.some(size => size <= 3);
+    const avgRecentBatchSize = recentBatchSizes.reduce((a, b) => a + b, 0) / recentBatchSizes.length || 1;
+    
+    // Adjust upload time expectations for small batches (they have higher overhead per image)
+    let adjustedUploadTime = this.uploadStats.averageTimeMs || 8000;
+    if (hasSmallBatches && avgRecentBatchSize < 4) {
+      adjustedUploadTime = adjustedUploadTime * 0.7; // Small batches expected to have higher per-batch overhead
+      console.log(`🔧 Adjusting performance metrics for small batches (avg: ${avgRecentBatchSize.toFixed(1)} images)`);
+    }
+    
     const metrics: PerformanceMetrics = {
       compressionTimeMs: this.compressionStats.averageTimeMs,
-      uploadTimeMs: this.uploadStats.averageTimeMs || 1000,
+      uploadTimeMs: adjustedUploadTime,
       memoryUsageRatio: this.compressionCache.size / this.currentSettings.cacheSize,
       successRate: this.getSuccessRate(),
       errorRate: this.getErrorRate()

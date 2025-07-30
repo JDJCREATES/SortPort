@@ -4,7 +4,7 @@
  */
 
 
-interface PerformanceMetrics {
+export interface PerformanceMetrics {
   compressionTimeMs: number;
   uploadTimeMs: number;
   memoryUsageRatio: number;
@@ -12,7 +12,7 @@ interface PerformanceMetrics {
   errorRate: number;
 }
 
-interface ProcessingSettings {
+export interface ProcessingSettings {
   compressionWorkers: number;
   batchSize: number;
   uploadConcurrency: number;
@@ -99,12 +99,12 @@ export class DynamicPerformanceAdjuster {
     successRate: number
   ): number {
     // Increase concurrency if uploads are fast and successful
-    if (avgUploadTimeMs < 1000 && successRate > 0.95 && current < this.MAX_UPLOAD_CONCURRENCY) {
+    if (avgUploadTimeMs < 5000 && successRate > 0.95 && current < this.MAX_UPLOAD_CONCURRENCY) {
       return current + 1;
     }
     
-    // Decrease concurrency if uploads are slow or failing
-    if ((avgUploadTimeMs > 3000 || successRate < 0.8) && current > this.MIN_UPLOAD_CONCURRENCY) {
+    // Only decrease concurrency if uploads are VERY slow or failing significantly
+    if ((avgUploadTimeMs > 20000 || successRate < 0.7) && current > this.MIN_UPLOAD_CONCURRENCY) {
       return current - 1;
     }
     
@@ -199,5 +199,3 @@ export class DynamicPerformanceAdjuster {
     return recommendations;
   }
 }
-
-export type { PerformanceMetrics, ProcessingSettings };

@@ -395,15 +395,15 @@ async function uploadBinaryFilesToS3(
   // Collect all image files
   const imageFiles: Array<{ key: string; file: File }> = [];
   
-  // Reduced scan range for faster processing
-  for (let i = 0; i < 25; i++) { // Reduced from 50 to 25
+  // OPTIMIZED: Scan range optimized for new batch size (12-15 images)
+  for (let i = 0; i < 20; i++) { // Reduced from 25 to 20 for faster processing
     const key = `image_${i}`;
     try {
       const file = formData.get(key);
       if (file && typeof file === 'object' && 'arrayBuffer' in file) {
         console.log(`✅ Found ${key}: ${file.name || 'unknown'} (${file.size || 0} bytes, type: ${file.type || 'unknown'})`);
         imageFiles.push({ key, file: file as File });
-      } else if (i > 3 && imageFiles.length === 0) { // Early exit
+      } else if (i > 5 && imageFiles.length === 0) { // Early exit after 5 attempts if no images found
         console.log(`⏹️ No images found after checking ${i} keys, stopping scan`);
         break;
       }
@@ -420,8 +420,8 @@ async function uploadBinaryFilesToS3(
     return { successCount: 0, failedCount: 0 };
   }
   
-  // CRITICAL FIX: Process in smaller parallel chunks to avoid timeout
-  const CHUNK_SIZE = 3; // Process 3 images at a time
+  // OPTIMIZED: Process more images in parallel for better throughput
+  const CHUNK_SIZE = 12; // Process 12 images at a time (4x increase)
   const chunks: Array<{ key: string; file: File }[]> = [];
   for (let i = 0; i < imageFiles.length; i += CHUNK_SIZE) {
     chunks.push(imageFiles.slice(i, i + CHUNK_SIZE));
@@ -429,50 +429,66 @@ async function uploadBinaryFilesToS3(
   
   console.log(`🔄 Processing ${chunks.length} chunks of ${CHUNK_SIZE} images each`);
   
-  // Process chunks sequentially to avoid overwhelming S3
-  for (const chunk of chunks) {
-    const uploadPromises = chunk.map(async ({ key, file }, index) => {
-      try {
-        console.log(`📤 Processing ${key}: ${file.name || 'unknown'} (${file.size || 0} bytes)`);
-        
-        // Validate file size (max 10MB per image - reduced)
-        if (file.size > 10 * 1024 * 1024) {
-          console.error(`❌ File ${key} too large: ${file.size} bytes`);
+  // OPTIMIZED: Process multiple chunks in parallel for maximum throughput
+  const MAX_PARALLEL_CHUNKS = 2; // Process 2 chunks simultaneously
+  
+  // Process chunks in groups of MAX_PARALLEL_CHUNKS
+  for (let chunkGroupStart = 0; chunkGroupStart < chunks.length; chunkGroupStart += MAX_PARALLEL_CHUNKS) {
+    const chunkGroup = chunks.slice(chunkGroupStart, chunkGroupStart + MAX_PARALLEL_CHUNKS);
+    
+    // Process all chunks in this group in parallel
+    const chunkPromises = chunkGroup.map(async (chunk, groupIndex) => {
+      const chunkIndex = chunkGroupStart + groupIndex;
+      
+      const uploadPromises = chunk.map(async ({ key, file }, index) => {
+        try {
+          console.log(`📤 Processing ${key}: ${file.name || 'unknown'} (${file.size || 0} bytes)`);
+          
+          // Validate file size (max 10MB per image)
+          if (file.size > 10 * 1024 * 1024) {
+            console.error(`❌ File ${key} too large: ${file.size} bytes`);
+            return { success: false, key };
+          }
+          
+          const arrayBuffer = await file.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          
+          const s3Key = `input/batch-${batchIndex}-image-${(chunkIndex * CHUNK_SIZE + index).toString().padStart(4, '0')}.jpg`;
+          
+          console.log(`☁️ Uploading ${key} to S3: ${s3Key}`);
+          
+          await s3Client.send(new PutObjectCommand({
+            Bucket: bucketName,
+            Key: s3Key,
+            Body: uint8Array,
+            ContentType: file.type || 'image/jpeg',
+            ContentLength: uint8Array.length,
+          }));
+          
+          console.log(`✅ Uploaded ${key} to S3: ${s3Key} (${uint8Array.length} bytes)`);
+          return { success: true, key };
+          
+        } catch (error) {
+          console.error(`❌ Failed to upload ${key}:`, error);
           return { success: false, key };
         }
-        
-        const arrayBuffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        
-        const s3Key = `input/batch-${batchIndex}-image-${(chunks.indexOf(chunk) * CHUNK_SIZE + index).toString().padStart(4, '0')}.jpg`;
-        
-        console.log(`☁️ Uploading ${key} to S3: ${s3Key}`);
-        
-        await s3Client.send(new PutObjectCommand({
-          Bucket: bucketName,
-          Key: s3Key,
-          Body: uint8Array,
-          ContentType: file.type || 'image/jpeg',
-          ContentLength: uint8Array.length,
-        }));
-        
-        console.log(`✅ Uploaded ${key} to S3: ${s3Key} (${uint8Array.length} bytes)`);
-        return { success: true, key };
-        
-      } catch (error) {
-        console.error(`❌ Failed to upload ${key}:`, error);
-        return { success: false, key };
-      }
+      });
+      
+      return Promise.all(uploadPromises);
     });
     
-    // Wait for chunk to complete before next
-    const results = await Promise.all(uploadPromises);
-    successCount += results.filter(r => r.success).length;
-    failedCount += results.filter(r => !r.success).length;
+    // Wait for all chunks in this group to complete
+    const chunkGroupResults = await Promise.all(chunkPromises);
     
-    // Small delay between chunks
-    if (chunks.indexOf(chunk) < chunks.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+    // Aggregate results
+    chunkGroupResults.forEach(chunkResults => {
+      successCount += chunkResults.filter(r => r.success).length;
+      failedCount += chunkResults.filter(r => !r.success).length;
+    });
+    
+    // Small delay between chunk groups to avoid overwhelming S3
+    if (chunkGroupStart + MAX_PARALLEL_CHUNKS < chunks.length) {
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
   
