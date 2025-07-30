@@ -181,17 +181,35 @@ router.post('/batch-update',
         
         const batchPromises = batch.map(async (update) => {
           try {
-            console.log(`🔍 [SERVICE] Looking for virtual image with path: ${update.imagePath}`);
+            // NEW: Check if we have a virtualImageId (ID-based approach) or need to use path lookup
+            let virtualImage;
             
-            // Find virtual image by image path
-            const virtualImage = await virtualImageManager.findByPath(update.imagePath);
-            
-            if (!virtualImage) {
-              console.warn(`❌ [SERVICE] Virtual image not found for path: ${update.imagePath}`);
-              return { success: false, imagePath: update.imagePath, error: 'Virtual image not found' };
+            if (update.virtualImageId) {
+              // ID-based lookup (preferred method)
+              console.log(`🔍 [SERVICE] Looking for virtual image by ID: ${update.virtualImageId}`);
+              virtualImage = await virtualImageManager.getVirtualImage(update.virtualImageId);
+              
+              if (!virtualImage) {
+                console.warn(`❌ [SERVICE] Virtual image not found for ID: ${update.virtualImageId}`);
+                return { success: false, imageId: update.virtualImageId, imagePath: update.imagePath, error: 'Virtual image not found by ID' };
+              }
+              
+              console.log(`✅ [SERVICE] Found virtual image ${virtualImage.id} by ID lookup`);
+            } else if (update.imagePath) {
+              // Path-based lookup (legacy fallback)
+              console.log(`🔍 [SERVICE] Looking for virtual image with path: ${update.imagePath}`);
+              virtualImage = await virtualImageManager.findByPath(update.imagePath);
+              
+              if (!virtualImage) {
+                console.warn(`❌ [SERVICE] Virtual image not found for path: ${update.imagePath}`);
+                return { success: false, imagePath: update.imagePath, error: 'Virtual image not found by path' };
+              }
+              
+              console.log(`✅ [SERVICE] Found virtual image ${virtualImage.id} for path: ${update.imagePath}`);
+            } else {
+              console.error(`❌ [SERVICE] Update missing both virtualImageId and imagePath`);
+              return { success: false, error: 'Missing virtualImageId and imagePath' };
             }
-
-            console.log(`✅ [SERVICE] Found virtual image ${virtualImage.id} for path: ${update.imagePath}`);
 
             // Check if we have full rekognition data or just NSFW data
             if (update.fullRekognitionData) {
@@ -212,16 +230,16 @@ router.post('/batch-update',
                 if (updatedImage) {
                   console.log(`✅ [SERVICE] Successfully updated virtual image ${virtualImage.id} with full rekognition data`);
                   successCount++;
-                  return { success: true, imageId: updatedImage.id, imagePath: update.imagePath, type: 'full-rekognition' };
+                  return { success: true, imageId: updatedImage.id, imagePath: update.imagePath, virtualImageId: update.virtualImageId, type: 'full-rekognition' };
                 } else {
                   console.error(`❌ [SERVICE] Failed to update virtual image ${virtualImage.id} with full rekognition data`);
                   failCount++;
-                  return { success: false, imagePath: update.imagePath, error: 'Full rekognition update failed' };
+                  return { success: false, imageId: virtualImage.id, imagePath: update.imagePath, virtualImageId: update.virtualImageId, error: 'Full rekognition update failed' };
                 }
               } catch (rekognitionUpdateError) {
                 console.error(`❌ [SERVICE] Exception during full rekognition update for ${virtualImage.id}:`, rekognitionUpdateError);
                 failCount++;
-                return { success: false, imagePath: update.imagePath, error: `Full rekognition update exception: ${rekognitionUpdateError instanceof Error ? rekognitionUpdateError.message : 'Unknown error'}` };
+                return { success: false, imageId: virtualImage.id, imagePath: update.imagePath, virtualImageId: update.virtualImageId, error: `Full rekognition update exception: ${rekognitionUpdateError instanceof Error ? rekognitionUpdateError.message : 'Unknown error'}` };
               }
             } else {
               // Legacy NSFW-only update (maintains backwards compatibility)
@@ -243,25 +261,30 @@ router.post('/batch-update',
                 if (updatedImage) {
                   console.log(`✅ [SERVICE] Successfully updated virtual image ${virtualImage.id} with NSFW data`);
                   successCount++;
-                  return { success: true, imageId: updatedImage.id, imagePath: update.imagePath, type: 'nsfw-only' };
+                  return { success: true, imageId: updatedImage.id, imagePath: update.imagePath, virtualImageId: update.virtualImageId, type: 'nsfw-only' };
                 } else {
                   console.error(`❌ [SERVICE] Failed to update virtual image ${virtualImage.id} with NSFW data`);
                   failCount++;
-                  return { success: false, imagePath: update.imagePath, error: 'NSFW update failed' };
+                  return { success: false, imageId: virtualImage.id, imagePath: update.imagePath, virtualImageId: update.virtualImageId, error: 'NSFW update failed' };
                 }
               } catch (nsfwUpdateError) {
                 console.error(`❌ [SERVICE] Exception during NSFW update for ${virtualImage.id}:`, nsfwUpdateError);
                 failCount++;
-                return { success: false, imagePath: update.imagePath, error: `NSFW update exception: ${nsfwUpdateError instanceof Error ? nsfwUpdateError.message : 'Unknown error'}` };
+                return { success: false, imageId: virtualImage.id, imagePath: update.imagePath, virtualImageId: update.virtualImageId, error: `NSFW update exception: ${nsfwUpdateError instanceof Error ? nsfwUpdateError.message : 'Unknown error'}` };
               }
             }
 
           } catch (updateError) {
-            console.error(`❌ [SERVICE] General error updating virtual image for path ${update.imagePath}:`, updateError);
+            console.error(`❌ [SERVICE] General error updating virtual image:`, {
+              imagePath: update.imagePath,
+              virtualImageId: update.virtualImageId,
+              error: updateError instanceof Error ? updateError.message : updateError
+            });
             failCount++;
             return { 
               success: false, 
-              imagePath: update.imagePath, 
+              imagePath: update.imagePath,
+              virtualImageId: update.virtualImageId, 
               error: `Update error: ${updateError instanceof Error ? updateError.message : 'Unknown error'}`
             };
           }

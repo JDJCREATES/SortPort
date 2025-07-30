@@ -737,7 +737,14 @@ async function handleRequest(req: Request): Promise<Response> {
     
     try {
       // Prepare image data for virtual image creation
-      const imageFiles: Array<{ imagePath: string; originalFileName?: string; fileSize?: number; contentType?: string }> = [];
+      const imageFiles: Array<{ 
+        imagePath: string; 
+        originalFileName?: string; 
+        fileSize?: number; 
+        contentType?: string;
+        s3Key?: string;
+        uploadOrder?: number;
+      }> = [];
       
       // Collect image file information from FormData
       for (let i = 0; i < imageCount; i++) {
@@ -758,13 +765,26 @@ async function handleRequest(req: Request): Promise<Response> {
             imagePath: devicePath, // Use device path instead of S3 path
             originalFileName: fileObj.name || 'unknown.jpg',
             fileSize: fileObj.size || 0,
-            contentType: fileObj.type || 'image/jpeg'
+            contentType: fileObj.type || 'image/jpeg',
+            s3Key: s3Key, // Add S3 key for reference
+            uploadOrder: i // Add upload order for AWS correlation
           });
         }
       }
       
       if (imageFiles.length > 0) {
         console.log(`🔗 [${requestId}] Calling virtual-image-bridge to create ${imageFiles.length} virtual images`);
+        console.log(`🔍 [${requestId}] Bridge payload:`, {
+          jobId: sessionJobId,
+          bucketName,
+          userId,
+          imageCount: imageFiles.length,
+          sampleImage: imageFiles[0] ? {
+            imagePath: imageFiles[0].imagePath,
+            s3Key: imageFiles[0].s3Key,
+            uploadOrder: imageFiles[0].uploadOrder
+          } : null
+        });
         
         const bridgeResponse = await supabase.functions.invoke('virtual-image-bridge/create', {
           body: {
@@ -775,11 +795,45 @@ async function handleRequest(req: Request): Promise<Response> {
           }
         });
         
+        console.log(`🔍 [${requestId}] Bridge response:`, {
+          hasError: !!bridgeResponse.error,
+          error: bridgeResponse.error,
+          hasData: !!bridgeResponse.data,
+          data: bridgeResponse.data
+        });
+        
         if (bridgeResponse.error) {
           console.error(`❌ [${requestId}] Virtual image creation failed:`, bridgeResponse.error);
           // Don't fail the upload, but log the issue
         } else {
-          console.log(`✅ [${requestId}] Created ${bridgeResponse.data?.processedCount || 0} virtual images`);
+          console.log(`✅ [${requestId}] Virtual image bridge success: processed=${bridgeResponse.data?.processedCount || 0}, failed=${bridgeResponse.data?.failedCount || 0}`);
+          
+          // CRITICAL: Check if relationships were created
+          if (bridgeResponse.data?.processedCount > 0) {
+            console.log(`🔍 [${requestId}] Verifying job-virtual image relationships were created for job ${sessionJobId}...`);
+            
+            // Quick verification that relationships exist
+            try {
+              const { data: relationshipCheck, error: checkError } = await supabase
+                .from('bulk_job_virtual_images')
+                .select('id, virtual_image_id, upload_order')
+                .eq('job_id', sessionJobId)
+                .limit(5);
+              
+              if (checkError) {
+                console.error(`❌ [${requestId}] Failed to verify relationships:`, checkError);
+              } else {
+                console.log(`🔍 [${requestId}] Relationship verification: found ${relationshipCheck?.length || 0} relationships`);
+                if (relationshipCheck && relationshipCheck.length > 0) {
+                  console.log(`✅ [${requestId}] Sample relationship:`, relationshipCheck[0]);
+                } else {
+                  console.warn(`⚠️ [${requestId}] NO RELATIONSHIPS FOUND - this will cause status update failures!`);
+                }
+              }
+            } catch (verifyError) {
+              console.error(`❌ [${requestId}] Exception verifying relationships:`, verifyError);
+            }
+          }
         }
       }
     } catch (virtualImageError) {

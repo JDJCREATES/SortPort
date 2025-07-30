@@ -28,6 +28,19 @@
 - `supabase/functions/delete-user-account/index.ts` - Added `bulk_job_virtual_images` to monitoring
 - `contexts/AppContext.tsx` - Added junction table cleanup in `clearUserDatabaseData`
 
+### 4. Credit Balance Reset Bug ✨ **NEW**
+**Problem**: Credit balance was being reset to 0 in UI after clearing data, even though credits remained in database
+**Root Cause**: `resetAppState` function was hardcoding credit balance to 0 instead of preserving actual balance
+**Solution**: Modified `resetAppState` to fetch and preserve user's actual credit balance during data clearing
+
+**Files Changed**:
+- `contexts/AppContext.tsx` - Updated `resetAppState` to fetch current credit balance and preserve it during data clearing
+- `contexts/AppContext.tsx` - Made `clearAllAppData` properly await the async `resetAppState`
+
+**Important Distinction**:
+- **Data Clear**: Preserves credit balance (credits belong to user account, not app data)
+- **Account Delete**: Resets credit balance to 0 (entire account is being deleted)
+
 ## Data Tables Now Properly Cleaned
 
 ### User Data Deletion (Clear Data) Now Cleans:
@@ -73,6 +86,14 @@ The `bulk_job_virtual_images` junction table also has comprehensive auto-cleanup
 2. Clear data or delete account
 3. ✅ Check that `virtual_image` table is empty for the user
 4. ✅ Check that `bulk_job_virtual_images` relationships are removed
+
+### To Test Credit Balance Fix: ✨ **NEW**
+1. Purchase some credits or have a positive credit balance
+2. Go to Settings → Data Management
+3. Click "Clear All Data" and confirm
+4. ✅ Credit balance should remain the same in UI (not reset to 0)
+5. ✅ Credit balance should be preserved in database
+6. For comparison: Delete Account should reset credits to 0 (expected behavior)
 
 ## Architecture Impact
 

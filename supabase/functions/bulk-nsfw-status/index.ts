@@ -192,7 +192,7 @@ class AWSClientManager {
 }
 
 // NEW: Extract full rekognition data from AWS batch job results
-function extractFullRekognitionData(awsBatchItem: any): any {
+function extractFullRekognitionData(awsBatchItem: any, requestId: string): any {
   if (!awsBatchItem) return null;
   
   // Instead of being specific, extract ALL analysis results from the batch item
@@ -202,7 +202,7 @@ function extractFullRekognitionData(awsBatchItem: any): any {
   Object.keys(awsBatchItem).forEach(key => {
     // Skip metadata fields, keep all analysis results
     if (key !== 'source-ref' && key !== 'job-name' && key !== 'job-id') {
-      // If it's an analysis result (starts with 'detect-' or known patterns)
+      // If it's an analysis result (comprehensive detection types)
       if (key.startsWith('detect-') || 
           key.startsWith('recognize-') || 
           key.startsWith('get-') || 
@@ -218,6 +218,9 @@ function extractFullRekognitionData(awsBatchItem: any): any {
         if (analysisData && typeof analysisData === 'object') {
           // Merge all properties from this analysis type
           Object.assign(rekognitionData, analysisData);
+          
+          // Log detection type for debugging
+          console.log(`🔍 [${requestId}] Found analysis type '${key}' with data keys:`, Object.keys(analysisData));
         }
       }
     }
@@ -236,7 +239,7 @@ function extractFullRekognitionData(awsBatchItem: any): any {
 }
 
 // Process AWS moderation results
-function processAWSModerationResults(awsResults: any[], confidenceThreshold: number = 80): any[] {
+function processAWSModerationResults(awsResults: any[], confidenceThreshold: number = 80, requestId: string = 'unknown'): any[] {
   const results: any[] = []
   
   awsResults.forEach((item, index) => {
@@ -251,7 +254,7 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
       imagePath = item['source-ref'] || `image-${index}`
       
       // NEW: Extract full rekognition data from all available analysis types
-      fullRekognitionData = extractFullRekognitionData(item)
+      fullRekognitionData = extractFullRekognitionData(item, requestId)
       
     } else if (item.ModerationLabels) {
       // Direct AWS format: { "ModerationLabels": [...] }
@@ -697,7 +700,7 @@ serve(async (req: Request): Promise<Response> => {
                 })
                 
                 // Process the results
-                const batchResults = processAWSModerationResults(resultsToProcess)
+                const batchResults = processAWSModerationResults(resultsToProcess, 80, requestId)
                 processedResults = processedResults.concat(batchResults)
                 
                 logWithContext('INFO', 'BATCH PROCESSED', {
@@ -780,9 +783,9 @@ serve(async (req: Request): Promise<Response> => {
           console.log(`📍 [INTEGRATION-POINT] [${requestId}] Results: ${processedResults.length} images, ${nsfwCount} NSFW detected`);
           console.log(`📍 [INTEGRATION-POINT] [${requestId}] Job details: jobId=${jobId}, tempBucket=${tempBucketName}`);
 
-          // VIRTUAL IMAGE INTEGRATION: Update virtual images with NSFW results
+          // VIRTUAL IMAGE INTEGRATION: Update virtual images with NSFW results using ID-based approach
           try {
-            console.log(`🔗 [${requestId}] Calling virtual-image-bridge to update ${processedResults.length} virtual images`);
+            console.log(`🔗 [${requestId}] Calling virtual-image-bridge to update ${processedResults.length} virtual images using ID-based approach`);
             
             // NEW: Log rekognition data availability for debugging
             const resultsWithFullData = processedResults.filter((r: any) => r.full_rekognition_data !== null);
@@ -794,23 +797,59 @@ serve(async (req: Request): Promise<Response> => {
               console.log(`📊 [${requestId}] Sample rekognition data types: ${dataTypes.join(', ')}`);
             }
             
-            const updateData = processedResults.map((result: any) => {
-              console.log(`🔄 [${requestId}] Using AWS path directly: ${result.image_path}`);
+            // NEW: Get virtual image IDs from junction table using job_id and upload_order
+            const supabase = createClient(
+              Deno.env.get('SUPABASE_URL') ?? '',
+              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            );
+            
+            // Get all job-image relationships for this job
+            const { data: relationships, error: relationshipError } = await supabase
+              .from('bulk_job_virtual_images')
+              .select('virtual_image_id, upload_order, s3_key')
+              .eq('job_id', jobId)
+              .order('upload_order');
+            
+            if (relationshipError) {
+              console.error(`❌ [${requestId}] Failed to get job-image relationships:`, relationshipError);
+              throw new Error(`Failed to get job-image relationships: ${relationshipError.message}`);
+            }
+            
+            if (!relationships || relationships.length === 0) {
+              console.warn(`⚠️ [${requestId}] No job-image relationships found for job ${jobId}`);
+              return; // Skip virtual image updates if no relationships exist
+            }
+            
+            console.log(`🔍 [${requestId}] Found ${relationships.length} job-image relationships`);
+            
+            // Create update data using virtual image IDs instead of paths
+            const updateData = processedResults.map((result: any, index: number) => {
+              // Find the corresponding virtual image ID using upload_order (position in batch)
+              const relationship = relationships.find(rel => rel.upload_order === index);
+              
+              if (!relationship) {
+                console.warn(`⚠️ [${requestId}] No relationship found for result index ${index}`);
+                return null;
+              }
+              
+              console.log(`🔗 [${requestId}] Mapping result ${index} to virtual image ID: ${relationship.virtual_image_id}`);
               
               return {
-                imagePath: result.image_path, // Use AWS path directly - should match virtual image paths
+                virtualImageId: relationship.virtual_image_id, // Use database ID instead of path
                 isNsfw: result.is_nsfw,
                 confidenceScore: result.confidence_score,
                 moderationLabels: Array.isArray(result.moderation_labels) ? result.moderation_labels : [],
                 // NEW: Include full rekognition data if available
                 fullRekognitionData: result.full_rekognition_data || null
               };
-            });
+            }).filter(update => update !== null); // Remove null entries
             
-            const supabase = createClient(
-              Deno.env.get('SUPABASE_URL') ?? '',
-              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-            );
+            console.log(`📝 [${requestId}] Prepared ${updateData.length} ID-based updates for virtual images`);
+            
+            if (updateData.length === 0) {
+              console.warn(`⚠️ [${requestId}] No valid updates to send to virtual-image-bridge`);
+              return;
+            }
             
             // NEW: Add retry logic for rate limiting
             let retryCount = 0;
@@ -818,13 +857,13 @@ serve(async (req: Request): Promise<Response> => {
             let bridgeResponse;
             
             while (retryCount <= maxRetries) {
-            bridgeResponse = await supabase.functions.invoke('virtual-image-bridge/update', {
-              body: {
-                jobId,
-                userId: job.user_id, // NEW: Pass user ID from job for authentication
-                results: updateData
-              }
-            });              // Check if it's a rate limit error
+              bridgeResponse = await supabase.functions.invoke('virtual-image-bridge/update', {
+                body: {
+                  jobId,
+                  userId: job.user_id, // Pass user ID from job for authentication
+                  updates: updateData // Use 'updates' parameter as expected by virtual-image-bridge
+                }
+              });              // Check if it's a rate limit error
               if (bridgeResponse.error && 
                   bridgeResponse.error.message && 
                   bridgeResponse.error.message.includes('429')) {

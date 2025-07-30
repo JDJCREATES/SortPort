@@ -526,6 +526,16 @@ serve(async (req: Request): Promise<Response> => {
         OperationsConfig: {
           DetectModerationLabels: {
             MinConfidence: settings?.confidence_threshold || 60,
+          },
+          DetectLabels: {
+            MinConfidence: 75,
+            MaxLabels: 100
+          },
+          DetectFaces: {
+            Attributes: ["ALL"] // Gets emotions, age, gender, expressions, etc.
+          },
+          DetectText: {
+            // OCR text detection in images
           }
         },
         Input: {
@@ -541,20 +551,25 @@ serve(async (req: Request): Promise<Response> => {
         ...(serviceRole && { ServiceRole: serviceRole })
       });
 
-      console.log(`🚀 [${requestId}] Sending Rekognition command with manifest:`, {
+      console.log(`🚀 [${requestId}] Sending comprehensive Rekognition analysis command:`, {
         JobName: rekognitionJobName,
         Bucket: bucketName,
         ManifestFile: manifestKey,
         OutputPrefix: 'output/',
-        MinConfidence: settings?.confidence_threshold || 60,
+        Operations: 'Moderation + Labels + Faces + Text',
+        ModerationMinConfidence: settings?.confidence_threshold || 60,
+        LabelsMinConfidence: 75,
+        MaxLabels: 100,
+        FaceAttributes: 'ALL',
         ServiceRole: serviceRole || 'DEFAULT_CREDENTIALS'
       });
 
       const rekognitionResponse = await rekognitionClient.send(rekognitionCommand);
       const awsJobId = rekognitionResponse.JobId!;
 
-      console.log(`✅ [${requestId}] AWS Rekognition bulk job started successfully:`);
+      console.log(`✅ [${requestId}] AWS Rekognition comprehensive analysis job started:`);
       console.log(`   - AWS Job ID: ${awsJobId}`);
+      console.log(`   - Analysis Types: Moderation, Labels, Faces, Text`);
       console.log(`   - Manifest: ${bucketName}/${manifestKey}`);
       console.log(`   - Output: ${bucketName}/output/`);
       console.log(`   - Images to process: ${s3Verification.objectCount}`);

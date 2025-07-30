@@ -626,7 +626,34 @@ export function AppProvider({ children }: AppProviderProps) {
       await clearLocalData();
       await AlbumUtils.clearNsfwCache();
     
-      resetAppState();
+      // For account deletion, reset everything including credits
+      dispatch({
+        type: 'SET_USER_FLAGS',
+        payload: {
+          creditBalance: 0,
+          hasPurchasedCredits: false,
+        },
+      });
+      
+      dispatch({
+        type: 'SET_SETTINGS',
+        payload: {
+          darkMode: false,
+          autoSort: false,
+          nsfwFilter: true,
+          notifications: true,
+          customColors: undefined,
+          selectedFolders: [],
+          lastAutoSortTimestamp: 0,
+          showModeratedContent: false,
+          showModeratedInMainAlbums: false,
+        }
+      });
+      
+      dispatch({
+        type: 'SET_ALBUMS',
+        payload: []
+      });
     
       const themeManager = ThemeManager.getInstance();
       themeManager.setTheme(false, undefined);
@@ -634,14 +661,6 @@ export function AppProvider({ children }: AppProviderProps) {
       dispatch({
         type: 'SET_AUTHENTICATED',
         payload: { isAuthenticated: false, userProfile: null },
-      });
-    
-      dispatch({
-        type: 'SET_USER_FLAGS',
-        payload: {
-          creditBalance: 0,
-          hasPurchasedCredits: false,
-        },
       });
     } catch (error) {
       throw error;
@@ -658,7 +677,7 @@ export function AppProvider({ children }: AppProviderProps) {
       }
     
       if (!skipStateReset) {
-        resetAppState();
+        await resetAppState();
         const themeManager = ThemeManager.getInstance();
         themeManager.setTheme(false, undefined);
       }
@@ -747,12 +766,30 @@ export function AppProvider({ children }: AppProviderProps) {
     }
   };
 
-  const resetAppState = () => {
+  const resetAppState = async () => {
+    // Preserve user's credit balance when resetting app state
+    let currentCreditBalance = 0;
+    let hasPurchasedCredits = false;
+    
+    if (state.isAuthenticated && state.userProfile) {
+      try {
+        const creditManager = CreditPurchaseManager.getInstance();
+        const flags = await creditManager.getUserFlags();
+        currentCreditBalance = flags.creditBalance;
+        hasPurchasedCredits = flags.hasPurchasedCredits;
+      } catch (error) {
+        console.error('Error fetching credit balance during reset:', error);
+        // Fall back to current state values if fetch fails
+        currentCreditBalance = state.userFlags?.creditBalance ?? 0;
+        hasPurchasedCredits = state.userFlags?.hasPurchasedCredits ?? false;
+      }
+    }
+
     dispatch({
       type: 'SET_USER_FLAGS',
       payload: {
-        creditBalance: 0,
-        hasPurchasedCredits: false
+        creditBalance: currentCreditBalance, // Preserve actual credit balance
+        hasPurchasedCredits: hasPurchasedCredits // Preserve purchase history
       }
     });
     
