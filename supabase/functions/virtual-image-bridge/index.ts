@@ -29,16 +29,21 @@ interface CreateVirtualImagesRequest {
     originalFileName?: string
     fileSize?: number
     contentType?: string
+    s3Key?: string // Add S3 key for tracking
+    uploadOrder?: number // Add upload order for correlation
   }[]
 }
 
 interface UpdateVirtualImagesRequest {
   jobId: string
-  results: {
-    imagePath: string
+  userId?: string // NEW: Add optional userId for authentication
+  updates: {
+    virtualImageId: string // FIXED: Use database ID instead of path
     isNsfw: boolean
     confidenceScore: number
     moderationLabels: string[]
+    fullRekognitionData?: any // Optional full AWS Rekognition response
+    imagePath?: string // DEPRECATED: Keep for backwards compatibility only
   }[]
 }
 
@@ -130,7 +135,7 @@ async function createVirtualImagesViaLCEL(
     const payload = {
       userId,
       jobId,
-      images: images.map(img => ({
+      images: images.map((img, index) => ({
         user_id: userId, // Add user_id for LCEL server validation
         original_path: img.imagePath,
         original_name: img.originalFileName || 'unknown.jpg',
@@ -139,7 +144,9 @@ async function createVirtualImagesViaLCEL(
         mimeType: img.contentType || 'image/jpeg',
         metadata: {
           source: 'bulk-upload',
-          jobId
+          jobId,
+          s3Key: img.s3Key,
+          uploadOrder: img.uploadOrder || index
         }
       }))
     }
@@ -173,6 +180,37 @@ async function createVirtualImagesViaLCEL(
       console.log(`✅ [${requestId}] LCEL server response:`, result);
       console.log(`✅ [${requestId}] Created ${result.data?.successful || 0} virtual images`);
       
+      // NEW: Store job-virtual image relationships using database IDs
+      if (result.data?.images && Array.isArray(result.data.images)) {
+        try {
+          console.log(`🔗 [${requestId}] Storing ${result.data.images.length} job-virtual image relationships`);
+          
+          const relationships = result.data.images.map((virtualImage: any, index: number) => {
+            const originalImageData = images[index];
+            return {
+              job_id: jobId,
+              virtual_image_id: virtualImage.id,
+              s3_key: originalImageData?.s3Key || null,
+              upload_order: originalImageData?.uploadOrder || index
+            };
+          });
+          
+          const { error: relationshipError } = await supabase
+            .from('bulk_job_virtual_images')
+            .insert(relationships);
+            
+          if (relationshipError) {
+            console.error(`❌ [${requestId}] Failed to store job-virtual image relationships:`, relationshipError);
+            // Don't fail the entire operation, but log the issue
+          } else {
+            console.log(`✅ [${requestId}] Stored ${relationships.length} job-virtual image relationships`);
+          }
+        } catch (relationshipStoreError) {
+          console.error(`❌ [${requestId}] Exception storing relationships:`, relationshipStoreError);
+          // Don't fail the entire operation
+        }
+      }
+      
       return { success: true, data: result.data?.images || [] };
       
     } catch (fetchError) {
@@ -193,25 +231,42 @@ async function createVirtualImagesViaLCEL(
 
 // Update virtual images via LCEL server
 async function updateVirtualImagesViaLCEL(
-  updates: UpdateVirtualImagesRequest['results'],
+  updates: UpdateVirtualImagesRequest['updates'],
   jobId: string,
+  userId: string | undefined, // NEW: Add userId parameter
   requestId: string
 ): Promise<{ success: boolean; data?: any[]; error?: string }> {
   const config = getLCELConfig()
   
   try {
     console.log(`📡 [${requestId}] Updating ${updates.length} virtual images via LCEL server`)
+    console.log(`🔍 [${requestId}] Update params: jobId=${jobId}, userId=${userId}, configUrl=${config.baseUrl}`)
+    
+    // Log sample update data for debugging
+    if (updates.length > 0) {
+      const sampleUpdate = updates[0];
+      console.log(`🔍 [${requestId}] Sample update data:`, {
+        imagePath: sampleUpdate.imagePath,
+        isNsfw: sampleUpdate.isNsfw,
+        hasFullRekognitionData: !!sampleUpdate.fullRekognitionData,
+        fullRekognitionDataKeys: sampleUpdate.fullRekognitionData ? Object.keys(sampleUpdate.fullRekognitionData) : []
+      });
+    }
     
     const payload = {
       jobId,
       updates: updates.map(update => ({
-        imagePath: update.imagePath,
+        virtualImageId: update.virtualImageId, // Use database ID for tracking
+        imagePath: update.imagePath || update.virtualImageId, // Fallback for backwards compatibility
+        // Backwards compatible NSFW data (always included)
         nsfwDetection: {
           isNsfw: update.isNsfw,
           confidenceScore: update.confidenceScore,
           moderationLabels: update.moderationLabels,
           processedAt: new Date().toISOString()
-        }
+        },
+        // NEW: Include full rekognition data if available (future enhancement)
+        fullRekognitionData: update.fullRekognitionData || null
       }))
     }
     
@@ -219,40 +274,100 @@ async function updateVirtualImagesViaLCEL(
     console.log(`🌐 [${requestId}] Making virtual image update request to: ${fullUrl}`);
     console.log(`📝 [${requestId}] Payload contains ${payload.updates.length} updates`);
     
-    try {
-      const response = await fetch(fullUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-          'X-Job-ID': jobId
-        },
-        body: JSON.stringify(payload)
-      });
-      
-      console.log(`📡 [${requestId}] Update response status: ${response.status}`);
-      console.log(`📡 [${requestId}] Update response headers:`, Object.fromEntries(response.headers.entries()));
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ [${requestId}] LCEL server update error: ${errorText}`);
-        throw new Error(`LCEL server error: ${response.status} - ${errorText}`);
+    // NEW: Add retry logic for rate limiting
+    let retryCount = 0;
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second base delay
+    
+    while (retryCount <= maxRetries) {
+      try {
+        const response = await fetch(fullUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+            'X-Job-ID': jobId,
+            // NEW: Add X-User-ID header if userId is provided
+            ...(userId ? { 'X-User-ID': userId } : {})
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        console.log(`📡 [${requestId}] Update response status: ${response.status} (attempt ${retryCount + 1})`);
+        console.log(`📡 [${requestId}] Update response headers:`, Object.fromEntries(response.headers.entries()));
+        
+        // Check if it's a rate limit error (429 or 503)
+        if (response.status === 429 || response.status === 503) {
+          retryCount++;
+          if (retryCount <= maxRetries) {
+            const delayMs = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
+            const maxDelay = 30000; // 30 seconds max
+            const actualDelay = Math.min(delayMs, maxDelay);
+            
+            console.log(`⏳ [${requestId}] Rate limited (${response.status}), retrying in ${actualDelay}ms (attempt ${retryCount}/${maxRetries})`);
+            
+            // Try to get retry-after header if available
+            const retryAfter = response.headers.get('retry-after');
+            if (retryAfter) {
+              const retryAfterMs = parseInt(retryAfter) * 1000;
+              if (retryAfterMs > 0 && retryAfterMs < maxDelay) {
+                console.log(`⏳ [${requestId}] Using server's retry-after: ${retryAfterMs}ms`);
+                await new Promise(resolve => setTimeout(resolve, retryAfterMs));
+              } else {
+                await new Promise(resolve => setTimeout(resolve, actualDelay));
+              }
+            } else {
+              await new Promise(resolve => setTimeout(resolve, actualDelay));
+            }
+            continue; // Try again
+          } else {
+            const errorText = await response.text();
+            console.error(`❌ [${requestId}] Max retries reached for rate limiting. Final error: ${errorText}`);
+            throw new Error(`LCEL server rate limited: ${response.status} - ${errorText} (tried ${maxRetries + 1} times)`);
+          }
+        }
+        
+        // Handle other errors
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`❌ [${requestId}] LCEL server update error: ${errorText}`);
+          throw new Error(`LCEL server error: ${response.status} - ${errorText}`);
+        }
+        
+        // Success case
+        const result = await response.json();
+        console.log(`✅ [${requestId}] LCEL server update response:`, result);
+        console.log(`✅ [${requestId}] Updated ${result.data?.successful || 0} virtual images (success after ${retryCount} retries)`);
+        
+        return { success: true, data: result.data?.images || [] };
+        
+      } catch (fetchError) {
+        // If it's not a rate limit error, or we've exceeded retries, throw immediately
+        if (retryCount >= maxRetries || 
+            !(fetchError instanceof Error && fetchError.message.includes('rate limited'))) {
+          console.error(`🌐 [${requestId}] Update fetch error details:`, {
+            url: fullUrl,
+            error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+            stack: fetchError instanceof Error ? fetchError.stack : undefined,
+            retryCount
+          });
+          throw fetchError;
+        }
+        
+        // If it's a network error that might be rate-limit related, try again
+        retryCount++;
+        if (retryCount <= maxRetries) {
+          const delayMs = baseDelay * Math.pow(2, retryCount - 1);
+          console.log(`⏳ [${requestId}] Network error, retrying in ${delayMs}ms: ${fetchError.message}`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          throw fetchError;
+        }
       }
-      
-      const result = await response.json();
-      console.log(`✅ [${requestId}] LCEL server update response:`, result);
-      console.log(`✅ [${requestId}] Updated ${result.data?.successful || 0} virtual images`);
-      
-      return { success: true, data: result.data?.images || [] };
-      
-    } catch (fetchError) {
-      console.error(`🌐 [${requestId}] Update fetch error details:`, {
-        url: fullUrl,
-        error: fetchError instanceof Error ? fetchError.message : String(fetchError),
-        stack: fetchError instanceof Error ? fetchError.stack : undefined
-      });
-      throw fetchError;
     }
+    
+    // This should never be reached due to the loop logic, but TypeScript requires it
+    throw new Error(`Failed to update virtual images after ${maxRetries + 1} attempts`);
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -399,59 +514,153 @@ async function handleUpdateVirtualImages(
   requestId: string
 ): Promise<Response> {
   console.log(`🔄 [${requestId}] Updating virtual images for job: ${body.jobId}`)
+  console.log(`🔍 [${requestId}] Request body validation: jobId=${body.jobId}, userId=${body.userId}, updatesCount=${body.updates?.length}`)
   
-  // Validation
-  if (!body.jobId || !body.results || !Array.isArray(body.results)) {
+  // Enhanced validation with better error messages
+  if (!body.jobId) {
+    console.error(`❌ [${requestId}] Missing jobId in request body`)
     return createErrorResponse(
-      'Missing required fields',
-      'jobId and results array are required',
+      'Missing jobId',
+      'jobId is required for virtual image updates',
       'VALIDATION_ERROR',
       requestId,
       400
     )
   }
 
-  if (body.results.length === 0) {
+  if (!body.updates || !Array.isArray(body.updates)) {
+    console.error(`❌ [${requestId}] Missing or invalid updates array: ${typeof body.updates}`)
     return createErrorResponse(
-      'No results provided',
-      'Results array cannot be empty',
+      'Missing updates array',
+      'updates must be an array of update objects',
       'VALIDATION_ERROR',
       requestId,
       400
     )
   }
 
-  // Update virtual images via LCEL server
-  const result = await updateVirtualImagesViaLCEL(
-    body.results,
-    body.jobId,
-    requestId
-  )
-
-  if (!result.success) {
+  if (body.updates.length === 0) {
     return createErrorResponse(
-      'Failed to update virtual images',
-      result.error || 'Unknown error',
-      'LCEL_ERROR',
+      'No updates provided',
+      'Updates array cannot be empty',
+      'VALIDATION_ERROR',
       requestId,
-      500
+      400
     )
   }
 
-  const response: VirtualImageBridgeResponse = {
-    success: true,
-    processedCount: result.data?.length || 0,
-    failedCount: body.results.length - (result.data?.length || 0),
-    virtualImages: result.data,
-    request_id: requestId
+  // NEW: Split large batches to avoid rate limiting
+  const BATCH_SIZE = 20; // Process max 20 images at a time
+  let totalProcessed = 0;
+  let totalFailed = 0;
+  let allVirtualImages: any[] = [];
+  
+  if (body.updates.length > BATCH_SIZE) {
+    console.log(`📦 [${requestId}] Processing ${body.updates.length} updates in batches of ${BATCH_SIZE}`);
+    
+    // Process in batches with delay between them
+    for (let i = 0; i < body.updates.length; i += BATCH_SIZE) {
+      const batch = body.updates.slice(i, i + BATCH_SIZE);
+      const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(body.updates.length / BATCH_SIZE);
+      
+      console.log(`📦 [${requestId}] Processing batch ${batchNumber}/${totalBatches} (${batch.length} items)`);
+      
+      // Add small delay between batches to avoid overwhelming the server
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+      }
+      
+      try {
+        const batchResult = await updateVirtualImagesViaLCEL(
+          batch,
+          body.jobId,
+          body.userId || undefined, // NEW: Ensure proper undefined handling
+          `${requestId}-batch-${batchNumber}`
+        );
+        
+        if (batchResult.success) {
+          totalProcessed += batchResult.data?.length || 0;
+          if (batchResult.data) {
+            allVirtualImages.push(...batchResult.data);
+          }
+          console.log(`✅ [${requestId}] Batch ${batchNumber} completed: ${batchResult.data?.length || 0} processed`);
+        } else {
+          console.error(`❌ [${requestId}] Batch ${batchNumber} failed:`, batchResult.error);
+          totalFailed += batch.length;
+          // Continue with next batch instead of failing entirely
+        }
+      } catch (batchError) {
+        console.error(`❌ [${requestId}] Batch ${batchNumber} exception:`, batchError);
+        totalFailed += batch.length;
+        // Continue with next batch
+      }
+    }
+    
+    const response: VirtualImageBridgeResponse = {
+      success: totalProcessed > 0, // Success if at least some processed
+      processedCount: totalProcessed,
+      failedCount: totalFailed,
+      virtualImages: allVirtualImages,
+      request_id: requestId
+    };
+    
+    console.log(`✅ [${requestId}] Batch processing complete: ${totalProcessed} processed, ${totalFailed} failed`);
+    
+    return new Response(JSON.stringify(response), {
+      status: totalProcessed > 0 ? 200 : 500,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
+    });
+    
+  } else {
+    // Handle small batches normally
+    console.log(`🔄 [${requestId}] Processing ${body.updates.length} updates in single batch`);
+    
+    try {
+      const result = await updateVirtualImagesViaLCEL(
+        body.updates,
+        body.jobId,
+        body.userId || undefined, // NEW: Ensure proper undefined handling
+        requestId
+      );
+
+      if (!result.success) {
+        console.error(`❌ [${requestId}] Single batch update failed:`, result.error);
+        return createErrorResponse(
+          'Failed to update virtual images',
+          result.error || 'Unknown error',
+          'LCEL_ERROR',
+          requestId,
+          500
+        )
+      }
+
+      const response: VirtualImageBridgeResponse = {
+        success: true,
+        processedCount: result.data?.length || 0,
+        failedCount: body.updates.length - (result.data?.length || 0),
+        virtualImages: result.data,
+        request_id: requestId
+      };
+
+      console.log(`✅ [${requestId}] Updated ${response.processedCount} virtual images`);
+
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
+      });
+      
+    } catch (singleError) {
+      console.error(`❌ [${requestId}] Single batch exception:`, singleError);
+      return createErrorResponse(
+        'Failed to update virtual images',
+        singleError instanceof Error ? singleError.message : 'Unknown error',
+        'LCEL_ERROR',
+        requestId,
+        500
+      )
+    }
   }
-
-  console.log(`✅ [${requestId}] Updated ${response.processedCount} virtual images`)
-
-  return new Response(JSON.stringify(response), {
-    status: 200,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
-  })
 }
 
 // Serve with error handling

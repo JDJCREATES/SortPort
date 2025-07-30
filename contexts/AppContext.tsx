@@ -674,7 +674,8 @@ export function AppProvider({ children }: AppProviderProps) {
       { table: 'moderated_folders', userColumn: 'user_id' }, 
       { table: 'moderated_images', userColumn: 'user_id' },
       { table: 'nsfw_bulk_jobs', userColumn: 'user_id' },
-      { table: 'sort_sessions', userColumn: 'user_id' }
+      { table: 'sort_sessions', userColumn: 'user_id' },
+      { table: 'virtual_image', userColumn: 'user_id' }
     ];
 
     for (const { table, userColumn } of tablesToClear) {
@@ -702,17 +703,28 @@ export function AppProvider({ children }: AppProviderProps) {
       if (userJobs && userJobs.length > 0) {
         const jobIds = userJobs.map(job => job.id);
         
-        const { error } = await supabase
+        // Clear nsfw_bulk_results
+        const { error: resultsError } = await supabase
           .from('nsfw_bulk_results')
           .delete()
           .in('job_id', jobIds);
 
-        if (error && error.code !== '42P01') {
-          console.error(`Failed to clear nsfw_bulk_results:`, error);
+        if (resultsError && resultsError.code !== '42P01') {
+          console.error(`Failed to clear nsfw_bulk_results:`, resultsError);
+        }
+
+        // Clear bulk_job_virtual_images junction table
+        const { error: junctionError } = await supabase
+          .from('bulk_job_virtual_images')
+          .delete()
+          .in('job_id', jobIds);
+
+        if (junctionError && junctionError.code !== '42P01') {
+          console.error(`Failed to clear bulk_job_virtual_images:`, junctionError);
         }
       }
     } catch (error) {
-      console.error(`Error clearing nsfw_bulk_results:`, error);
+      console.error(`Error clearing nsfw_bulk_results and junction table:`, error);
     }
   };
 

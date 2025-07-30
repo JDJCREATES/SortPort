@@ -499,9 +499,23 @@ export class BulkNSFWProcessor {
           };
           
           (formData as any).append(`image_${i}`, fileObject);
+          
+          // CRITICAL FIX: Include the original device path as metadata
+          // Find the original URI that was compressed to this compressedUri
+          let originalDevicePath = compressedUri;
+          for (const [original, compressed] of this.compressionCache.entries()) {
+            if (compressed === compressedUri) {
+              originalDevicePath = original;
+              break;
+            }
+          }
+          
+          // Add original device path as separate metadata field
+          formData.append(`original_path_${i}`, originalDevicePath);
+          
           successfulImages++;
           
-          console.log(`✅ Image ${i + 1} added to FormData with URI: ${compressedUri}`);
+          console.log(`✅ Image ${i + 1} added to FormData with URI: ${compressedUri}, originalPath: ${originalDevicePath}`);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`❌ Failed to process image ${i} in batch ${batchIndex + 1}:`, errorMessage);

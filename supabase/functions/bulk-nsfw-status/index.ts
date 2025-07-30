@@ -191,6 +191,50 @@ class AWSClientManager {
   }
 }
 
+// NEW: Extract full rekognition data from AWS batch job results
+function extractFullRekognitionData(awsBatchItem: any): any {
+  if (!awsBatchItem) return null;
+  
+  // Instead of being specific, extract ALL analysis results from the batch item
+  const rekognitionData: any = {};
+  
+  // Iterate through all keys in the batch item to capture any analysis type
+  Object.keys(awsBatchItem).forEach(key => {
+    // Skip metadata fields, keep all analysis results
+    if (key !== 'source-ref' && key !== 'job-name' && key !== 'job-id') {
+      // If it's an analysis result (starts with 'detect-' or known patterns)
+      if (key.startsWith('detect-') || 
+          key.startsWith('recognize-') || 
+          key.startsWith('get-') || 
+          key.includes('moderation') || 
+          key.includes('label') || 
+          key.includes('face') || 
+          key.includes('text') || 
+          key.includes('celebrity') || 
+          key.includes('properties')) {
+        
+        // Extract the analysis data and merge it into the main structure
+        const analysisData = awsBatchItem[key];
+        if (analysisData && typeof analysisData === 'object') {
+          // Merge all properties from this analysis type
+          Object.assign(rekognitionData, analysisData);
+        }
+      }
+    }
+  });
+  
+  // Include source reference for traceability
+  if (awsBatchItem['source-ref']) {
+    rekognitionData['SourceRef'] = awsBatchItem['source-ref'];
+  }
+  
+  // Also store the complete raw item for full context
+  rekognitionData['_rawBatchItem'] = awsBatchItem;
+  
+  // Only return data if we found something useful
+  return Object.keys(rekognitionData).length > 1 ? rekognitionData : null; // > 1 because SourceRef might be the only key
+}
+
 // Process AWS moderation results
 function processAWSModerationResults(awsResults: any[], confidenceThreshold: number = 80): any[] {
   const results: any[] = []
@@ -199,25 +243,37 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
     // Handle AWS Rekognition batch job result format
     let moderationLabels: any[] = []
     let imagePath: string = `image-${index}`
+    let fullRekognitionData: any = null // NEW: Store complete rekognition data
     
     if (item['detect-moderation-labels']) {
       // AWS batch job format: { "source-ref": "...", "detect-moderation-labels": { ... } }
       moderationLabels = item['detect-moderation-labels'].ModerationLabels || []
       imagePath = item['source-ref'] || `image-${index}`
+      
+      // NEW: Extract full rekognition data from all available analysis types
+      fullRekognitionData = extractFullRekognitionData(item)
+      
     } else if (item.ModerationLabels) {
       // Direct AWS format: { "ModerationLabels": [...] }
       moderationLabels = item.ModerationLabels || []
       imagePath = item.ImagePath || `image-${index}`
+      
+      // NEW: For direct format, use the item itself as rekognition data
+      fullRekognitionData = item
+      
     } else if (item.ImagePath && item.ModerationLabels) {
       // Converted format: { "ImagePath": "...", "ModerationLabels": [...] }
       moderationLabels = item.ModerationLabels || []
       imagePath = item.ImagePath || `image-${index}`
+      
+      // NEW: For converted format, use the item itself as rekognition data
+      fullRekognitionData = item
     }
     
     let isNsfw = false
     let maxConfidence = 0
     
-    // Process moderation labels to determine NSFW status
+    // Process moderation labels to determine NSFW status (unchanged logic)
     for (const label of moderationLabels) {
       const confidence = label.Confidence || 0
       maxConfidence = Math.max(maxConfidence, confidence)
@@ -238,7 +294,7 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
       }
     }
     
-    // Extract image ID from the S3 path or use index
+    // Extract image ID from the S3 path or use index (unchanged logic)
     let imageId = `image-${index}`
     if (imagePath.includes('/')) {
       const pathParts = imagePath.split('/')
@@ -267,6 +323,8 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
         })) || undefined,
       })),
       processing_time_ms: 0,
+      // NEW: Include full rekognition data for virtual image updates
+      full_rekognition_data: fullRekognitionData
     })
   })
   
@@ -274,7 +332,9 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
     totalResults: results.length,
     nsfwCount: results.filter(r => r.is_nsfw).length,
     sampleNsfwResult: results.find(r => r.is_nsfw) || null,
-    sampleLabels: results.length > 0 ? results[0].moderation_labels : []
+    sampleLabels: results.length > 0 ? results[0].moderation_labels : [],
+    // NEW: Log if we have full rekognition data
+    hasFullRekognitionData: results.some(r => r.full_rekognition_data !== null)
   })
   
   return results
@@ -613,13 +673,15 @@ serve(async (req: Request): Promise<Response> => {
                     requestId
                   })
                   
+                  // NEW: Pass full raw results to preserve all rekognition data
+                  // Instead of extracting only moderation labels, pass the complete items
                   resultsToProcess = rawResults.map((item: any, index: number) => {
-                    const moderationData = item['detect-moderation-labels']
-                    return {
-                      ImagePath: item['source-ref'] || `image-${index}`,
-                      ModerationLabels: moderationData?.ModerationLabels || [],
-                      ModerationModelVersion: moderationData?.ModerationModelVersion || '7.0'
+                    // Add a fallback ImagePath if source-ref is missing
+                    if (!item['source-ref']) {
+                      item['source-ref'] = `image-${index}`;
                     }
+                    // Return the complete item to preserve all analysis results
+                    return item;
                   })
                   
                 } else {
@@ -722,27 +784,78 @@ serve(async (req: Request): Promise<Response> => {
           try {
             console.log(`🔗 [${requestId}] Calling virtual-image-bridge to update ${processedResults.length} virtual images`);
             
-            const updateData = processedResults.map((result: any) => ({
-              imagePath: result.image_path.replace(`temp-${tempBucketName}/`, `s3://${tempBucketName}/`),
-              isNsfw: result.is_nsfw,
-              confidenceScore: result.confidence_score,
-              moderationLabels: Array.isArray(result.moderation_labels) ? result.moderation_labels : []
-            }));
+            // NEW: Log rekognition data availability for debugging
+            const resultsWithFullData = processedResults.filter((r: any) => r.full_rekognition_data !== null);
+            console.log(`📊 [${requestId}] Rekognition data summary: ${resultsWithFullData.length}/${processedResults.length} images have full data`);
+            
+            if (resultsWithFullData.length > 0) {
+              const sampleData = resultsWithFullData[0].full_rekognition_data;
+              const dataTypes = Object.keys(sampleData || {});
+              console.log(`📊 [${requestId}] Sample rekognition data types: ${dataTypes.join(', ')}`);
+            }
+            
+            const updateData = processedResults.map((result: any) => {
+              console.log(`🔄 [${requestId}] Using AWS path directly: ${result.image_path}`);
+              
+              return {
+                imagePath: result.image_path, // Use AWS path directly - should match virtual image paths
+                isNsfw: result.is_nsfw,
+                confidenceScore: result.confidence_score,
+                moderationLabels: Array.isArray(result.moderation_labels) ? result.moderation_labels : [],
+                // NEW: Include full rekognition data if available
+                fullRekognitionData: result.full_rekognition_data || null
+              };
+            });
             
             const supabase = createClient(
               Deno.env.get('SUPABASE_URL') ?? '',
               Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
             );
             
-            const bridgeResponse = await supabase.functions.invoke('virtual-image-bridge/update', {
+            // NEW: Add retry logic for rate limiting
+            let retryCount = 0;
+            const maxRetries = 3;
+            let bridgeResponse;
+            
+            while (retryCount <= maxRetries) {
+            bridgeResponse = await supabase.functions.invoke('virtual-image-bridge/update', {
               body: {
                 jobId,
+                userId: job.user_id, // NEW: Pass user ID from job for authentication
                 results: updateData
               }
-            });
+            });              // Check if it's a rate limit error
+              if (bridgeResponse.error && 
+                  bridgeResponse.error.message && 
+                  bridgeResponse.error.message.includes('429')) {
+                
+                retryCount++;
+                if (retryCount <= maxRetries) {
+                  const delayMs = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff, max 10s
+                  console.log(`⏳ [${requestId}] Rate limited, retrying in ${delayMs}ms (attempt ${retryCount}/${maxRetries})`);
+                  await new Promise(resolve => setTimeout(resolve, delayMs));
+                  continue;
+                } else {
+                  console.log(`❌ [${requestId}] Max retries reached, virtual image update will be skipped`);
+                  break;
+                }
+              } else {
+                // Success or non-rate-limit error, break the loop
+                break;
+              }
+            }
             
             if (bridgeResponse.error) {
-              console.error(`❌ [${requestId}] Virtual image update failed:`, bridgeResponse.error);
+              console.error(`❌ [${requestId}] Virtual image update failed after ${retryCount} retries:`, bridgeResponse.error);
+              
+              // Log the job completion but note that virtual images weren't updated
+              logWithContext('WARN', 'AWS processing completed but virtual image update failed', {
+                jobId,
+                processedImages: processedResults.length,
+                updateError: bridgeResponse.error.message || 'Unknown error',
+                retryCount,
+                requestId
+              });
             } else {
               console.log(`✅ [${requestId}] Updated ${bridgeResponse.data?.processedCount || 0} virtual images with NSFW results`);
             }
@@ -750,6 +863,12 @@ serve(async (req: Request): Promise<Response> => {
           } catch (virtualUpdateError) {
             console.error(`❌ [${requestId}] Virtual image update error:`, virtualUpdateError);
             // Don't fail the processing, but log the issue
+            logWithContext('WARN', 'Virtual image update failed with exception', {
+              jobId,
+              processedImages: processedResults.length,
+              error: virtualUpdateError instanceof Error ? virtualUpdateError.message : String(virtualUpdateError),
+              requestId
+            });
           }
 
           // Cleanup temp S3 bucket (don't await - let it run in background)

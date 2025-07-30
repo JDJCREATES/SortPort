@@ -97,7 +97,9 @@ async function handleRequest(req: Request): Promise<Response> {
       'nsfw_bulk_jobs',
       'nsfw_bulk_results',
       'sort_sessions',
-      'user_credits'
+      'user_credits',
+      'virtual_image',
+      'bulk_job_virtual_images'
     ]
 
     for (const table of existingTables) {

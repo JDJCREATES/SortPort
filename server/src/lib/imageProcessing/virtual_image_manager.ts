@@ -351,6 +351,9 @@ export class VirtualImageManager extends EventEmitter {
         processingTimestamp: now
       },
       
+      // NEW: Store complete rekognition data in dedicated field for better querying
+      rekognition_data: rekData || null,
+      
       // Timestamps
       created_at: now,
       updated_at: now,
@@ -796,6 +799,65 @@ export class VirtualImageManager extends EventEmitter {
       return error ? null : data;
     } catch (error) {
       console.error('Error updating image:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update virtual image with complete rekognition data
+   * This method safely updates both the rekognition_data field and derived fields
+   * while maintaining backwards compatibility with existing metadata structure
+   */
+  async updateWithRekognitionData(
+    id: string, 
+    rekognitionData: RekognitionData,
+    additionalUpdates: Partial<VirtualImage> = {}
+  ): Promise<VirtualImage | null> {
+    try {
+      // Process the rekognition data
+      const processedRek = this.extractRekognitionData(rekognitionData);
+      const now = new Date().toISOString();
+
+      // Prepare the update payload with both new field and backwards-compatible metadata
+      const updates: Partial<VirtualImage> = {
+        // Update the dedicated rekognition_data field
+        rekognition_data: rekognitionData,
+        
+        // Update derived fields from rekognition analysis
+        nsfw_score: processedRek.nsfwScore || null,
+        isflagged: processedRek.isNsfw || false,
+        dominant_colors: processedRek.dominantColors || null,
+        detected_objects: processedRek.objects || null,
+        detected_faces_count: processedRek.faceCount || 0,
+        scene_type: processedRek.sceneType || null,
+        brightness_score: processedRek.brightness || null,
+        blur_score: processedRek.sharpness || null,
+        quality_score: processedRek.overallQuality || null,
+        emotion_detected: processedRek.emotions || null,
+        activity_detected: processedRek.activities || null,
+        image_orientation: processedRek.orientation || null,
+        
+        // Update metadata to maintain backwards compatibility
+        metadata: {
+          ...((additionalUpdates.metadata as any) || {}),
+          rekognition: {
+            raw: rekognitionData,
+            processed: processedRek,
+            version: '2023.11',
+            processedAt: now
+          },
+          processingTimestamp: now
+        },
+        
+        // Include any additional updates
+        ...additionalUpdates,
+        
+        updated_at: now
+      };
+
+      return await this.updateVirtualImage(id, updates);
+    } catch (error) {
+      console.error('Error updating virtual image with rekognition data:', error);
       return null;
     }
   }

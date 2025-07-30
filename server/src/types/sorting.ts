@@ -40,6 +40,7 @@ export interface VirtualImage {
   emotion_detected?: string[] | null;
   activity_detected?: string[] | null;
   image_orientation?: string | null;
+  rekognition_data?: Record<string, any> | null;
 }
 
 export interface SortingContext {

@@ -747,8 +747,15 @@ async function handleRequest(req: Request): Promise<Response> {
           const fileObj = file as File;
           const s3Key = `input/batch-${batchIndex}-image-${i.toString().padStart(4, '0')}.jpg`;
           
+          // CRITICAL FIX: Get the original device path from metadata
+          const originalPathKey = `original_path_${i}`;
+          const originalDevicePath = formData.get(originalPathKey);
+          const devicePath = originalDevicePath ? String(originalDevicePath) : `unknown_device_path_${i}`;
+          
+          console.log(`🔍 [${requestId}] Image ${i}: s3Key=${s3Key}, originalDevicePath=${devicePath}`);
+          
           imageFiles.push({
-            imagePath: `s3://${bucketName}/${s3Key}`,
+            imagePath: devicePath, // Use device path instead of S3 path
             originalFileName: fileObj.name || 'unknown.jpg',
             fileSize: fileObj.size || 0,
             contentType: fileObj.type || 'image/jpeg'

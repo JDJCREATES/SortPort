@@ -181,39 +181,88 @@ router.post('/batch-update',
         
         const batchPromises = batch.map(async (update) => {
           try {
+            console.log(`🔍 [SERVICE] Looking for virtual image with path: ${update.imagePath}`);
+            
             // Find virtual image by image path
             const virtualImage = await virtualImageManager.findByPath(update.imagePath);
             
             if (!virtualImage) {
-              console.warn(`Virtual image not found for path: ${update.imagePath}`);
-              return { success: false, imagePath: update.imagePath, error: 'Not found' };
+              console.warn(`❌ [SERVICE] Virtual image not found for path: ${update.imagePath}`);
+              return { success: false, imagePath: update.imagePath, error: 'Virtual image not found' };
             }
 
-            // Update the virtual image with NSFW detection results
-            const updateData = {
-              nsfw_score: update.nsfwDetection?.confidenceScore || 0,
-              isflagged: update.nsfwDetection?.isNsfw || false,
-              moderation_labels: update.nsfwDetection?.moderationLabels || [],
-              processed_at: update.nsfwDetection?.processedAt || new Date().toISOString()
-            };
+            console.log(`✅ [SERVICE] Found virtual image ${virtualImage.id} for path: ${update.imagePath}`);
 
-            const updatedImage = await virtualImageManager.updateVirtualImage(virtualImage.id, updateData);
-            
-            if (updatedImage) {
-              successCount++;
-              return { success: true, imageId: updatedImage.id, imagePath: update.imagePath };
+            // Check if we have full rekognition data or just NSFW data
+            if (update.fullRekognitionData) {
+              // Use the new method for full rekognition data updates
+              console.log(`🔍 [SERVICE] Updating virtual image ${virtualImage.id} with full rekognition data`);
+              
+              try {
+                const updatedImage = await virtualImageManager.updateWithRekognitionData(
+                  virtualImage.id,
+                  update.fullRekognitionData,
+                  {
+                    // Include any additional NSFW data for backwards compatibility
+                    nsfw_score: update.nsfwDetection?.confidenceScore || null,
+                    isflagged: update.nsfwDetection?.isNsfw || false
+                  }
+                );
+
+                if (updatedImage) {
+                  console.log(`✅ [SERVICE] Successfully updated virtual image ${virtualImage.id} with full rekognition data`);
+                  successCount++;
+                  return { success: true, imageId: updatedImage.id, imagePath: update.imagePath, type: 'full-rekognition' };
+                } else {
+                  console.error(`❌ [SERVICE] Failed to update virtual image ${virtualImage.id} with full rekognition data`);
+                  failCount++;
+                  return { success: false, imagePath: update.imagePath, error: 'Full rekognition update failed' };
+                }
+              } catch (rekognitionUpdateError) {
+                console.error(`❌ [SERVICE] Exception during full rekognition update for ${virtualImage.id}:`, rekognitionUpdateError);
+                failCount++;
+                return { success: false, imagePath: update.imagePath, error: `Full rekognition update exception: ${rekognitionUpdateError instanceof Error ? rekognitionUpdateError.message : 'Unknown error'}` };
+              }
             } else {
-              failCount++;
-              return { success: false, imagePath: update.imagePath, error: 'Update failed' };
+              // Legacy NSFW-only update (maintains backwards compatibility)
+              console.log(`🔍 [SERVICE] Updating virtual image ${virtualImage.id} with NSFW data only`);
+              
+              try {
+                const updateData = {
+                  nsfw_score: update.nsfwDetection?.confidenceScore || 0,
+                  isflagged: update.nsfwDetection?.isNsfw || false,
+                  metadata: {
+                    ...virtualImage.metadata,
+                    nsfw: update.nsfwDetection,
+                    processedAt: new Date().toISOString()
+                  }
+                };
+
+                const updatedImage = await virtualImageManager.updateVirtualImage(virtualImage.id, updateData);
+                
+                if (updatedImage) {
+                  console.log(`✅ [SERVICE] Successfully updated virtual image ${virtualImage.id} with NSFW data`);
+                  successCount++;
+                  return { success: true, imageId: updatedImage.id, imagePath: update.imagePath, type: 'nsfw-only' };
+                } else {
+                  console.error(`❌ [SERVICE] Failed to update virtual image ${virtualImage.id} with NSFW data`);
+                  failCount++;
+                  return { success: false, imagePath: update.imagePath, error: 'NSFW update failed' };
+                }
+              } catch (nsfwUpdateError) {
+                console.error(`❌ [SERVICE] Exception during NSFW update for ${virtualImage.id}:`, nsfwUpdateError);
+                failCount++;
+                return { success: false, imagePath: update.imagePath, error: `NSFW update exception: ${nsfwUpdateError instanceof Error ? nsfwUpdateError.message : 'Unknown error'}` };
+              }
             }
 
           } catch (updateError) {
-            console.error(`Error updating virtual image for path ${update.imagePath}:`, updateError);
+            console.error(`❌ [SERVICE] General error updating virtual image for path ${update.imagePath}:`, updateError);
             failCount++;
             return { 
               success: false, 
               imagePath: update.imagePath, 
-              error: updateError instanceof Error ? updateError.message : 'Unknown error' 
+              error: `Update error: ${updateError instanceof Error ? updateError.message : 'Unknown error'}`
             };
           }
         });

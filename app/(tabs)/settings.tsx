@@ -161,25 +161,9 @@ const useSettingsManager = () => {
 
   // Clear data handler
   const handleClearData = useCallback(() => {
-    Alert.alert(
-      'Clear All Data',
-      'This will delete all your albums and settings. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: withErrorHandling(
-            async () => {
-              await MediaStorage.clearAllData();
-              Alert.alert('Data Cleared', 'All local data has been removed.');
-            },
-            'Failed to clear data'
-          ),
-        },
-      ]
-    );
-  }, [withErrorHandling]);
+    // This is now handled entirely by DataManagementSection
+    // No additional UI needed here
+  }, []);
 
   // Modal handlers
   const modalHandlers = useMemo(() => ({
