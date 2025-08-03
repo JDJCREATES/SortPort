@@ -974,7 +974,7 @@ export class BulkNSFWProcessor {
           // Query the database directly to get recent virtual_image records
           const { data: virtualImages, error: queryError } = await supabase
             .from('virtual_image')
-            .select('id, file_path, compressed_path, original_path')
+            .select('id, original_path, original_name, hash, virtual_name')
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(imageUris.length * 2); // Get more than needed
@@ -997,12 +997,12 @@ export class BulkNSFWProcessor {
                 const originalFilename = originalUri.split('/').pop() || '';
                 const compressedFilename = compressedUri.split('/').pop() || '';
                 
-                return record.file_path === originalUri ||
-                       record.compressed_path === compressedUri ||
-                       record.original_path === originalUri ||
-                       record.file_path?.includes(originalFilename) ||
-                       record.compressed_path?.includes(compressedFilename) ||
-                       record.original_path?.includes(originalFilename);
+                return record.original_path === originalUri ||
+                       record.original_path === compressedUri ||
+                       record.original_path?.includes(originalFilename) ||
+                       record.original_path?.includes(compressedFilename) ||
+                       record.original_name?.includes(originalFilename) ||
+                       record.hash?.includes(originalFilename);
               });
               
               if (matchingRecord) {
@@ -1012,7 +1012,7 @@ export class BulkNSFWProcessor {
               } else {
                 console.warn(`⚠️ Could not find virtual_image record for ${originalUri}`);
                 if (virtualImages && virtualImages.length > 0) {
-                  console.log(`   Available paths (first 3): ${virtualImages.slice(0, 3).map(r => r.file_path).join(', ')}`);
+                  console.log(`   Available paths (first 3): ${virtualImages.slice(0, 3).map(r => r.original_path).join(', ')}`);
                 }
               }
             } catch (updateError) {
