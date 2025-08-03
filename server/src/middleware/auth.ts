@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthenticationError } from '../types/api';
 import { AuthenticatedUser, RequestContext } from '../types/api';
 import { supabaseService } from '../lib/supabase/client';
+import { secureLogger } from '../lib/security/secureLogger';
+import { envValidator } from '../lib/security/envValidator';
 import Redis from 'ioredis';
 
 // Extend Request interface to include user and context
@@ -23,16 +25,19 @@ interface AuthConfig {
   sessionTimeout: number;
 }
 
+// Configuration using secure environment validator
+const config = envValidator.getConfig();
+
 const authConfig: AuthConfig = {
-  tokenCacheTTL: parseInt(process.env.TOKEN_CACHE_TTL || '300'), // 5 minutes
-  maxConcurrentSessions: parseInt(process.env.MAX_CONCURRENT_SESSIONS || '5'),
-  enableTokenBlacklist: process.env.ENABLE_TOKEN_BLACKLIST === 'true',
-  enableRateLimiting: process.env.ENABLE_AUTH_RATE_LIMITING === 'true',
-  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '86400') // 24 hours
+  tokenCacheTTL: config.auth.tokenCacheTTL,
+  maxConcurrentSessions: config.auth.maxConcurrentSessions,
+  enableTokenBlacklist: config.auth.enableTokenBlacklist,
+  enableRateLimiting: config.auth.enableRateLimiting,
+  sessionTimeout: config.auth.sessionTimeout
 };
 
 // Redis client for caching and session management
-const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
+const redis = config.external.redisUrl ? new Redis(config.external.redisUrl) : null;
 
 // Token validation cache
 const tokenCache = new Map<string, { user: AuthenticatedUser; expiresAt: number }>();
@@ -99,12 +104,17 @@ class AuthService {
         .single();
 
       if (error && error.code !== 'PGRST116') { // Not found is OK
-        console.warn(`Profile query error for user ${userId}:`, error);
+        secureLogger.warn('Profile query error', { 
+          error: error.message,
+          code: error.code 
+        });
       }
 
       return profile;
     } catch (error) {
-      console.warn(`Failed to get profile for user ${userId}:`, error);
+      secureLogger.warn('Failed to get user profile', { 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
       return null;
     }
   }
@@ -563,7 +573,11 @@ export const serviceAuthMiddleware = (req: Request, res: Response, next: NextFun
       }
     };
     
-    console.log(`🔧 Service auth successful for user ${userId}, job ${jobId}`);
+    console.log(`🔧 Service auth successful`);
+    secureLogger.authEvent('success', {
+      type: 'service_auth',
+      timestamp: new Date().toISOString()
+    });
     next();
     
   } catch (error) {

@@ -259,24 +259,23 @@ function SourceFolderPickerComponent({
         return;
       }
 
-      // ✅ SKIP LOCAL DETECTION - Go straight to AWS bulk processing
+      // ✅ Proceed with optimized bulk processing (includes ML Kit integration)
       setScanProgress({ 
         current: 0, 
         total: allPhotos.length, 
-        message: `Submitting ${allPhotos.length} images for AWS bulk processing...` 
+        message: `Submitting ${allPhotos.length} images for bulk processing...` 
       });
 
-
-      // ✅ Use REAL bulk processing - send ALL images to AWS
+      // ✅ Use optimized bulk processing pipeline (compression → ML Kit → AWS)
       const { BulkNSFWProcessor } = await import('../utils/bulkNsfwProcessor');
       
       // Extract URIs for bulk processing
       const imageUris = allPhotos.map(photo => photo.uri);
       
-      console.log(`☁️ Starting AWS bulk processing for ${imageUris.length} images`);
+      console.log(`☁️ Starting optimized bulk processing for ${imageUris.length} images`);
 
-      // ✅ Use REAL bulk processing with progress tracking
-      const bulkResults = await BulkNSFWProcessor.processBulkImages(
+      // ✅ Use optimized pipeline with ML Kit integrated
+      const bulkResults = await BulkNSFWProcessor.processBulkImagesNative(
         imageUris,
         userProfile.id,
         (progress) => {

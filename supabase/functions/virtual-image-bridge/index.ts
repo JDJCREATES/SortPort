@@ -43,6 +43,25 @@ interface UpdateVirtualImagesRequest {
     confidenceScore: number
     moderationLabels: string[]
     fullRekognitionData?: any // Optional full AWS Rekognition response
+    comprehensiveFields?: { // NEW: Comprehensive virtual_image fields
+      virtual_tags?: string[]
+      detected_objects?: string[]
+      scene_type?: string | null
+      detected_faces_count?: number | null
+      emotion_detected?: string[]
+      activity_detected?: string[]
+      caption?: string | null
+      vision_summary?: string | null
+      quality_score?: number | null
+      brightness_score?: number | null
+      blur_score?: number | null
+      aesthetic_score?: number | null
+      dominant_colors?: any | null
+      image_orientation?: string | null
+      nsfw_score?: number | null
+      isflagged?: boolean | null
+      rekognition_data?: any | null
+    }
     imagePath?: string // DEPRECATED: Keep for backwards compatibility only
   }[]
 }
@@ -315,8 +334,15 @@ async function updateVirtualImagesViaLCEL(
           moderationLabels: update.moderationLabels,
           processedAt: new Date().toISOString()
         },
-        // NEW: Include full rekognition data if available (future enhancement)
-        fullRekognitionData: update.fullRekognitionData || null
+        // Enhanced: Include full rekognition data if available
+        fullRekognitionData: update.fullRekognitionData || null,
+        // NEW: Include comprehensive virtual_image fields for direct database updates
+        comprehensiveFields: update.comprehensiveFields || {
+          // Fallback to legacy NSFW data if comprehensive fields not available
+          nsfw_score: update.confidenceScore,
+          isflagged: update.isNsfw,
+          rekognition_data: update.fullRekognitionData
+        }
       }))
     }
     

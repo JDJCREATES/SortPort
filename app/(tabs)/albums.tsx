@@ -264,7 +264,12 @@ export default function AlbumsScreen() {
   }, []);
 
   const handleNewSort = useCallback(() => {
-    router.push('/new-sort');
+    // TODO: Implement chat-based sorting instead of navigating to new-sort
+    Alert.alert(
+      'AI Sorting',
+      'Please use the chat overlay at the bottom of the screen for AI-powered sorting.',
+      [{ text: 'OK' }]
+    );
   }, []);
 
   // Animated styles

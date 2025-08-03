@@ -724,6 +724,9 @@ export class BulkNSFWProcessor {
     const startTime = Date.now();
     this.isProcessing = true;
     
+    // ML Kit results cache (declared at function level)
+    const mlKitResults = new Map<string, any>();
+    
     try {
       // Initialize hardware optimization
       await this.initializeHardwareOptimization();
@@ -787,10 +790,85 @@ export class BulkNSFWProcessor {
       
       if (onProgress) {
         onProgress({
+          current: 40,
+          total: 100,
+          status: 'analyzing',
+          message: `🧠 Starting ML Kit analysis of ${compressedCount} images...`
+        });
+      }
+
+      // 🔥 PHASE 1.5: ML Kit Processing (after compression, before upload)
+      let mlKitProgress = 0;
+      
+      try {
+        const { MLKitManager } = await import('./mlkit/MLKitManager');
+        const mlKitInstance = MLKitManager.getInstance({
+          maxImageSize: 1024,
+          compressionQuality: 0.8,
+          enableImageLabeling: true,
+          enableObjectDetection: true,
+          enableFaceDetection: true,
+          enableTextRecognition: true,
+          enableQualityAssessment: true,
+          labelConfidenceThreshold: 0.5,
+          objectConfidenceThreshold: 0.5,
+          faceConfidenceThreshold: 0.5,
+          batchSize: 10,
+          maxConcurrentProcessing: 4,
+          cachingEnabled: true,
+          secureProcessing: true,
+          clearCacheAfterProcessing: false
+        });
+        
+        // Process compressed images with ML Kit
+        const compressedUris = imageUris.map(uri => this.compressionCache.get(uri) || uri);
+        
+        for (let i = 0; i < compressedUris.length; i++) {
+          const compressedUri = compressedUris[i];
+          const originalUri = imageUris[i];
+          
+          try {
+            // Generate a temporary ID for ML Kit processing
+            const tempImageId = `compressed_${Date.now()}_${i}`;
+            
+            // Process with ML Kit but skip database update (we'll do it later)
+            const analysis = await mlKitInstance.processImage(
+              tempImageId, 
+              compressedUri, 
+              userId,
+              { skipDatabaseUpdate: true }
+            );
+            
+            mlKitResults.set(originalUri, analysis);
+            
+            mlKitProgress = Math.round(((i + 1) / compressedUris.length) * 100);
+            
+            if (onProgress) {
+              onProgress({
+                current: 40 + Math.round((mlKitProgress / 100) * 15), // 40-55% for ML Kit
+                total: 100,
+                status: 'analyzing',
+                message: `🧠 Analyzed ${i + 1}/${compressedUris.length} images with ML Kit`
+              });
+            }
+          } catch (mlError) {
+            console.warn(`⚠️ ML Kit failed for ${originalUri}:`, mlError);
+            // Continue processing even if ML Kit fails for individual images
+          }
+        }
+        
+        console.log(`✅ ML Kit processing complete: ${mlKitResults.size}/${imageUris.length} images analyzed`);
+        
+      } catch (mlKitError) {
+        console.warn('⚠️ ML Kit processing failed, continuing without analysis:', mlKitError);
+      }
+      
+      if (onProgress) {
+        onProgress({
           current: 60,
           total: 100,
           status: 'uploading',
-          message: `🚀 ${compressedCount}/${imageUris.length} images compressed!`
+          message: `🚀 ${compressedCount}/${imageUris.length} images processed!`
         });
       }
       
@@ -873,6 +951,81 @@ export class BulkNSFWProcessor {
 
       // Monitor single job
       const results = await this.monitorAllJobs([jobId], onProgress);
+
+      // 🔥 PHASE 4: Update database with ML Kit analysis results
+      if (mlKitResults.size > 0) {
+        if (onProgress) {
+          onProgress({
+            current: 95,
+            total: 100,
+            status: 'finalizing',
+            message: `🧠 Updating database with ML Kit analysis for ${mlKitResults.size} images...`
+          });
+        }
+
+        try {
+          const { MLKitManager } = await import('./mlkit/MLKitManager');
+          const mlKitInstance = MLKitManager.getInstance();
+          
+          // Add a small delay to ensure database records are committed
+          console.log('⏳ Waiting for database records to be committed...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Query the database directly to get recent virtual_image records
+          const { data: virtualImages, error: queryError } = await supabase
+            .from('virtual_image')
+            .select('id, file_path, compressed_path, original_path')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(imageUris.length * 2); // Get more than needed
+
+          if (queryError) {
+            console.error('❌ Failed to query virtual_image records:', queryError);
+            throw queryError;
+          }
+
+          console.log(`🔍 Found ${virtualImages?.length || 0} recent virtual_image records for ML Kit update`);
+          
+          // Update virtual_image table with ML Kit results for each processed image
+          let updatedCount = 0;
+          for (const [originalUri, analysis] of mlKitResults) {
+            try {
+              // Find matching virtual_image record by comparing paths
+              const compressedUri = this.compressionCache.get(originalUri) || originalUri;
+              
+              const matchingRecord = virtualImages?.find(record => {
+                const originalFilename = originalUri.split('/').pop() || '';
+                const compressedFilename = compressedUri.split('/').pop() || '';
+                
+                return record.file_path === originalUri ||
+                       record.compressed_path === compressedUri ||
+                       record.original_path === originalUri ||
+                       record.file_path?.includes(originalFilename) ||
+                       record.compressed_path?.includes(compressedFilename) ||
+                       record.original_path?.includes(originalFilename);
+              });
+              
+              if (matchingRecord) {
+                await mlKitInstance.updateImageWithAnalysis(matchingRecord.id, analysis, userId);
+                updatedCount++;
+                console.log(`✅ Updated ML Kit data: ${originalUri} → ${matchingRecord.id}`);
+              } else {
+                console.warn(`⚠️ Could not find virtual_image record for ${originalUri}`);
+                if (virtualImages && virtualImages.length > 0) {
+                  console.log(`   Available paths (first 3): ${virtualImages.slice(0, 3).map(r => r.file_path).join(', ')}`);
+                }
+              }
+            } catch (updateError) {
+              console.warn(`⚠️ Failed to update ML Kit data for ${originalUri}:`, updateError);
+            }
+          }
+          
+          console.log(`✅ Updated ${updatedCount}/${mlKitResults.size} images with ML Kit analysis`);
+          
+        } catch (mlKitUpdateError) {
+          console.warn('⚠️ ML Kit database update failed:', mlKitUpdateError);
+        }
+      }
 
       const processingTime = Date.now() - startTime;
 

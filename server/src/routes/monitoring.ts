@@ -1,7 +1,7 @@
 /**
  * Performance Monitoring Dashboard API Routes
  * 
- * This module provides REST API endpoints for the SnapSort performance monitoring
+ * This module provides REST API endpoints for the SortxPort performance monitoring
  * dashboard, exposing real-time metrics, cost analytics, and system health data.
  * 
  * Input: HTTP requests with query parameters for time ranges and filters

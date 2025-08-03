@@ -1,7 +1,7 @@
 /**
  * Production-grade performance monitoring and metrics collection system
  * 
- * This module provides comprehensive metrics collection for the SnapSort image sorting system,
+ * This module provides comprehensive metrics collection for the SortxPort image sorting system,
  * tracking performance, usage, costs, and system health across all components.
  * 
  * Input: System events, API calls, processing operations
@@ -84,42 +84,42 @@ export class MetricsCollector {
 
     // Initialize Prometheus metrics
     this.apiCallsTotal = new Counter({
-      name: 'snapsort_api_calls_total',
+      name: 'sortxport_api_calls_total',
       help: 'Total number of API calls',
       labelNames: ['endpoint', 'method', 'status']
     });
 
     this.requestDuration = new Histogram({
-      name: 'snapsort_request_duration_seconds',
+      name: 'sortxport_request_duration_seconds',
       help: 'Request duration in seconds',
       labelNames: ['endpoint', 'method'],
       buckets: [0.1, 0.5, 1, 2, 5, 10, 30]
     });
 
     this.activeUsers = new Gauge({
-      name: 'snapsort_active_users',
+      name: 'sortxport_active_users',
       help: 'Number of active users in the last 5 minutes'
     });
 
     this.visionApiCalls = new Counter({
-      name: 'snapsort_vision_api_calls_total',
+      name: 'sortxport_vision_api_calls_total',
       help: 'Total number of Vision API calls',
       labelNames: ['type', 'success']
     });
 
     this.costTracker = new Gauge({
-      name: 'snapsort_estimated_costs_usd',
+      name: 'sortxport_estimated_costs_usd',
       help: 'Estimated costs in USD',
       labelNames: ['service']
     });
 
     this.cacheHitRate = new Gauge({
-      name: 'snapsort_cache_hit_rate',
+      name: 'sortxport_cache_hit_rate',
       help: 'Cache hit rate percentage'
     });
 
     this.errorRate = new Gauge({
-      name: 'snapsort_error_rate',
+      name: 'sortxport_error_rate',
       help: 'Error rate percentage'
     });
 

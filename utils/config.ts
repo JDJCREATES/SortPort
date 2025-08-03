@@ -1,7 +1,7 @@
 /**
  * Configuration Manager
  * 
- * Centralized configuration for the SnapSort application.
+ * Centralized configuration for the SortxPort application.
  * Handles environment variables, API endpoints, and feature flags.
  */
 

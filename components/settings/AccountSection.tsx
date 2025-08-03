@@ -78,7 +78,7 @@ export function AccountSection({
         >
           <Ionicons name="log-in" size={24} color={currentTheme.colors.primary} />
           <View style={styles.signInInfo}>
-            <Text style={styles.signInTitle}>Sign In to SnapSort</Text>
+            <Text style={styles.signInTitle}>Sign In to SortxPort</Text>
             <Text style={styles.signInDescription}>
               Sync your albums across devices and access premium features
             </Text>

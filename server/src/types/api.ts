@@ -58,36 +58,6 @@ export interface SortedImage {
   };
 }
 
-// Atlas generation schemas
-export const AtlasRequestSchema = z.object({
-  userId: z.string().uuid(),
-  imageIds: z.array(z.string().uuid()).min(1).max(9),
-  purpose: z.enum(['sorting', 'thumbnail', 'analysis']),
-  cacheKey: z.string().optional()
-});
-
-export type AtlasRequest = z.infer<typeof AtlasRequestSchema>;
-
-export interface AtlasResponse {
-  atlasUrl: string;
-  imageMap: AtlasImageMap;
-  cacheKey: string;
-  expiresAt: string;
-}
-
-export interface AtlasImageMap {
-  [position: string]: {
-    imageId: string;
-    originalPath: string;
-    bounds: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
-  };
-}
-
 // Error types
 export class ApiError extends Error {
   constructor(

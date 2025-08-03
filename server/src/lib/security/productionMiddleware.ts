@@ -1,9 +1,9 @@
 /**
- * Production Security and Rate Limiting Middleware for SnapSort
+ * Production Security and Rate Limiting Middleware for SortxPort
  * 
  * This module provides comprehensive production-grade security middleware including
  * rate limiting, authentication, request validation, and DDoS protection for the
- * SnapSort image sorting API.
+ * SortxPort image sorting API.
  * 
  * Input: Express requests and application configuration
  * Output: Secured, rate-limited, and validated request pipeline
@@ -75,7 +75,7 @@ const defaultConfig: SecurityConfig = {
   },
   authentication: {
     required: true,
-    allowedOrigins: ['https://snapsort.app']
+    allowedOrigins: ['https://sortxport.app']
   },
   validation: {
     maxImageSize: 10 * 1024 * 1024, // 10MB

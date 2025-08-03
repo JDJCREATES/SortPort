@@ -75,7 +75,7 @@ export interface SystemMetrics {
   };
 }
 
-export class SnapSortSystem {
+export class SortxPortSystem {
   private config: SystemConfiguration;
   private initialized: boolean = false;
   
@@ -151,7 +151,7 @@ export class SnapSortSystem {
       return;
     }
     
-    console.log('🚀 Initializing SnapSort LCEL System...');
+    console.log('🚀 Initializing SortxPort LCEL System...');
     
     try {
       // Step 1: Initialize core infrastructure
@@ -174,7 +174,7 @@ export class SnapSortSystem {
       await this.validateSystemReadiness();
       
       this.initialized = true;
-      console.log('✅ SnapSort LCEL System initialized successfully');
+      console.log('✅ SortxPort LCEL System initialized successfully');
       
     } catch (error) {
       console.error('❌ System initialization failed:', error);
@@ -226,7 +226,7 @@ export class SnapSortSystem {
    * Graceful shutdown
    */
   async shutdown(): Promise<void> {
-    console.log('🛑 Shutting down SnapSort LCEL System...');
+    console.log('🛑 Shutting down SortxPort LCEL System...');
     
     try {
       // Stop health checks
@@ -544,19 +544,19 @@ export function createDefaultConfig(): SystemConfiguration {
 /**
  * Global system instance (singleton)
  */
-export let globalSystemInstance: SnapSortSystem | null = null;
+export let globalSystemInstance: SortxPortSystem | null = null;
 
 /**
  * Initialize global system instance
  */
-export async function initializeGlobalSystem(config?: Partial<SystemConfiguration>): Promise<SnapSortSystem> {
+export async function initializeGlobalSystem(config?: Partial<SystemConfiguration>): Promise<SortxPortSystem> {
   if (globalSystemInstance) {
     console.warn('Global system already initialized');
     return globalSystemInstance;
   }
   
   const finalConfig = { ...createDefaultConfig(), ...config };
-  globalSystemInstance = new SnapSortSystem(finalConfig);
+  globalSystemInstance = new SortxPortSystem(finalConfig);
   
   await globalSystemInstance.initialize();
   
@@ -566,7 +566,7 @@ export async function initializeGlobalSystem(config?: Partial<SystemConfiguratio
 /**
  * Get global system instance
  */
-export function getGlobalSystem(): SnapSortSystem {
+export function getGlobalSystem(): SortxPortSystem {
   if (!globalSystemInstance) {
     throw new Error('Global system not initialized. Call initializeGlobalSystem() first.');
   }

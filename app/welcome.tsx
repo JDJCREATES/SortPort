@@ -32,8 +32,8 @@ import { useApp } from '../contexts/AppContext';
 import { lightTheme } from '../utils/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const ONBOARDING_COMPLETED_KEY = '@snapsort_onboarding_completed';
-const WELCOME_SEEN_KEY = '@snapsort_welcome_seen';
+const ONBOARDING_COMPLETED_KEY = '@sortxport_onboarding_completed';
+const WELCOME_SEEN_KEY = '@sortxport_welcome_seen';
 
 interface Slide {
   id: string;
@@ -57,7 +57,7 @@ export default function WelcomeScreen() {
     {
       id: 'welcome',
       icon: <Ionicons name="sparkles" size={64} color={lightTheme.colors.primary} />,
-      title: 'Welcome to SnapSort',
+      title: 'Welcome to SortxPort',
       description: 'AI-powered photo organization that understands your pictures and creates smart albums automatically.',
       backgroundColor: `${lightTheme.colors.primary}05`,
     },
@@ -201,7 +201,7 @@ export default function WelcomeScreen() {
                 // On Android, we can't directly open settings, but we can show instructions
                 Alert.alert(
                   'Enable Photo Access',
-                  'Go to Settings > Apps > SnapSort > Permissions > Storage and enable photo access.',
+                  'Go to Settings > Apps > SortxPort > Permissions > Storage and enable photo access.',
                   [{ text: 'OK' }]
                 );
               }
@@ -292,7 +292,7 @@ export default function WelcomeScreen() {
         <StatusBar barStyle="dark-content" backgroundColor={lightTheme.colors.background} />
         <Animated.View entering={FadeInUp} style={styles.loadingContent}>
           <Ionicons name="sparkles" size={48} color={lightTheme.colors.primary} />
-          <Text style={styles.loadingText}>Loading SnapSort...</Text>
+          <Text style={styles.loadingText}>Loading SortxPort...</Text>
         </Animated.View>
       </SafeAreaView>
     );

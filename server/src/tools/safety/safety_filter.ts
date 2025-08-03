@@ -1,7 +1,7 @@
 /**
  * Safety Filter
  * 
- * NEW: Multi-model safety checking, consensus validation, and risk scoring.
+ *  Multi-model safety checking, consensus validation, and risk scoring.
  */
 
 import { RunnableSequence, RunnableLambda, RunnableParallel } from '@langchain/core/runnables';

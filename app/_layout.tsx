@@ -13,6 +13,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppProvider } from '../contexts/AppContext';
+import { MLKitProvider } from '../utils/mlkit/providers/MLKitProvider';
 import { MediaStorage } from '../utils/mediaStorage';
 import { getCurrentTheme, ThemeManager } from '../utils/theme';
 import { AppTheme } from '../types';
@@ -211,11 +212,12 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ErrorBoundary theme={currentTheme}>
           <AppProvider>
-            <StatusBar 
-              barStyle={currentTheme.colors.text === '#FFFFFF' ? 'light-content' : 'dark-content'}
-              backgroundColor={currentTheme.colors.background}
-              translucent={false}
-            />
+            <MLKitProvider>
+              <StatusBar 
+                barStyle={currentTheme.colors.text === '#FFFFFF' ? 'light-content' : 'dark-content'}
+                backgroundColor={currentTheme.colors.background}
+                translucent={false}
+              />
             <Stack
               screenOptions={{
                 headerShown: false,
@@ -250,6 +252,7 @@ export default function RootLayout() {
                 }} 
               />
             </Stack>
+            </MLKitProvider>
           </AppProvider>
         </ErrorBoundary>
       </SafeAreaProvider>

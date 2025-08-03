@@ -1,7 +1,7 @@
 {
-  "name": "snapsort-langchain-server",
+  "name": "sortxport-langchain-server",
   "version": "1.0.0",
-  "description": "LangChain-powered image sorting server for SnapSort",
+  "description": "LangChain-powered image sorting server for SortxPort",
   "main": "dist/index.js",
   "private": true,
   "scripts": {

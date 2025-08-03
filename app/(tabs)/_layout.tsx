@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { getCurrentTheme, ThemeManager } from '../../utils/theme';
 import { useApp } from '../../contexts/AppContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppTheme } from '../../types';
+import { GlobalChatOverlay } from '../../components/GlobalChatOverlay';
 
 export default function TabLayout() {
   const { settings } = useApp();
@@ -156,37 +157,40 @@ export default function TabLayout() {
   ), []);
 
   return (
-    <Tabs screenOptions={screenOptions}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: HomeIcon,
-        }}
-      />
-      <Tabs.Screen
-        name="albums"
-        options={{
-          title: 'Albums',
-          tabBarIcon: AlbumsIcon,
-        }}
-      />
-      <Tabs.Screen
-        name="nsfw-albums"
-        options={{
-          title: 'NSFW',
-          tabBarIcon: NSFWIcon,
-          // Hide the tab completely when showModeratedContent is false
-          href: settings.showModeratedContent ? '/nsfw-albums' : null,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: SettingsIcon,
-        }}
-      />
-    </Tabs>
+    <View style={{ flex: 1 }}>
+      <Tabs screenOptions={screenOptions}>
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Home',
+            tabBarIcon: HomeIcon,
+          }}
+        />
+        <Tabs.Screen
+          name="albums"
+          options={{
+            title: 'Albums',
+            tabBarIcon: AlbumsIcon,
+          }}
+        />
+        <Tabs.Screen
+          name="nsfw-albums"
+          options={{
+            title: 'NSFW',
+            tabBarIcon: NSFWIcon,
+            // Hide the tab completely when showModeratedContent is false
+            href: settings.showModeratedContent ? '/nsfw-albums' : null,
+          }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: 'Settings',
+            tabBarIcon: SettingsIcon,
+          }}
+        />
+      </Tabs>
+      <GlobalChatOverlay />
+    </View>
   );
 }

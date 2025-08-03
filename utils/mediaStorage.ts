@@ -5,8 +5,8 @@ import { AppSettings, CustomThemeColors, ImageMeta } from '../types';
 
 //This file is a utility class for managing media storage and settings. It provides methods to save and load settings, manage processed images, and handle media library operations.
 export class MediaStorage {
-  private static SETTINGS_KEY = '@snapsort_settings';
-  private static PROCESSED_IMAGES_KEY = '@snapsort_processed';
+  private static SETTINGS_KEY = '@sortxport_settings';
+  private static PROCESSED_IMAGES_KEY = '@sortxport_processed';
 
   static async saveSettings(settings: AppSettings): Promise<void> {
     try {
@@ -177,7 +177,7 @@ export class MediaStorage {
     try {
       // Clear all AsyncStorage keys related to the app
       const keys = await AsyncStorage.getAllKeys();
-      const appKeys = keys.filter(key => key.startsWith('@snapsort_'));
+      const appKeys = keys.filter(key => key.startsWith('@sortxport_'));
       
       if (appKeys.length > 0) {
         await AsyncStorage.multiRemove(appKeys);

@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { 
   RekognitionClient, 
   StartMediaAnalysisJobCommand,
+  type StartMediaAnalysisJobCommandInput,
 } from "npm:@aws-sdk/client-rekognition@^3.840.0"
 import { 
   S3Client,
@@ -455,12 +456,19 @@ serve(async (req: Request): Promise<Response> => {
       console.log(`🏷️ [${requestId}] Rekognition job name: ${rekognitionJobName}`);
       
       // Add this function to create/verify Rekognition service role
-      async function ensureRekognitionServiceRole(requestId: string): Promise<string | undefined> {
+      async function ensureRekognitionServiceRole(requestId: string): Promise<string> {
         try {
-          const roleArn = Deno.env.get('AWS_REKOGNITION_SERVICE_ROLE_ARN');
+          // Check both possible environment variable names
+          const roleArn = Deno.env.get('AWS_REKOGNITION_SERVICE_ROLE_ARN') || Deno.env.get('AWS_REKOGNITION_ROLE_ARN');
           if (roleArn) {
-            console.log(`🔑 [${requestId}] Using configured Rekognition service role: ${roleArn}`);
-            return roleArn;
+            // CRITICAL: Validate that the role ARN is actually an ARN, not a URL
+            if (roleArn.startsWith('arn:aws:iam::')) {
+              console.log(`🔑 [${requestId}] Using configured Rekognition service role: ${roleArn}`);
+              return roleArn;
+            } else {
+              console.error(`❌ [${requestId}] Invalid service role ARN format: ${roleArn} (expected arn:aws:iam::...)`);
+              console.error(`❌ [${requestId}] This looks like a URL, not an IAM role ARN!`);
+            }
           }
           
           const accountId = Deno.env.get('AWS_ACCOUNT_ID');
@@ -470,17 +478,30 @@ serve(async (req: Request): Promise<Response> => {
             return defaultRoleArn;
           }
           
-          console.warn(`⚠️ [${requestId}] No Rekognition service role configured - trying without role`);
-          return undefined;
+          // HARDCODED FIX: Use the account ID from your logs since we know it
+          const knownAccountId = '072928014978';
+          const fixedRoleArn = `arn:aws:iam::${knownAccountId}:role/RekognitionServiceRole`;
+          console.warn(`⚠️ [${requestId}] Using hardcoded account ID for service role: ${fixedRoleArn}`);
+          console.warn(`⚠️ [${requestId}] To fix this properly, set AWS_ACCOUNT_ID environment variable to: ${knownAccountId}`);
+          
+          return fixedRoleArn;
           
         } catch (error) {
-          console.error(`❌ [${requestId}] Failed to determine Rekognition service role:`, error);
-          return undefined;
+          // Fallback with known account ID
+          const knownAccountId = '072928014978';
+          const fallbackRoleArn = `arn:aws:iam::${knownAccountId}:role/RekognitionServiceRole`;
+          console.error(`❌ [${requestId}] Failed to determine service role, using hardcoded fallback: ${fallbackRoleArn}`, error);
+          return fallbackRoleArn;
         }
       }
 
-      // Get service role
+      // Get service role - REQUIRED for comprehensive analysis
       const serviceRole = await ensureRekognitionServiceRole(requestId);
+      
+      console.log(`🔧 [${requestId}] Analysis configuration:`, {
+        serviceRole: serviceRole ? 'Configured' : 'Missing',
+        operations: ['DetectModerationLabels']
+      });
       
       // Check if manifest exists
       const manifestKey = jobData.manifest_key || 'manifest.jsonl';
@@ -521,23 +542,18 @@ serve(async (req: Request): Promise<Response> => {
       console.log(`   - Service Role: ${serviceRole || 'NONE'}`);
       console.log(`   - Objects to process: ${s3Verification.objectCount}`);
       
+      // Build operations config - only moderation labels for NSFW detection
+      const operationsConfig = {
+        DetectModerationLabels: {
+          MinConfidence: settings?.confidence_threshold || 60,
+        }
+      };
+      
+      console.log(`🎯 [${requestId}] Basic NSFW moderation analysis enabled - DetectModerationLabels only`);
+      
       const rekognitionCommand = new StartMediaAnalysisJobCommand({
         JobName: rekognitionJobName,
-        OperationsConfig: {
-          DetectModerationLabels: {
-            MinConfidence: settings?.confidence_threshold || 60,
-          },
-          DetectLabels: {
-            MinConfidence: 75,
-            MaxLabels: 100
-          },
-          DetectFaces: {
-            Attributes: ["ALL"] // Gets emotions, age, gender, expressions, etc.
-          },
-          DetectText: {
-            // OCR text detection in images
-          }
-        },
+        OperationsConfig: operationsConfig,
         Input: {
           S3Object: {
             Bucket: bucketName,
@@ -548,34 +564,39 @@ serve(async (req: Request): Promise<Response> => {
           S3Bucket: bucketName,
           S3KeyPrefix: 'output/'
         },
-        ...(serviceRole && { ServiceRole: serviceRole })
+        ServiceRole: serviceRole // Optional for basic moderation, required for comprehensive analysis
       });
 
-      console.log(`🚀 [${requestId}] Sending comprehensive Rekognition analysis command:`, {
+      // CRITICAL DEBUG: Log exact operations config being sent to AWS
+      console.log(`🚀 [${requestId}] Sending basic NSFW moderation analysis command:`, {
         JobName: rekognitionJobName,
         Bucket: bucketName,
         ManifestFile: manifestKey,
         OutputPrefix: 'output/',
-        Operations: 'Moderation + Labels + Faces + Text',
-        ModerationMinConfidence: settings?.confidence_threshold || 60,
-        LabelsMinConfidence: 75,
-        MaxLabels: 100,
-        FaceAttributes: 'ALL',
-        ServiceRole: serviceRole || 'DEFAULT_CREDENTIALS'
+        ServiceRole: serviceRole,
+        OperationsConfig: JSON.stringify(operationsConfig, null, 2)
       });
+
+      console.log(`🔍 [${requestId}] EXACT AWS Command being sent:`, JSON.stringify({
+        JobName: rekognitionJobName,
+        OperationsConfig: operationsConfig,
+        Input: { S3Object: { Bucket: bucketName, Name: manifestKey } },
+        OutputConfig: { S3Bucket: bucketName, S3KeyPrefix: 'output/' },
+        ServiceRole: serviceRole
+      }, null, 2));
 
       const rekognitionResponse = await rekognitionClient.send(rekognitionCommand);
       const awsJobId = rekognitionResponse.JobId!;
 
-      console.log(`✅ [${requestId}] AWS Rekognition comprehensive analysis job started:`);
+      console.log(`✅ [${requestId}] AWS Rekognition NSFW moderation job started:`);
       console.log(`   - AWS Job ID: ${awsJobId}`);
-      console.log(`   - Analysis Types: Moderation, Labels, Faces, Text`);
+      console.log(`   - Analysis Type: Moderation Labels Only`);
       console.log(`   - Manifest: ${bucketName}/${manifestKey}`);
       console.log(`   - Output: ${bucketName}/output/`);
       console.log(`   - Images to process: ${s3Verification.objectCount}`);
 
-      // INTEGRATION POINT: This is where virtual image creation should happen after Rekognition job starts
-      console.log(`📍 [INTEGRATION-POINT] [${requestId}] Rekognition job started - virtual image creation should happen here`);
+      // INTEGRATION POINT: Basic NSFW processing only - no virtual image creation needed
+      console.log(`📍 [INTEGRATION-POINT] [${requestId}] Rekognition NSFW job started - basic moderation only`);
       console.log(`📍 [INTEGRATION-POINT] [${requestId}] Job details: jobId=${jobId}, awsJobId=${awsJobId}, bucket=${bucketName}`);
 
       // Update database with AWS job ID and status
@@ -613,6 +634,7 @@ serve(async (req: Request): Promise<Response> => {
       // FLOW TRACE: Log successful completion
       console.log(`🔍 [FLOW-TRACE] [${requestId}] bulk-nsfw-submit: Request completed successfully`);
       console.log(`🔍 [FLOW-TRACE] [${requestId}] Next step: bulk-nsfw-status will monitor jobId=${jobId}, awsJobId=${awsJobId}`);
+      console.log(`🔍 [FLOW-TRACE] [${requestId}] Processing: Basic NSFW moderation only - no virtual image management`);
 
       return new Response(JSON.stringify(successResponse), {
         status: 200,

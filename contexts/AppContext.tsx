@@ -750,15 +750,15 @@ export function AppProvider({ children }: AppProviderProps) {
   const clearLocalData = async (): Promise<void> => {
     try {
       const keys = await AsyncStorage.getAllKeys();
-      const snapSortKeys = keys.filter(key => 
-        key.startsWith('@snapsort_') || 
-        key.startsWith('@SnapSort_') ||
-        key.includes('snapsort') ||
-        key.includes('SnapSort')
+      const sortxPortKeys = keys.filter(key => 
+        key.startsWith('@sortxport_') || 
+        key.startsWith('@SortxPort_') ||
+        key.includes('sortxport') ||
+        key.includes('SortxPort')
       );
     
-      if (snapSortKeys.length > 0) {
-        await AsyncStorage.multiRemove(snapSortKeys);
+      if (sortxPortKeys.length > 0) {
+        await AsyncStorage.multiRemove(sortxPortKeys);
       }
     } catch (error) {
       console.error('Error clearing local data:', error);

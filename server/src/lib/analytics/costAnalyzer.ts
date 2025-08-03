@@ -1,8 +1,8 @@
 /**
- * Cost Analytics and Optimization System for SnapSort
+ * Cost Analytics and Optimization System for SortxPort
  * 
  * This module provides comprehensive cost tracking, analysis, and optimization insights
- * for the SnapSort image sorting system, focusing on GPT Vision API usage optimization
+ * for the SortxPort image sorting system, focusing on GPT Vision API usage optimization
  * through atlas generation and intelligent batching strategies.
  * 
  * Input: API usage data, processing metrics, user behavior data

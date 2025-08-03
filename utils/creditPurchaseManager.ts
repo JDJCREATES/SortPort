@@ -45,7 +45,7 @@ export const CREDIT_COSTS = {
 
 export class CreditPurchaseManager {
   private static instance: CreditPurchaseManager;
-  private static USER_FLAGS_KEY = '@snapsort_user_flags';
+  private static USER_FLAGS_KEY = '@sortxport_user_flags';
   private userFlags: UserFlags = {
     creditBalance: 0,
     hasPurchasedCredits: false,

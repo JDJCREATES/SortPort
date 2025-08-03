@@ -6,7 +6,6 @@ import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useApp } from '../../contexts/AppContext';
 
 import { ResponsiveAlbumGrid } from '../../components/ResponsiveAlbumGrid';
-import { PictureHackBar } from '../../components/PictureHackBar';
 import { InfoIcon } from '../../components/common/InfoIcon';
 import { AlbumViewModeSelector } from '../../components/AlbumViewModeSelector';
 import { AutoSortManager } from '../../utils/autoSortManager';
@@ -91,23 +90,6 @@ export default function HomeScreen() {
     }, debounceDelay);
   }, [autoSortStatus, userFlags, refreshAlbums]);
 
-  const handlePictureHack = useCallback((prompt: string) => {
-    try {
-      if (!prompt.trim()) {
-        Alert.alert('Invalid Input', 'Please enter a search prompt.');
-        return;
-      }
-
-      router.push({
-        pathname: '/new-sort',
-        params: { prompt: prompt.trim() }
-      });
-    } catch (error: any) {
-      console.error('Navigation error:', error);
-      Alert.alert('Navigation Error', 'Failed to navigate to new sort. Please try again.');
-    }
-  }, []);
-
   const handleAlbumPress = useCallback((album: Album) => {
     try {
       if (!album?.id) {
@@ -124,7 +106,12 @@ export default function HomeScreen() {
 
   const handleNewSort = useCallback(() => {
     try {
-      router.push('/new-sort');
+      // TODO: Implement chat-based sorting instead of navigating to new-sort
+      Alert.alert(
+        'AI Sorting',
+        'Please use the chat overlay at the bottom of the screen for AI-powered sorting.',
+        [{ text: 'OK' }]
+      );
     } catch (error: any) {
       console.error('New sort navigation error:', error);
       Alert.alert('Navigation Error', 'Failed to navigate to new sort. Please try again.');
@@ -198,7 +185,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView 
-        style={styles.scrollView} 
+        style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -210,15 +197,8 @@ export default function HomeScreen() {
         }
       >
         <Animated.View entering={FadeInUp.delay(100)} style={styles.header}>
-          <Text style={styles.title}>SortPort</Text>
+          <Text style={styles.title}>SortxPort</Text>
           <Text style={styles.subtitle}>Your agentic photo organization companion</Text>
-        </Animated.View>
-
-        <Animated.View entering={FadeInUp.delay(200)}>
-          <PictureHackBar 
-            onSubmit={handlePictureHack}
-            disabled={isLoadingAlbums || isRefreshing}
-          />
         </Animated.View>
 
         {/* Auto-Sort Status */}
@@ -316,7 +296,7 @@ export default function HomeScreen() {
             <Text style={styles.activityText}>
               {userFlags.hasPurchasedCredits 
                 ? 'Auto-sort is keeping your photos organized in the background!'
-                : 'Try the Picture Hack feature above to sort your photos with AI!'
+                : 'Try the AI chat below to sort your photos with AI!'
               }
             </Text>
           </View>
