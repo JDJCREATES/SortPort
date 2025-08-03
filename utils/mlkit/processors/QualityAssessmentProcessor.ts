@@ -48,7 +48,7 @@ export class QualityAssessmentProcessor {
    */
   private async analyzeImageQuality(imagePath: string): Promise<QualityScores> {
     try {
-      console.log(`🏷️ Getting ML Kit data for quality assessment: ${imagePath}`);
+      // console.log(`🏷️ Getting ML Kit data for quality assessment: ${imagePath}`);
       
       // Get image labels from ML Kit
       const labelResults = await runImageLabeling([imagePath]);

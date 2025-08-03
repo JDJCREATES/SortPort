@@ -56,7 +56,7 @@ export class FaceDetectionProcessor {
         let mlkitPath: string;
         try {
           mlkitPath = ImagePathHelper.convertToMLKitPath(imagePath);
-          console.log(`📁 Converted path for ML Kit: ${mlkitPath}`);
+          // console.log(`📁 Converted path for ML Kit: ${mlkitPath}`);
           
           // Validate the converted path
           if (!mlkitPath || mlkitPath.length === 0) {
@@ -69,7 +69,7 @@ export class FaceDetectionProcessor {
         }
 
         // Use the official ML Kit API
-        console.log(`🔍 Calling ML Kit face detection with: ${mlkitPath}`);
+        // console.log(`🔍 Calling ML Kit face detection with: ${mlkitPath}`);
         const results = await FaceDetection.detect(mlkitPath, {
           performanceMode: 'accurate',
           landmarkMode: this.config.enableLandmarks ? 'all' : 'none',

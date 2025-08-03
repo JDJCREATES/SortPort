@@ -340,7 +340,8 @@ export class MLKitManager {
         metadata: {
           mlkit_analysis: analysisResult.analysis,
           processing_info: analysisResult.analysis.metadata
-        }
+        },
+        has_text: analysisResult.analysis.text.hasText
       };
 
       // Update the virtual_image record

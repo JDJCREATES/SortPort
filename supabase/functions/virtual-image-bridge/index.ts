@@ -31,6 +31,23 @@ interface CreateVirtualImagesRequest {
     contentType?: string
     s3Key?: string // Add S3 key for tracking
     uploadOrder?: number // Add upload order for correlation
+    mlkit_data?: {
+      virtual_tags: string[]
+      detected_objects: string[]
+      emotion_detected: string[]
+      activity_detected: string[]
+      detected_faces_count: number
+      quality_score: number | null
+      brightness_score: number | null
+      blur_score: number | null
+      aesthetic_score: number | null
+      scene_type: string | null
+      image_orientation: string | null
+      has_text: boolean
+      caption?: string
+      vision_summary?: string
+      metadata?: any
+    }
   }[]
 }
 
@@ -127,18 +144,17 @@ function getLCELConfig() {
 }
 
 // Create virtual images via LCEL server
-async function createVirtualImagesViaLCEL(
+// Create virtual images directly in Supabase database
+async function createVirtualImagesDirectly(
   images: CreateVirtualImagesRequest['images'],
   userId: string,
   jobId: string,
   requestId: string
 ): Promise<{ success: boolean; data?: any[]; error?: string }> {
-  const config = getLCELConfig()
   
   try {
-    console.log(`📡 [${requestId}] Creating ${images.length} virtual images via LCEL server`)
+    console.log(`� [${requestId}] Creating ${images.length} virtual images directly in Supabase database`)
     
-    // Create a service JWT token for authentication
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
@@ -147,154 +163,112 @@ async function createVirtualImagesViaLCEL(
     }
     
     const supabase = createClient(supabaseUrl, supabaseKey);
-    console.log(`🔧 [${requestId}] Supabase client initialized for relationships storage`);
     
-    // Get user data for token creation
+    // Validate user exists
     const { data: userData } = await supabase.auth.admin.getUserById(userId);
     if (!userData.user) {
       throw new Error('User not found');
     }
     
-    // Create service token with user context
-    const payload = {
-      userId,
-      jobId,
-      images: images.map((img, index) => ({
-        user_id: userId, // Add user_id for LCEL server validation
+    // Prepare virtual image records for database insertion
+    const virtualImageRecords = images.map((img, index) => {
+      const baseRecord = {
+        user_id: userId,
         original_path: img.imagePath,
         original_name: img.originalFileName || 'unknown.jpg',
-        hash: `bulk-${jobId}-${img.imagePath.split('/').pop()}`, // Generate hash from path
-        fileSize: img.fileSize,
-        mimeType: img.contentType || 'image/jpeg',
+        hash: `bulk-${jobId}-${img.imagePath.split('/').pop()}`,
         metadata: {
           source: 'bulk-upload',
           jobId,
           s3Key: img.s3Key,
-          uploadOrder: img.uploadOrder || index
+          uploadOrder: img.uploadOrder || index,
+          mlkit_analysis: img.mlkit_data?.metadata || null
         }
-      }))
+      };
+
+      // 🧠 INTEGRATE ML KIT DATA if available
+      if (img.mlkit_data) {
+        console.log(`🧠 [${requestId}] Adding ML Kit data for image ${index + 1}: ${img.originalFileName}`);
+        return {
+          ...baseRecord,
+          // ML Kit mapped fields
+          virtual_tags: img.mlkit_data.virtual_tags || [],
+          detected_objects: img.mlkit_data.detected_objects || [],
+          emotion_detected: img.mlkit_data.emotion_detected || [],
+          activity_detected: img.mlkit_data.activity_detected || [],
+          detected_faces_count: img.mlkit_data.detected_faces_count || 0,
+          quality_score: img.mlkit_data.quality_score,
+          brightness_score: img.mlkit_data.brightness_score,
+          blur_score: img.mlkit_data.blur_score,
+          aesthetic_score: img.mlkit_data.aesthetic_score,
+          scene_type: img.mlkit_data.scene_type,
+          image_orientation: img.mlkit_data.image_orientation,
+          has_text: img.mlkit_data.has_text || false,
+          caption: img.mlkit_data.caption,
+          vision_summary: img.mlkit_data.vision_summary
+        };
+      }
+
+      console.log(`📋 [${requestId}] Creating basic record for image ${index + 1}: ${img.originalFileName}`);
+      return baseRecord;
+    });
+    
+    console.log(`� [${requestId}] Inserting ${virtualImageRecords.length} virtual images into database`);
+    
+    // Insert virtual images into database
+    const { data: insertedVirtualImages, error: insertError } = await supabase
+      .from('virtual_image')
+      .insert(virtualImageRecords)
+      .select('id, original_path, virtual_name');
+    
+    if (insertError) {
+      console.error(`❌ [${requestId}] Failed to insert virtual images:`, insertError);
+      throw new Error(`Database insertion failed: ${insertError.message}`);
     }
     
-    const fullUrl = `${config.baseUrl}${config.endpoints.createVirtualImages}`;
-    console.log(`🌐 [${requestId}] Making request to: ${fullUrl}`);
-    console.log(`📝 [${requestId}] Payload contains ${payload.images.length} images`);
-    
-    try {
-      const response = await fetch(fullUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-          'X-User-ID': userId,
-          'X-Job-ID': jobId
-        },
-        body: JSON.stringify(payload)
-      });
-      
-      console.log(`📡 [${requestId}] Response status: ${response.status}`);
-      console.log(`📡 [${requestId}] Response headers:`, Object.fromEntries(response.headers.entries()));
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ [${requestId}] LCEL server error response: ${errorText}`);
-        throw new Error(`LCEL server error: ${response.status} - ${errorText}`);
-      }
-      
-      const result = await response.json();
-      console.log(`✅ [${requestId}] LCEL server response:`, result);
-      console.log(`✅ [${requestId}] Created ${result.data?.successful || 0} virtual images`);
-      
-      // CRITICAL: Store job-virtual image relationships using database IDs
-      console.log(`🔍 [${requestId}] Checking response structure:`, {
-        hasData: !!result.data,
-        hasImages: !!result.data?.images,
-        imagesIsArray: Array.isArray(result.data?.images),
-        imagesLength: result.data?.images?.length || 0,
-        sampleImage: result.data?.images?.[0] ? {
-          id: result.data.images[0].id,
-          hasId: !!result.data.images[0].id
-        } : null
-      });
-      
-      if (result.data?.images && Array.isArray(result.data.images)) {
-        try {
-          console.log(`🔗 [${requestId}] Storing ${result.data.images.length} job-virtual image relationships`);
-          
-          // Validate that we have valid virtual image IDs
-          const validVirtualImages = result.data.images.filter((vi: any) => vi && vi.id);
-          if (validVirtualImages.length !== result.data.images.length) {
-            console.warn(`⚠️ [${requestId}] Some virtual images missing IDs: ${validVirtualImages.length}/${result.data.images.length} valid`);
-          }
-          
-          if (validVirtualImages.length === 0) {
-            console.error(`❌ [${requestId}] No valid virtual images with IDs found - cannot create relationships`);
-            return { success: true, data: result.data?.images || [] };
-          }
-          
-          const relationships = validVirtualImages.map((virtualImage: any, index: number) => {
-            const originalImageData = images[index];
-            const relationship = {
-              job_id: jobId,
-              virtual_image_id: virtualImage.id,
-              s3_key: originalImageData?.s3Key || null,
-              upload_order: originalImageData?.uploadOrder !== undefined ? originalImageData.uploadOrder : index
-            };
-            
-            console.log(`🔗 [${requestId}] Creating relationship ${index}: virtualImageId=${virtualImage.id}, s3Key=${relationship.s3_key}, uploadOrder=${relationship.upload_order}`);
-            return relationship;
-          });
-          
-          console.log(`💾 [${requestId}] Inserting ${relationships.length} relationships into bulk_job_virtual_images table`);
-          
-          const { data: insertedData, error: relationshipError } = await supabase
-            .from('bulk_job_virtual_images')
-            .insert(relationships)
-            .select('*');
-            
-          if (relationshipError) {
-            console.error(`❌ [${requestId}] Failed to store job-virtual image relationships:`, {
-              error: relationshipError,
-              message: relationshipError.message,
-              details: relationshipError.details,
-              hint: relationshipError.hint
-            });
-            // Don't fail the entire operation, but log the issue
-          } else {
-            console.log(`✅ [${requestId}] Successfully stored ${insertedData?.length || relationships.length} job-virtual image relationships`);
-            console.log(`🔍 [${requestId}] Sample stored relationship:`, insertedData?.[0]);
-          }
-        } catch (relationshipStoreError) {
-          console.error(`❌ [${requestId}] Exception storing relationships:`, {
-            error: relationshipStoreError,
-            message: relationshipStoreError instanceof Error ? relationshipStoreError.message : String(relationshipStoreError),
-            stack: relationshipStoreError instanceof Error ? relationshipStoreError.stack : undefined
-          });
-          // Don't fail the entire operation
-        }
-      } else {
-        console.error(`❌ [${requestId}] Cannot store relationships - invalid response structure:`, {
-          hasData: !!result.data,
-          hasImages: !!result.data?.images,
-          imagesType: typeof result.data?.images,
-          isArray: Array.isArray(result.data?.images)
-        });
-      }
-      
-      return { success: true, data: result.data?.images || [] };
-      
-    } catch (fetchError) {
-      console.error(`🌐 [${requestId}] Fetch error details:`, {
-        url: fullUrl,
-        error: fetchError instanceof Error ? fetchError.message : String(fetchError),
-        stack: fetchError instanceof Error ? fetchError.stack : undefined
-      });
-      throw fetchError;
+    if (!insertedVirtualImages || insertedVirtualImages.length === 0) {
+      throw new Error('No virtual images were created');
     }
+    
+    console.log(`✅ [${requestId}] Successfully created ${insertedVirtualImages.length} virtual images`);
+    
+    // Store job-virtual image relationships
+    const relationships = insertedVirtualImages.map((virtualImage: any, index: number) => {
+      const originalImageData = images[index];
+      return {
+        job_id: jobId,
+        virtual_image_id: virtualImage.id,
+        s3_key: originalImageData?.s3Key || null,
+        upload_order: originalImageData?.uploadOrder !== undefined ? originalImageData.uploadOrder : index
+      };
+    });
+    
+    console.log(`🔗 [${requestId}] Creating ${relationships.length} job-virtual image relationships`);
+    
+    const { data: insertedRelationships, error: relationshipError } = await supabase
+      .from('bulk_job_virtual_images')
+      .insert(relationships)
+      .select('*');
+    
+    if (relationshipError) {
+      console.error(`❌ [${requestId}] Failed to store job-virtual image relationships:`, relationshipError);
+      // Don't fail the entire operation, just warn
+      console.warn(`⚠️ [${requestId}] Virtual images created but relationships may be missing`);
+    } else {
+      console.log(`✅ [${requestId}] Successfully stored ${insertedRelationships?.length || 0} job relationships`);
+    }
+    
+    return {
+      success: true,
+      data: insertedVirtualImages
+    };
     
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    console.error(`❌ [${requestId}] Failed to create virtual images:`, errorMessage)
-    return { success: false, error: errorMessage }
+    console.error(`❌ [${requestId}] Error creating virtual images directly:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
   }
 }
 
@@ -556,7 +530,7 @@ async function handleCreateVirtualImages(
   console.log(`🚀 [${requestId}] Starting virtual image creation via LCEL server...`)
 
   // Create virtual images via LCEL server
-  const result = await createVirtualImagesViaLCEL(
+  const result = await createVirtualImagesDirectly(
     body.images,
     body.userId,
     body.jobId,

@@ -13,7 +13,7 @@ export function useMLKitImageLabeling() {
   const processImage = useCallback(async (imagePath: string): Promise<ImageLabel[]> => {
     try {
       setIsLoading(true);
-      console.log(`🏷️ Processing image for labels with ML Kit: ${imagePath}`);
+      // console.log(`🏷️ Processing image for labels with ML Kit: ${imagePath}`);
       
       // Use the processor function which uses official ML Kit
       const results = await runImageLabeling([imagePath]);

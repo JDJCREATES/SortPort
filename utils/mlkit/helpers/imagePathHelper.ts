@@ -18,8 +18,8 @@ export class ImagePathHelper {
     // Trim and clean the path
     let cleanPath = imagePath.trim();
     
-    // Log original path for debugging
-    console.log(`🔧 Converting path: ${imagePath}`);
+    // Log original path for debugging (commented out to reduce spam)
+    // console.log(`🔧 Converting path: ${imagePath}`);
     
     // Check for obvious corruption patterns in UUID-based filenames
     const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -30,7 +30,7 @@ export class ImagePathHelper {
       const uuidMatches = cleanPath.match(uuidPattern);
       if (uuidMatches) {
         const extractedUuid = uuidMatches[0];
-        console.log(`🔍 Detected UUID in path: ${extractedUuid}`);
+        // console.log(`🔍 Detected UUID in path: ${extractedUuid}`);
         
         // Check for common corruption patterns (missing characters)
         if (extractedUuid.length !== 36) {
@@ -79,7 +79,7 @@ export class ImagePathHelper {
       console.warn(`Converted: ${finalPath}`);
     }
     
-    console.log(`✅ Converted to: ${finalPath}`);
+    // console.log(`✅ Converted to: ${finalPath}`);
     return finalPath;
   }
 

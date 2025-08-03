@@ -171,15 +171,18 @@ export interface VirtualImageMLUpdate {
   // Counts
   detected_faces_count: number;     // From face analysis
   
-  // Scores (0.0 - 1.0)
-  quality_score: number;           
-  brightness_score: number;        
-  blur_score: number;             
-  aesthetic_score: number;        
+  // Scores (0.0 - 1.0) - nullable for database compatibility
+  quality_score: number | null;           
+  brightness_score: number | null;        
+  blur_score: number | null;             
+  aesthetic_score: number | null;        
   
-  // Scene info
-  scene_type: string;              // Primary scene
-  image_orientation: string;       // Orientation
+  // Scene info - nullable for database compatibility
+  scene_type: string | null;              // Primary scene
+  image_orientation: string | null;       // Orientation
+  
+  // Text detection
+  has_text: boolean;                      // Whether text was detected
   
   // Optional text content
   caption?: string;                // Generated from analysis
@@ -189,6 +192,8 @@ export interface VirtualImageMLUpdate {
   metadata: {
     mlkit_analysis: MLKitAnalysisResult['analysis'];
     processing_info: AnalysisMetadata;
+    mapping_version?: string;
+    mapped_at?: string;
   };
 }
 

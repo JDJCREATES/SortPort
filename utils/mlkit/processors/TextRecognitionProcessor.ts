@@ -42,7 +42,7 @@ export class TextRecognitionProcessor {
         let mlkitPath: string;
         try {
           mlkitPath = ImagePathHelper.convertToMLKitPath(imagePath);
-          console.log(`📁 Converted path for ML Kit: ${mlkitPath}`);
+          // console.log(`📁 Converted path for ML Kit: ${mlkitPath}`);
           
           // Validate the converted path
           if (!mlkitPath || mlkitPath.length === 0) {
@@ -55,7 +55,7 @@ export class TextRecognitionProcessor {
         }
 
         // Use the official ML Kit text recognition API
-        console.log(`🔍 Calling ML Kit text recognition with: ${mlkitPath}`);
+        // console.log(`🔍 Calling ML Kit text recognition with: ${mlkitPath}`);
         const result = await TextRecognition.recognize(mlkitPath);
 
         if (!result || !result.text) {

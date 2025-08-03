@@ -48,7 +48,7 @@ export async function runImageLabeling(uris: string[]): Promise<Record<string, {
         const imagePath = pathResult.convertedPath!;
 
         // Use the official ML Kit image labeling API
-        console.log(`🔍 Calling ML Kit with validated path: ${imagePath}`);
+        // console.log(`🔍 Calling ML Kit with validated path: ${imagePath}`);
         const labels = await ImageLabeling.label(imagePath);
 
         // Convert to our format
