@@ -272,6 +272,154 @@ async function createVirtualImagesDirectly(
   }
 }
 
+// Update virtual images directly in Supabase database
+async function updateVirtualImagesDirectly(
+  updates: UpdateVirtualImagesRequest['updates'],
+  jobId: string,
+  userId: string,
+  requestId: string
+): Promise<{ success: boolean; data?: any[]; error?: string }> {
+  
+  try {
+    console.log(`🔄 [${requestId}] Updating ${updates.length} virtual images directly in Supabase database`)
+    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing Supabase environment variables');
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    const updatedImages = [];
+    let successful = 0;
+    let failed = 0;
+    
+    // Process each update individually for better error handling
+    for (const update of updates) {
+      try {
+        if (!update.virtualImageId) {
+          console.warn(`⚠️ [${requestId}] Skipping update with missing virtualImageId`);
+          failed++;
+          continue;
+        }
+        
+        // Build update object using object spread and filter approach
+        const baseUpdate = {
+          updated_at: new Date().toISOString()
+        };
+        
+        const nsfwUpdate = {
+          ...(update.isNsfw !== undefined && update.isNsfw !== null && { is_nsfw: update.isNsfw }),
+          ...(update.confidenceScore !== undefined && update.confidenceScore !== null && { nsfw_confidence: update.confidenceScore }),
+          ...(update.moderationLabels && Array.isArray(update.moderationLabels) && update.moderationLabels.length > 0 && { nsfw_labels: update.moderationLabels })
+        };
+        
+        const rekognitionUpdate = update.fullRekognitionData ? {
+          has_full_rekognition_data: true,
+          full_rekognition_data: update.fullRekognitionData
+        } : {};
+        
+        // Handle comprehensive fields with nested spread
+        const mlkitUpdate = update.comprehensiveFields ? Object.entries({
+          virtual_tags: update.comprehensiveFields.virtual_tags,
+          detected_objects: update.comprehensiveFields.detected_objects,
+          emotion_detected: update.comprehensiveFields.emotion_detected,
+          activity_detected: update.comprehensiveFields.activity_detected,
+          detected_faces_count: update.comprehensiveFields.detected_faces_count,
+          quality_score: update.comprehensiveFields.quality_score,
+          brightness_score: update.comprehensiveFields.brightness_score,
+          blur_score: update.comprehensiveFields.blur_score,
+          aesthetic_score: update.comprehensiveFields.aesthetic_score,
+          scene_type: update.comprehensiveFields.scene_type,
+          image_orientation: update.comprehensiveFields.image_orientation,
+          caption: update.comprehensiveFields.caption,
+          vision_summary: update.comprehensiveFields.vision_summary,
+          nsfw_score: update.comprehensiveFields.nsfw_score,
+          isflagged: update.comprehensiveFields.isflagged,
+          rekognition_data: update.comprehensiveFields.rekognition_data,
+          dominant_colors: update.comprehensiveFields.dominant_colors
+        }).reduce((acc, [key, value]) => {
+          if (value !== undefined && value !== null && 
+              (typeof value !== 'string' || value.trim() !== '') &&
+              (!Array.isArray(value) || value.length > 0)) {
+            acc[key] = value;
+          }
+          return acc;
+        }, {} as Record<string, any>) : {};
+        
+        // Combine all updates
+        const finalUpdate = {
+          ...baseUpdate,
+          ...nsfwUpdate,
+          ...rekognitionUpdate,
+          ...mlkitUpdate
+        };
+        
+        // Skip if only timestamp
+        if (Object.keys(finalUpdate).length <= 1) {
+          console.warn(`⚠️ [${requestId}] No fields to update for virtual image ${update.virtualImageId}`);
+          failed++;
+          continue;
+        }
+        
+        console.log(`🔄 [${requestId}] Updating virtual image ${update.virtualImageId} with ${Object.keys(finalUpdate).length} fields`);
+        
+        // Perform the update
+        const { data: updatedRecord, error: updateError } = await supabase
+          .from('virtual_image')
+          .update(finalUpdate)
+          .eq('id', update.virtualImageId)
+          .eq('user_id', userId)
+          .select('id, original_path, virtual_name, is_nsfw, has_full_rekognition_data')
+          .single();
+        
+        if (updateError) {
+          console.error(`❌ [${requestId}] Failed to update virtual image ${update.virtualImageId}:`, updateError);
+          failed++;
+          continue;
+        }
+        
+        if (!updatedRecord) {
+          console.warn(`⚠️ [${requestId}] No record found or access denied for virtual image ${update.virtualImageId}`);
+          failed++;
+          continue;
+        }
+        
+        updatedImages.push({
+          success: true,
+          imageId: update.virtualImageId,
+          imagePath: update.imagePath || updatedRecord.original_path,
+          virtualImageId: updatedRecord.id,
+          type: update.fullRekognitionData ? 'full-rekognition' : 'partial-update'
+        });
+        
+        successful++;
+        console.log(`✅ [${requestId}] Successfully updated virtual image ${update.virtualImageId}`);
+        
+      } catch (updateError) {
+        console.error(`❌ [${requestId}] Exception updating virtual image ${update.virtualImageId}:`, updateError);
+        failed++;
+      }
+    }
+    
+    console.log(`✅ [${requestId}] Direct update completed: ${successful} successful, ${failed} failed`);
+    
+    return {
+      success: successful > 0,
+      data: updatedImages
+    };
+    
+  } catch (error) {
+    console.error(`❌ [${requestId}] Direct update function failed:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
 // Update virtual images via LCEL server
 async function updateVirtualImagesViaLCEL(
   updates: UpdateVirtualImagesRequest['updates'],
@@ -638,10 +786,10 @@ async function handleUpdateVirtualImages(
       }
       
       try {
-        const batchResult = await updateVirtualImagesViaLCEL(
+        const batchResult = await updateVirtualImagesDirectly(
           batch,
           body.jobId,
-          body.userId || undefined, // NEW: Ensure proper undefined handling
+          body.userId || '', // Provide empty string as fallback
           `${requestId}-batch-${batchNumber}`
         );
         
@@ -683,10 +831,10 @@ async function handleUpdateVirtualImages(
     console.log(`🔄 [${requestId}] Processing ${body.updates.length} updates in single batch`);
     
     try {
-      const result = await updateVirtualImagesViaLCEL(
+      const result = await updateVirtualImagesDirectly(
         body.updates,
         body.jobId,
-        body.userId || undefined, // NEW: Ensure proper undefined handling
+        body.userId || '', // Provide empty string as fallback
         requestId
       );
 

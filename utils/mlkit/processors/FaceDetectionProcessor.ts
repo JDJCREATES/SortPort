@@ -88,7 +88,7 @@ export class FaceDetectionProcessor {
           };
         }
 
-        // Convert ML Kit results to our format
+        // Convert ML Kit results to our format with FULL data extraction
         const detectedFaces: DetectedFace[] = results.map((face: any) => {
           const emotions: EmotionClassification[] = [];
           
@@ -106,8 +106,27 @@ export class FaceDetectionProcessor {
             emotions.push({ emotion: 'neutral', confidence: 0.7 });
           }
 
+          // 🆕 Extract landmarks (if available)
+          const landmarks: any[] = [];
+          if (face.landmarks && Array.isArray(face.landmarks)) {
+            face.landmarks.forEach((landmark: any) => {
+              landmarks.push({
+                type: landmark.type || 'unknown',
+                position: {
+                  x: landmark.position?.x || 0,
+                  y: landmark.position?.y || 0
+                }
+              });
+            });
+          }
+
           return {
             boundingBox: face.boundingBox || { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 },
+            // 🆕 Add head pose data
+            headEulerAngleY: face.headEulerAngleY || 0,
+            headEulerAngleZ: face.headEulerAngleZ || 0,
+            // 🆕 Add landmarks
+            landmarks: landmarks.length > 0 ? landmarks : undefined,
             leftEyeOpenProbability: Math.max(0, Math.min(1, face.leftEyeOpenProbability || 0.5)),
             rightEyeOpenProbability: Math.max(0, Math.min(1, face.rightEyeOpenProbability || 0.5)),
             smilingProbability: Math.max(0, Math.min(1, face.smilingProbability || 0.5)),

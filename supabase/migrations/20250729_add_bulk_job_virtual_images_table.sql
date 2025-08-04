@@ -80,6 +80,7 @@ SECURITY DEFINER
 AS $$
 DECLARE
     deleted_count INTEGER := 0;
+    rows_affected INTEGER;
 BEGIN
     -- Delete relationships where the job no longer exists
     DELETE FROM bulk_job_virtual_images 
@@ -91,7 +92,8 @@ BEGIN
     DELETE FROM bulk_job_virtual_images 
     WHERE virtual_image_id NOT IN (SELECT id FROM virtual_image);
     
-    GET DIAGNOSTICS deleted_count = deleted_count + ROW_COUNT;
+    GET DIAGNOSTICS rows_affected = ROW_COUNT;
+    deleted_count := deleted_count + rows_affected;
     
     -- Delete relationships for jobs older than 30 days that are completed/failed
     DELETE FROM bulk_job_virtual_images 
@@ -101,7 +103,8 @@ BEGIN
         AND created_at < NOW() - INTERVAL '30 days'
     );
     
-    GET DIAGNOSTICS deleted_count = deleted_count + ROW_COUNT;
+    GET DIAGNOSTICS rows_affected = ROW_COUNT;
+    deleted_count := deleted_count + rows_affected;
     
     RETURN deleted_count;
 END;
@@ -147,6 +150,7 @@ END;
 $$;
 
 -- Create trigger on nsfw_bulk_jobs deletion
+DROP TRIGGER IF EXISTS trigger_nsfw_bulk_jobs_delete_cleanup ON nsfw_bulk_jobs;
 CREATE TRIGGER trigger_nsfw_bulk_jobs_delete_cleanup
     AFTER DELETE ON nsfw_bulk_jobs
     FOR EACH ROW
@@ -165,6 +169,7 @@ END;
 $$;
 
 -- Create trigger on virtual_image deletion
+DROP TRIGGER IF EXISTS trigger_virtual_image_delete_cleanup ON virtual_image;
 CREATE TRIGGER trigger_virtual_image_delete_cleanup
     AFTER DELETE ON virtual_image
     FOR EACH ROW

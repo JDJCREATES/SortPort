@@ -7,15 +7,12 @@
 import request from 'supertest';
 import { app } from '../index';
 import TestHelpers from './test-helpers';
-import { virtualImageManager } from '../lib/imageProcessing/virtual_image_manager';
 import { sortingDispatcher } from '../lib/langchain/index';
 
 // Mock dependencies
 jest.mock('../lib/supabase/client');
-jest.mock('../lib/imageProcessing/virtual_image_manager');
 jest.mock('../lib/langchain/index');
 
-const mockVirtualImageManager = virtualImageManager as jest.Mocked<typeof virtualImageManager>;
 const mockSortingDispatcher = sortingDispatcher as jest.Mocked<typeof sortingDispatcher>;
 
 describe('Performance Tests', () => {
@@ -28,9 +25,6 @@ describe('Performance Tests', () => {
     // Setup default mocks
     mockSortingDispatcher.dispatch.mockResolvedValue(
       TestHelpers.createMockSortResponse()
-    );
-    mockVirtualImageManager.processImage.mockResolvedValue(
-      TestHelpers.createMockVirtualImage()
     );
   });
 

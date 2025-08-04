@@ -21,7 +21,6 @@ import { sortRoutes } from './routes/sort';
 import { healthRoutes } from './routes/health';
 import monitoringRoutes from './routes/monitoring';
 import lcelSortRoutes from './routes/lcel_sort';
-import virtualImagesRoutes from './routes/virtual_images';
 
 // Import middleware
 import { errorHandler } from './middleware/errorHandler';
@@ -87,7 +86,6 @@ app.use('/api/monitoring', monitoringRoutes);
 // Protected routes (require auth)
 app.use('/api/sort', authMiddleware, productionSecurity.getCostBasedRateLimit(), sortRoutes);
 app.use('/api/lcel', authMiddleware, productionSecurity.getCostBasedRateLimit(), lcelSortRoutes); // LCEL system
-app.use('/api/virtual-images', virtualImagesRoutes); // Virtual images with flexible auth (webhook + protected routes)
 
 // 404 handler
 app.use('*', (req, res) => {

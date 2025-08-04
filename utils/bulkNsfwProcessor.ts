@@ -971,49 +971,138 @@ export class BulkNSFWProcessor {
           console.log('⏳ Waiting for database records to be committed...');
           await new Promise(resolve => setTimeout(resolve, 3000));
           
-          // Query the database directly to get recent virtual_image records
-          const { data: virtualImages, error: queryError } = await supabase
-            .from('virtual_image')
-            .select('id, original_path, original_name, hash, virtual_name')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-            .limit(imageUris.length * 2); // Get more than needed
+          // Create mapping that will be populated by either approach
+          const virtualImagesByOrder = new Map<number, any>();
+          
+          // First, check if bulk_job_virtual_images table exists and has data
+          const { data: relationshipCheck, error: checkError } = await supabase
+            .from('bulk_job_virtual_images')
+            .select('*')
+            .eq('job_id', jobId)
+            .limit(5);
+          
+          if (checkError) {
+            console.error('❌ bulk_job_virtual_images table not accessible:', checkError);
+            console.log('📋 Falling back to metadata-based matching...');
+            
+            // FALLBACK: Query virtual_image table directly using metadata
+            const { data: virtualImages, error: directQueryError } = await supabase
+              .from('virtual_image')
+              .select('id, original_path, original_name, hash, virtual_name, metadata')
+              .eq('user_id', userId)
+              .order('created_at', { ascending: false })
+              .limit(imageUris.length * 2);
+            
+            if (directQueryError) {
+              console.error('❌ Failed to query virtual_image directly:', directQueryError);
+              throw directQueryError;
+            }
+            
+            console.log(`🔍 Found ${virtualImages?.length || 0} recent virtual images for fallback matching`);
+            
+            // Create mapping using metadata jobId if available
+            virtualImages?.forEach(vimg => {
+              // Check if metadata contains our jobId
+              if (vimg.metadata && typeof vimg.metadata === 'object') {
+                const metadata = vimg.metadata as any;
+                if (metadata.jobId === jobId || metadata.processingJobId === jobId) {
+                  // Try to extract upload order from metadata or S3 key pattern
+                  let uploadOrder = metadata.uploadOrder;
+                  if (uploadOrder === undefined && vimg.original_path) {
+                    // Try to extract order from S3 path pattern like "batch-0-image-0007.jpg"
+                    const orderMatch = vimg.original_path.match(/image-(\d+)/);
+                    if (orderMatch) {
+                      uploadOrder = parseInt(orderMatch[1], 10);
+                    }
+                  }
+                  if (uploadOrder !== undefined) {
+                    virtualImagesByOrder.set(uploadOrder, vimg);
+                  }
+                }
+              }
+            });
+            
+            console.log(`🗺️ Created fallback mapping for ${virtualImagesByOrder.size} virtual images by metadata`);
+            
+          } else {
+            console.log(`✅ Found ${relationshipCheck?.length || 0} relationships in bulk_job_virtual_images`);
+            
+            // Use the relationship table (original approach)
+            const { data: jobRelationships, error: relationshipError } = await supabase
+              .from('bulk_job_virtual_images')
+              .select('virtual_image_id, upload_order')
+              .eq('job_id', jobId)
+              .order('upload_order', { ascending: true });
 
-          if (queryError) {
-            console.error('❌ Failed to query virtual_image records:', queryError);
-            throw queryError;
+            if (relationshipError) {
+              console.error('❌ Failed to query job relationships:', relationshipError);
+              throw relationshipError;
+            }
+            
+            // Get virtual image details for the related IDs
+            const virtualImageIds = jobRelationships?.map(rel => rel.virtual_image_id) || [];
+            const { data: virtualImages, error: virtualImageError } = await supabase
+              .from('virtual_image')
+              .select('id, original_path, original_name, hash, virtual_name')
+              .in('id', virtualImageIds);
+            
+            if (virtualImageError) {
+              console.error('❌ Failed to query virtual images:', virtualImageError);
+              throw virtualImageError;
+            }
+            
+            // Create mapping from upload order to virtual image data
+            jobRelationships?.forEach(rel => {
+              const vimg = virtualImages?.find(vi => vi.id === rel.virtual_image_id);
+              if (vimg && rel.upload_order !== null) {
+                virtualImagesByOrder.set(rel.upload_order, vimg);
+              }
+            });
+            
+            console.log(`🔍 Found ${jobRelationships?.length || 0} job relationships for ML Kit update`);
+            console.log(`🗺️ Created mapping for ${virtualImagesByOrder.size} virtual images by upload order`);
           }
-
-          console.log(`🔍 Found ${virtualImages?.length || 0} recent virtual_image records for ML Kit update`);
+          
+          // DEBUG: Log first few mappings to understand the structure
+          if (virtualImagesByOrder.size > 0) {
+            console.log(`🔍 Sample virtual image mappings:`);
+            for (let [order, vimg] of Array.from(virtualImagesByOrder.entries()).slice(0, 3)) {
+              console.log(`  Order ${order}: ID=${vimg.id}, path=${vimg.original_path}`);
+            }
+          }
+          
+          // DEBUG: Log first few original URIs to compare
+          console.log(`🔍 Sample original URIs (first 3):`);
+          imageUris.slice(0, 3).forEach((uri, index) => {
+            console.log(`  Index ${index}: ${uri}`);
+          });
           
           // Update virtual_image table with ML Kit results for each processed image
           let updatedCount = 0;
-          for (const [originalUri, analysis] of mlKitResults) {
+          for (let i = 0; i < imageUris.length; i++) {
+            const originalUri = imageUris[i];
+            const analysis = mlKitResults.get(originalUri);
+            
+            if (!analysis) {
+              console.warn(`⚠️ No ML Kit analysis found for ${originalUri}`);
+              continue;
+            }
+            
             try {
-              // Find matching virtual_image record by comparing paths
-              const compressedUri = this.compressionCache.get(originalUri) || originalUri;
+              // Use upload order (image index) to find the corresponding virtual image
+              const virtualImageRecord = virtualImagesByOrder.get(i);
               
-              const matchingRecord = virtualImages?.find(record => {
-                const originalFilename = originalUri.split('/').pop() || '';
-                const compressedFilename = compressedUri.split('/').pop() || '';
-                
-                return record.original_path === originalUri ||
-                       record.original_path === compressedUri ||
-                       record.original_path?.includes(originalFilename) ||
-                       record.original_path?.includes(compressedFilename) ||
-                       record.original_name?.includes(originalFilename) ||
-                       record.hash?.includes(originalFilename);
-              });
-              
-              if (matchingRecord) {
-                await mlKitInstance.updateImageWithAnalysis(matchingRecord.id, analysis, userId);
+              if (virtualImageRecord) {
+                console.log(`🔗 Updating virtual image ${virtualImageRecord.id} at order ${i} with ML Kit data`);
+                await mlKitInstance.updateImageWithAnalysis(virtualImageRecord.id, analysis, userId);
                 updatedCount++;
-                console.log(`✅ Updated ML Kit data: ${originalUri} → ${matchingRecord.id}`);
+                console.log(`✅ Updated ML Kit data: ${originalUri} → ${virtualImageRecord.id} (order: ${i})`);
               } else {
-                console.warn(`⚠️ Could not find virtual_image record for ${originalUri}`);
-                if (virtualImages && virtualImages.length > 0) {
-                  console.log(`   Available paths (first 3): ${virtualImages.slice(0, 3).map(r => r.original_path).join(', ')}`);
-                }
+                console.warn(`⚠️ Could not find virtual_image record for upload order ${i} (${originalUri})`);
+                console.log(`🗺️ Available upload orders: ${Array.from(virtualImagesByOrder.keys()).slice(0, 10).join(', ')}`);
+                
+                // DEBUG: Show what orders are actually available vs what we're looking for
+                console.log(`🔍 Mapping debug: Looking for order ${i}, have orders: ${Array.from(virtualImagesByOrder.keys()).sort((a, b) => a - b).join(', ')}`);
               }
             } catch (updateError) {
               console.warn(`⚠️ Failed to update ML Kit data for ${originalUri}:`, updateError);
