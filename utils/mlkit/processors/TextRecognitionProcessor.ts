@@ -29,8 +29,6 @@ export class TextRecognitionProcessor {
    */
   public async processImage(imagePath: string): Promise<TextAnalysis> {
     try {
-      console.log(`📝 Processing image for text: ${imagePath}`);
-
       // Validate input
       if (!imagePath || typeof imagePath !== 'string' || imagePath.trim().length === 0) {
         console.warn('⚠️ Invalid image path provided for text recognition');

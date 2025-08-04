@@ -56,7 +56,6 @@ export class MLKitProcessingHelper {
         const result = await operation();
         const totalTime = Date.now() - startTime;
         
-        console.log(`✅ ${operationName} succeeded on attempt ${attempt} in ${totalTime}ms`);
         return {
           success: true,
           data: result,

@@ -30,11 +30,7 @@ export class SceneAnalysisProcessor {
    */
   public async processImage(imagePath: string): Promise<SceneAnalysis> {
     try {
-      console.log(`🎬 Processing image for scene analysis: ${imagePath}`);
-      
       const sceneAnalysis = await this.analyzeImageScene(imagePath);
-      
-      console.log(`✅ Scene analysis complete - Primary: ${sceneAnalysis.primaryScene}, Environment: ${sceneAnalysis.environment}`);
       return sceneAnalysis;
 
     } catch (error) {
@@ -48,13 +44,9 @@ export class SceneAnalysisProcessor {
    */
   private async analyzeImageScene(imagePath: string): Promise<SceneAnalysis> {
     try {
-      console.log(`🏷️ Getting image labels for scene analysis: ${imagePath}`);
-      
       // Get image labels from ML Kit
       const labelResults = await runImageLabeling([imagePath]);
       const labels = labelResults[imagePath] || [];
-      
-      console.log(`📊 Found ${labels.length} labels for scene analysis`);
       
       if (labels.length === 0) {
         console.warn('⚠️ No labels found, using fallback scene analysis');
@@ -152,9 +144,6 @@ export class SceneAnalysisProcessor {
     const pathHash = this.simpleHash(imagePath);
     const orientation = (pathHash % 3 === 0) ? 'portrait' : 
                        (pathHash % 3 === 1) ? 'landscape' : 'square';
-
-    console.log(`🎯 Scene interpreted from labels: ${labels.join(', ')}`);
-    console.log(`📊 Scene: ${primaryScene}, Environment: ${environment}, Activities: ${activities.join(', ')}`);
 
     return {
       primaryScene,

@@ -332,7 +332,7 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
       // Basic result fields
       image_path: imagePath,
       image_id: imageId,
-      is_nsfw: isNsfw,
+      isflagged: isNsfw,
       confidence_score: maxConfidence / 100,
       moderation_labels: moderationLabels.map((label: any) => ({
         Name: label.Name || '',
@@ -355,8 +355,7 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
       full_rekognition_data: fullRekognitionData,
       
       // NSFW specific fields
-      nsfw_score: maxConfidence / 100,
-      isflagged: isNsfw
+      nsfw_score: maxConfidence / 100
     }
 
     results.push(result)

@@ -311,14 +311,13 @@ async function updateVirtualImagesDirectly(
         };
         
         const nsfwUpdate = {
-          ...(update.isNsfw !== undefined && update.isNsfw !== null && { is_nsfw: update.isNsfw }),
-          ...(update.confidenceScore !== undefined && update.confidenceScore !== null && { nsfw_confidence: update.confidenceScore }),
-          ...(update.moderationLabels && Array.isArray(update.moderationLabels) && update.moderationLabels.length > 0 && { nsfw_labels: update.moderationLabels })
+          ...(update.isNsfw !== undefined && update.isNsfw !== null && { isflagged: update.isNsfw }),
+          ...(update.confidenceScore !== undefined && update.confidenceScore !== null && { nsfw_score: update.confidenceScore })
+    
         };
         
         const rekognitionUpdate = update.fullRekognitionData ? {
-          has_full_rekognition_data: true,
-          full_rekognition_data: update.fullRekognitionData
+          rekognition_data: update.fullRekognitionData
         } : {};
         
         // Handle comprehensive fields with nested spread
@@ -338,7 +337,7 @@ async function updateVirtualImagesDirectly(
           vision_summary: update.comprehensiveFields.vision_summary,
           nsfw_score: update.comprehensiveFields.nsfw_score,
           isflagged: update.comprehensiveFields.isflagged,
-          rekognition_data: update.comprehensiveFields.rekognition_data,
+          // REMOVED: rekognition_data from here to prevent override
           dominant_colors: update.comprehensiveFields.dominant_colors
         }).reduce((acc, [key, value]) => {
           if (value !== undefined && value !== null && 
@@ -356,6 +355,21 @@ async function updateVirtualImagesDirectly(
           ...rekognitionUpdate,
           ...mlkitUpdate
         };
+
+        // SAFETY: Remove any is_nsfw field that might have accidentally been included
+        // Virtual_image table should only use isflagged, not is_nsfw
+        if ('is_nsfw' in finalUpdate) {
+          console.warn(`⚠️ [${requestId}] Removing is_nsfw field from update for ${update.virtualImageId} - using isflagged instead`);
+          delete finalUpdate.is_nsfw;
+        }
+
+        // Debug rekognition data preservation
+        console.log(`🔍 [${requestId}] Rekognition data check for ${update.virtualImageId}:`, {
+          hasFullRekognitionData: !!update.fullRekognitionData,
+          rekognitionDataInFinal: !!finalUpdate.rekognition_data,
+          rekognitionDataKeys: finalUpdate.rekognition_data ? Object.keys(finalUpdate.rekognition_data) : [],
+          finalUpdateKeys: Object.keys(finalUpdate)
+        });
         
         // Skip if only timestamp
         if (Object.keys(finalUpdate).length <= 1) {
@@ -372,7 +386,7 @@ async function updateVirtualImagesDirectly(
           .update(finalUpdate)
           .eq('id', update.virtualImageId)
           .eq('user_id', userId)
-          .select('id, original_path, virtual_name, is_nsfw, has_full_rekognition_data')
+          .select('id, original_path, virtual_name, isflagged, rekognition_data')
           .single();
         
         if (updateError) {

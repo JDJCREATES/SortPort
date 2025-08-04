@@ -26,8 +26,6 @@ export function useMLKitImageLabeling() {
         index
       }));
 
-      console.log(`✅ ML Kit found ${imageLabels.length} labels`);
-      console.log(`📊 Labels: ${imageLabels.map(l => `${l.text}(${(l.confidence * 100).toFixed(1)}%)`).join(', ')}`);
       return imageLabels;
 
     } catch (error) {

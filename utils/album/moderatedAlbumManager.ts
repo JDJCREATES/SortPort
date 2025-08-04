@@ -223,10 +223,9 @@ export class ModeratedAlbumManager {
         const moderationResult = moderationResults[image.id];
         
         return {
-          id: generateUUID(),
+          // Remove manual ID generation - let DB handle it with gen_random_uuid()
           user_id: userId,
-          image_id: image.id,
-          folder_id: image.folderId || 'unknown',
+          image_id: image.id, // Keep as string, DB will cast to UUID
           is_nsfw: true,
           moderation_labels: moderationResult ? {
             confidence_score: moderationResult.confidence_score || 0,
@@ -238,11 +237,11 @@ export class ModeratedAlbumManager {
         };
       });
 
-      // Insert new moderated image records
+      // Insert new moderated image records with proper UUID handling
       const { error: insertError } = await supabase
         .from('moderated_images')
         .upsert(moderatedImageRecords, { 
-          onConflict: 'user_id,image_id',
+          onConflict: 'image_id', // Use single field to avoid type conflicts
           ignoreDuplicates: false
         });
 

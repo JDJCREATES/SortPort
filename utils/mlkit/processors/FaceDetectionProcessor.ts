@@ -38,8 +38,6 @@ export class FaceDetectionProcessor {
    */
   public async processImage(imagePath: string): Promise<FaceAnalysis> {
     try {
-      console.log(`😊 Processing image for faces: ${imagePath}`);
-      
       // Validate input
       if (!imagePath || typeof imagePath !== 'string' || imagePath.trim().length === 0) {
         console.warn('⚠️ Invalid image path provided for face detection');
@@ -56,7 +54,6 @@ export class FaceDetectionProcessor {
         let mlkitPath: string;
         try {
           mlkitPath = ImagePathHelper.convertToMLKitPath(imagePath);
-          // console.log(`📁 Converted path for ML Kit: ${mlkitPath}`);
           
           // Validate the converted path
           if (!mlkitPath || mlkitPath.length === 0) {
@@ -78,7 +75,6 @@ export class FaceDetectionProcessor {
         });
 
         if (!results || !Array.isArray(results)) {
-          console.log('✅ No faces detected in image');
           return {
             faces: [],
             count: 0,
@@ -134,12 +130,15 @@ export class FaceDetectionProcessor {
           };
         });
 
-        // Extract unique emotions
+        // Extract unique emotions and analyze face characteristics
         const allEmotions = new Set<string>();
         let totalAge = 0;
         let maleCount = 0;
         let femaleCount = 0;
         let ageCount = 0;
+        let totalHeadPoseVariation = 0;
+        let facesWithGlasses = 0;
+        let facesWithBeard = 0;
 
         for (const face of detectedFaces) {
           if (face.emotions) {
@@ -150,8 +149,17 @@ export class FaceDetectionProcessor {
             }
           }
           
-          // Note: Gender and age detection would require additional ML Kit features
-          // For now, we'll leave these undefined
+          // 🆕 Extract additional face characteristics from ML Kit
+          // Head pose analysis
+          if (face.headEulerAngleY !== undefined || face.headEulerAngleZ !== undefined) {
+            const yaw = Math.abs(face.headEulerAngleY || 0);
+            const roll = Math.abs(face.headEulerAngleZ || 0);
+            totalHeadPoseVariation += yaw + roll;
+          }
+
+          // 🆕 TODO: Extract classification data when available
+          // ML Kit Face Detection can provide: age range, gender, glasses, beard, etc.
+          // These would come from face.classifications if enabled
         }
 
         const faceAnalysis: FaceAnalysis = {
@@ -162,10 +170,6 @@ export class FaceDetectionProcessor {
           genderDistribution: (maleCount > 0 || femaleCount > 0) ? { male: maleCount, female: femaleCount } : undefined
         };
 
-        console.log(`✅ ML Kit found ${detectedFaces.length} faces with ${allEmotions.size} distinct emotions`);
-        if (detectedFaces.length > 0) {
-          console.log(`📊 Emotions detected: ${Array.from(allEmotions).join(', ')}`);
-        }
         return faceAnalysis;
 
       } catch (mlError) {

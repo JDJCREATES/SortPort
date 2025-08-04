@@ -118,11 +118,9 @@ export class MLKitManager {
     this.activeProcessing.add(imageId);
 
     try {
-      console.log(`🔍 Starting comprehensive ML Kit analysis for image: ${imageId}`);
       const startTime = Date.now();
 
       // Validate file before processing
-      console.log(`🔍 Validating file accessibility: ${imagePath}`);
       const validationResult = await FileValidator.validateFile(imagePath);
       
       if (!validationResult.accessible) {
@@ -138,8 +136,6 @@ export class MLKitManager {
         
         throw new Error(`File validation failed: ${validationResult.error}`);
       }
-      
-      console.log(`✅ File validation passed for ${imageId} (${validationResult.size} bytes)`);
 
       // Cache image for processing
       let processImagePath = imagePath;
@@ -208,8 +204,6 @@ export class MLKitManager {
       // Update database with results (only if not skipped)
       if (!options.skipDatabaseUpdate) {
         await this.updateVirtualImageDatabase(imageId, analysisResult, userId);
-      } else {
-        console.log(`⏭️ Skipping database update for temporary processing of ${imageId}`);
       }
 
       // Clean up cache if configured
@@ -217,7 +211,6 @@ export class MLKitManager {
         await this.cache.clearImage(imageId);
       }
 
-      console.log(`✅ ML Kit analysis completed for ${imageId} in ${processingTime}ms`);
       return analysisResult;
 
     } catch (error) {
@@ -356,7 +349,6 @@ export class MLKitManager {
         throw error;
       }
 
-      console.log(`✅ Updated virtual_image record for ${imageId}`);
     } catch (error) {
       console.error(`❌ Error updating database for image ${imageId}:`, error);
       throw error;

@@ -29,15 +29,15 @@ export class BulkNSFWProcessor {
   private static readonly UPLOAD_TIMEOUT_MS = 180000;
   private static readonly MAX_RETRIES = 2;
   
-  // 🚀 OPTIMIZED SETTINGS for faster uploading
+  // 🚀 PRODUCTION-READY SETTINGS for reliable uploading
   private static currentSettings: ProcessingSettings = {
-    compressionWorkers: 8,
-    uploadStreams: 12,            // Keep parallel uploads high
-    batchSize: 12,                // Reduced for faster individual batch processing
-    compressionQuality: 0.7,
+    compressionWorkers: 6,        // Reduced for stability
+    uploadStreams: 4,             // Reduced to prevent overwhelming server
+    batchSize: 3,                 // VERY small batches for network reliability (was 5)
+    compressionQuality: 0.6,      // Higher compression for smaller files
     maxImageSize: 512,
     cacheSize: 100,
-    enableAggressive: true,
+    enableAggressive: false,      // Disabled for production stability
     memoryWarningThreshold: 1536
   };
   
@@ -558,6 +558,14 @@ export class BulkNSFWProcessor {
 
       // REDUCED LOGGING: Summary logging instead of per-image logging
       console.log(`✅ FormData prepared: ${successfulImages}/${batchUris.length} images`);
+      
+      // Estimate FormData size for diagnostics
+      const estimatedSizeMB = Math.round(successfulImages * 2.5); // ~2.5MB per compressed image
+      console.log(`📊 Estimated FormData size: ~${estimatedSizeMB}MB`);
+      
+      if (estimatedSizeMB > 50) {
+        console.warn(`⚠️ Large FormData detected (${estimatedSizeMB}MB) - this might cause network issues`);
+      }
 
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) {
@@ -570,12 +578,26 @@ export class BulkNSFWProcessor {
       const functionUrl = this.getSupabaseFunctionUrl('bulk-nsfw-upload');
       console.log(`🔗 Uploading to: ${functionUrl}`);
 
+      // Quick connectivity test before large upload
+      try {
+        const healthCheck = await fetch(functionUrl.replace('bulk-nsfw-upload', 'bulk-nsfw-upload'), {
+          method: 'HEAD',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          signal: AbortSignal.timeout(5000) // 5 second timeout for health check
+        });
+        console.log(`✅ Connectivity check: ${healthCheck.status}`);
+      } catch (healthError) {
+        console.warn(`⚠️ Connectivity check failed, proceeding anyway:`, healthError instanceof Error ? healthError.message : String(healthError));
+      }
+
       const controller = new AbortController();
       
       // OPTIMIZATION: Dynamic timeout based on batch size - smaller batches get shorter timeouts
       const baseTimeout = this.UPLOAD_TIMEOUT_MS;
       const dynamicTimeout = batchUris.length <= 3 ? 
-        Math.min(baseTimeout, 60000) : // Small batches: max 60 seconds
+        Math.min(baseTimeout, 90000) : // Small batches: 90 seconds (increased from 60)
         baseTimeout; // Normal batches: full timeout
       
       const timeoutId = setTimeout(() => {
@@ -587,6 +609,8 @@ export class BulkNSFWProcessor {
       
       try {
         console.log(`🚀 Starting upload for batch ${batchIndex + 1}...`);
+        console.log(`🔧 Request details: ${batchUris.length} images, timeout: ${dynamicTimeout}ms, FormData size estimate: ~${Math.round(batchUris.length * 2)}MB`);
+        
         const response = await fetch(functionUrl, {
           method: 'POST',
           headers: {
@@ -659,11 +683,21 @@ export class BulkNSFWProcessor {
         
         if (error instanceof Error) {
           if (error.name === 'AbortError') {
-            throw new Error(`Upload timeout after ${this.UPLOAD_TIMEOUT_MS}ms`);
+            throw new Error(`Upload timeout after ${dynamicTimeout}ms - batch ${batchIndex + 1} (${batchUris.length} images)`);
           }
           
           if (error.message === 'Network request failed') {
-            throw new Error(`Network request failed - check internet connection and server status`);
+            // Add more diagnostic info for network failures
+            const diagnostics = {
+              batchSize: batchUris.length,
+              timeout: dynamicTimeout,
+              uploadTime,
+              functionUrl: functionUrl.substring(0, 50) + '...',
+              hasSession: !!session?.access_token,
+              retryAttempt: retryCount + 1
+            };
+            console.error(`🔍 Network failure diagnostics:`, diagnostics);
+            throw new Error(`Network request failed - batch ${batchIndex + 1}: ${JSON.stringify(diagnostics)}`);
           }
           
           throw error;

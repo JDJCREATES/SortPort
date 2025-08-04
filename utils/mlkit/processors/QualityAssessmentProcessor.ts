@@ -30,11 +30,7 @@ export class QualityAssessmentProcessor {
    */
   public async processImage(imagePath: string): Promise<QualityScores> {
     try {
-      console.log(`⭐ Processing image for quality: ${imagePath}`);
-      
       const qualityScores = await this.analyzeImageQuality(imagePath);
-
-      console.log(`✅ Quality analysis complete - Overall: ${(qualityScores.overall * 100).toFixed(1)}%`);
       return qualityScores;
 
     } catch (error) {
@@ -48,13 +44,9 @@ export class QualityAssessmentProcessor {
    */
   private async analyzeImageQuality(imagePath: string): Promise<QualityScores> {
     try {
-      // console.log(`🏷️ Getting ML Kit data for quality assessment: ${imagePath}`);
-      
       // Get image labels from ML Kit
       const labelResults = await runImageLabeling([imagePath]);
       const labels = labelResults[imagePath] || [];
-      
-      console.log(`📊 Found ${labels.length} labels for quality assessment`);
       
       // Extract quality indicators from labels
       const qualityIndicators = this.extractQualityFromLabels(labels);
@@ -78,6 +70,8 @@ export class QualityAssessmentProcessor {
     aestheticScore: number;
     brightnessScore: number;
     compositionScore: number;
+    colorScore: number;
+    contentScore: number;
   } {
     const labelTexts = labels.map(label => label.text.toLowerCase());
     const avgConfidence = labels.length > 0 ? labels.reduce((sum, label) => sum + label.confidence, 0) / labels.length : 0.5;
@@ -124,14 +118,44 @@ export class QualityAssessmentProcessor {
     if (labelTexts.some(label => compositionPositive.some(indicator => label.includes(indicator)))) {
       compositionScore = Math.min(1.0, compositionScore + 0.2);
     }
+
+    // 🆕 Color analysis from labels
+    const colorfulIndicators = ['colorful', 'vibrant', 'rainbow', 'bright colors', 'vivid'];
+    const monochomeIndicators = ['black and white', 'monochrome', 'grayscale', 'sepia'];
+    let colorScore = avgConfidence;
+    
+    if (labelTexts.some(label => colorfulIndicators.some(indicator => label.includes(indicator)))) {
+      colorScore = Math.min(1.0, colorScore + 0.2);
+    }
+    if (labelTexts.some(label => monochomeIndicators.some(indicator => label.includes(indicator)))) {
+      colorScore = 0.4; // Not bad, just different style
+    }
+
+    // 🆕 Content complexity/interest score
+    const interestingContent = ['people', 'animals', 'food', 'nature', 'architecture', 'sports', 'events', 'celebration'];
+    const boringContent = ['wall', 'floor', 'ceiling', 'empty', 'plain', 'blank'];
+    let contentScore = avgConfidence;
+    
+    const interestingCount = labelTexts.filter(label => 
+      interestingContent.some(content => label.includes(content))
+    ).length;
+    
+    const boringCount = labelTexts.filter(label => 
+      boringContent.some(content => label.includes(content))
+    ).length;
+    
+    contentScore = Math.min(1.0, contentScore + (interestingCount * 0.1) - (boringCount * 0.15));
     
     console.log(`🎨 Quality from labels - Sharpness: ${sharpnessScore.toFixed(2)}, Aesthetic: ${aestheticScore.toFixed(2)}`);
+    console.log(`🌈 Color: ${colorScore.toFixed(2)}, Content: ${contentScore.toFixed(2)}, Composition: ${compositionScore.toFixed(2)}`);
     
     return {
       sharpnessScore,
       aestheticScore,
       brightnessScore,
-      compositionScore
+      compositionScore,
+      colorScore,
+      contentScore
     };
   }
 
@@ -139,7 +163,14 @@ export class QualityAssessmentProcessor {
    * Calculate final quality scores
    */
   private calculateQualityScores(
-    indicators: { sharpnessScore: number; aestheticScore: number; brightnessScore: number; compositionScore: number },
+    indicators: { 
+      sharpnessScore: number; 
+      aestheticScore: number; 
+      brightnessScore: number; 
+      compositionScore: number;
+      colorScore: number;
+      contentScore: number;
+    },
     imagePath: string
   ): QualityScores {
     // Base scores from ML Kit analysis
@@ -147,20 +178,29 @@ export class QualityAssessmentProcessor {
     let aesthetic = indicators.aestheticScore;
     let brightness = indicators.brightnessScore;
     let composition = indicators.compositionScore;
+    let colorScore = indicators.colorScore;
+    let contentScore = indicators.contentScore;
     
     // Ensure scores are within bounds
     sharpness = Math.max(0, Math.min(1, sharpness));
     aesthetic = Math.max(0, Math.min(1, aesthetic));
     brightness = Math.max(0, Math.min(1, brightness));
     composition = Math.max(0, Math.min(1, composition));
+    colorScore = Math.max(0, Math.min(1, colorScore));
+    contentScore = Math.max(0, Math.min(1, contentScore));
     
-    // Calculate overall score
-    const overall = (sharpness * 0.3 + aesthetic * 0.3 + brightness * 0.2 + composition * 0.2);
+    // 🆕 Enhanced overall score calculation with all factors
+    const overall = (
+      sharpness * 0.25 + 
+      aesthetic * 0.25 + 
+      brightness * 0.15 + 
+      composition * 0.15 +
+      colorScore * 0.1 +
+      contentScore * 0.1
+    );
     
     // Blur is inverse of sharpness
     const blur = 1 - sharpness;
-    
-    console.log(`📊 Final quality scores - Overall: ${overall.toFixed(2)}, Sharpness: ${sharpness.toFixed(2)}, Aesthetic: ${aesthetic.toFixed(2)}`);
     
     return {
       overall,
@@ -168,9 +208,9 @@ export class QualityAssessmentProcessor {
       blur,
       aesthetic,
       sharpness,
-      contrast: brightness, // Use brightness as proxy for contrast
+      contrast: Math.min(1, (brightness + sharpness) / 2), // Better contrast estimation
       exposure: brightness,
-      saturation: aesthetic // Use aesthetic as proxy for saturation
+      saturation: colorScore // Use color score for saturation
     };
   }
 

@@ -22,13 +22,9 @@ export async function runImageLabeling(uris: string[]): Promise<Record<string, {
   const results: Record<string, { text: string; confidence: number }[]> = {};
 
   try {
-    console.log('🏷️ Starting image labeling process...');
-
     // Process each image with the official ML Kit package
     for (const uri of uris) {
       try {
-        console.log(`🏷️ Processing image: ${uri}`);
-        
         // Validate input URI
         if (!uri || typeof uri !== 'string' || uri.trim().length === 0) {
           console.warn(`⚠️ Invalid URI provided: ${uri}`);
@@ -48,7 +44,6 @@ export async function runImageLabeling(uris: string[]): Promise<Record<string, {
         const imagePath = pathResult.convertedPath!;
 
         // Use the official ML Kit image labeling API
-        // console.log(`🔍 Calling ML Kit with validated path: ${imagePath}`);
         const labels = await ImageLabeling.label(imagePath);
 
         // Convert to our format
@@ -58,7 +53,6 @@ export async function runImageLabeling(uris: string[]): Promise<Record<string, {
         }));
 
         results[uri] = processedLabels;
-        console.log(`✅ Found ${processedLabels.length} labels for ${uri}`);
         
       } catch (error) {
         // Use centralized error handling
@@ -99,8 +93,6 @@ export class ImageLabelingProcessor {
    */
   public async processImage(imagePath: string): Promise<ImageLabel[]> {
     try {
-      console.log(`🏷️ Processing image for labels: ${imagePath}`);
-      
       // Use the processing helper with retry logic
       const result = await MLKitProcessingHelper.executeWithRetry(
         async () => {

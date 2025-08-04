@@ -504,13 +504,14 @@ function isHealthCheck(req: Request): boolean {
 
 // Main handler with timeout
 async function handleRequest(req: Request): Promise<Response> {
-  // Handle health check requests
+  // Handle health check requests first - no auth required
   if (isHealthCheck(req)) {
-    console.log('🏥 Health check request received');
+    console.log('🏥 Health check request received - bypassing auth');
     return new Response(JSON.stringify({
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      service: 'bulk-nsfw-upload'
+      service: 'bulk-nsfw-upload',
+      version: '1.0.0'
     }), {
       status: 200,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
@@ -523,6 +524,8 @@ async function handleRequest(req: Request): Promise<Response> {
   let isNewSession: boolean = false;
   
   console.log(`🚀 [${requestId}] Received ${req.method} request to bulk-nsfw-upload`);
+  console.log(`🔍 [${requestId}] Request URL: ${req.url}`);
+  console.log(`🔍 [${requestId}] Request Headers:`, Object.fromEntries(req.headers.entries()));
   
   try {
     // Handle CORS
