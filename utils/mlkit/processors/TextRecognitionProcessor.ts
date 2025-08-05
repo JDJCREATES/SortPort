@@ -57,7 +57,8 @@ export class TextRecognitionProcessor {
         const result = await TextRecognition.recognize(mlkitPath);
 
         if (!result || !result.text) {
-          console.warn('⚠️ No text found in image');
+          // PRODUCTION: Reduced logging - only errors
+          // No text found in image
           return {
             fullText: '',
             blocks: [],

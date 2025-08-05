@@ -5,7 +5,7 @@ import { HardwareProfiler, HardwareProfile, ProcessingSettings } from './hardwar
 import { DynamicPerformanceAdjuster, PerformanceMetrics } from './performance/dynamicPerformanceAdjuster';
 
 /**
- *  🌐 Handles preparing and sending files through edge functions on supabase, into AWS Rekognition, 
+ *  🌐 Handles preparing and sending files through edge functions on supabase, into AWS Rekognition 
  */
 
 export interface BulkProcessingProgress {
@@ -28,6 +28,10 @@ export class BulkNSFWProcessor {
   private static readonly MAX_POLL_TIME_MS = 10 * 60 * 1000;
   private static readonly UPLOAD_TIMEOUT_MS = 180000;
   private static readonly MAX_RETRIES = 2;
+  
+  // 📏 SUPABASE PAYLOAD LIMITS
+  private static readonly MAX_SUPABASE_PAYLOAD_MB = 49; // Supabase limit minus 1MB safety buffer
+  private static readonly MAX_SUPABASE_PAYLOAD_BYTES = 49 * 1024 * 1024;
   
   // 🚀 PRODUCTION-READY SETTINGS for reliable uploading
   private static currentSettings: ProcessingSettings = {
@@ -75,8 +79,6 @@ export class BulkNSFWProcessor {
    */
   private static async initializeHardwareOptimization(): Promise<void> {
     try {
-      console.log('🔍 Initializing NATIVE hardware optimization...');
-      
       this.hardwareProfile = await HardwareProfiler.getHardwareProfile();
       
       // Override with optimized settings while respecting hardware profiler recommendations
@@ -88,14 +90,6 @@ export class BulkNSFWProcessor {
         enableAggressive: true
       };
       
-      console.log('⚡ NATIVE-optimized settings:', {
-        tier: this.hardwareProfile.deviceTier,
-        workers: this.currentSettings.compressionWorkers,
-        streams: this.currentSettings.uploadStreams,
-        batchSize: this.currentSettings.batchSize,
-        aggressive: this.currentSettings.enableAggressive
-      });
-      
       // Start memory monitoring
       HardwareProfiler.startMemoryMonitoring(
         (availableMB) => this.handleMemoryWarning(availableMB),
@@ -103,7 +97,7 @@ export class BulkNSFWProcessor {
       );
       
     } catch (error) {
-      console.error('❌ Native optimization failed, using safe defaults:', error);
+      console.error('❌ Hardware optimization failed, using safe defaults:', error);
       this.currentSettings = {
         compressionWorkers: 4,
         uploadStreams: 2,
@@ -187,6 +181,41 @@ export class BulkNSFWProcessor {
   }
 
   /**
+   * 📏 Get file size in bytes
+   */
+  private static async getFileSize(uri: string): Promise<number> {
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      return fileInfo.exists ? (fileInfo.size || 0) : 0;
+    } catch (error) {
+      console.warn(`⚠️ Failed to get file size for ${uri}:`, error);
+      return 0;
+    }
+  }
+
+  /**
+   * 📊 Calculate total size of multiple files
+   */
+  private static async calculateTotalSize(uris: string[]): Promise<{ totalSizeBytes: number; totalSizeMB: number; avgSizeBytes: number }> {
+    const sizes = await Promise.all(uris.map(uri => this.getFileSize(uri)));
+    const totalSizeBytes = sizes.reduce((sum, size) => sum + size, 0);
+    const totalSizeMB = totalSizeBytes / (1024 * 1024);
+    const avgSizeBytes = totalSizeBytes / uris.length;
+    
+    return { totalSizeBytes, totalSizeMB, avgSizeBytes };
+  }
+
+  /**
+   * 🔍 Format file size for logging
+   */
+  private static formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GB`;
+  }
+
+  /**
    * 🚀 NATIVE: Ultra-fast image compression using react-native-image-resizer - FIXED: Better cache management
    */
   private static async compressImageNative(uri: string): Promise<string> {
@@ -230,6 +259,33 @@ export class BulkNSFWProcessor {
 
       // FIXED: Cache the result BEFORE checking cache size
       this.compressionCache.set(uri, result.uri);
+      
+      // VERIFICATION: Ensure the compressed file actually exists and has content
+      try {
+        const compressedFileInfo = await FileSystem.getInfoAsync(result.uri);
+        if (!compressedFileInfo.exists) {
+          console.warn(`⚠️ Compressed file doesn't exist: ${result.uri}, falling back to original`);
+          this.compressionCache.set(uri, uri);
+          return uri;
+        }
+        
+        const compressedSize = compressedFileInfo.exists && 'size' in compressedFileInfo ? compressedFileInfo.size : 0;
+        if (compressedSize === 0) {
+          console.warn(`⚠️ Compressed file is empty: ${result.uri}, falling back to original`);
+          this.compressionCache.set(uri, uri);
+          return uri;
+        }
+        
+        // Log compression success (only in development)
+        if (process.env.NODE_ENV === 'development' && Math.random() < 0.1) { // Log 10% of compressions
+          console.log(`✅ Compressed: ${uri.substring(uri.lastIndexOf('/') + 1)} -> ${this.formatFileSize(compressedSize)}`);
+        }
+        
+      } catch (verifyError) {
+        console.warn(`⚠️ Failed to verify compressed file: ${result.uri}, falling back to original`);
+        this.compressionCache.set(uri, uri);
+        return uri;
+      }
       
       // FIXED: Only clear cache if we're significantly over limit and not actively uploading
       if (this.compressionCache.size > this.currentSettings.cacheSize * 2) {
@@ -282,7 +338,10 @@ export class BulkNSFWProcessor {
     workerId: number, 
     onComplete: () => void
   ): Promise<void> {
-    console.log(`🔧 Native worker ${workerId} started`);
+    // Only log in debug mode - reduced production logging
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🔧 Native worker ${workerId} started`);
+    }
     
     while (this.compressionQueue.length > 0 && this.isProcessing) {
       // Dynamic throttling check
@@ -306,12 +365,17 @@ export class BulkNSFWProcessor {
         const compressedUri = await this.compressImageNative(uri);
         
         // Cache management
-        
         this.compressionCache.set(uri, compressedUri);
-        this.compressionCacheReverse.set(compressedUri, uri); // OPTIMIZATION: Store reverse mapping
+        
+        // FIXED: Only set reverse mapping if compression actually succeeded (different URIs)
+        if (compressedUri !== uri) {
+          this.compressionCacheReverse.set(compressedUri, uri); // OPTIMIZATION: Store reverse mapping
+        }
+        
         if (this.compressionCache.size > this.currentSettings.cacheSize) {
           this.clearOldCache();
-        }        onComplete();
+        }
+        onComplete();
         
       } catch (error) {
         console.error(`❌ Native worker ${workerId} compression failed for ${uri}:`, error);
@@ -325,7 +389,6 @@ export class BulkNSFWProcessor {
       const delay = this.shouldThrottle ? 50 : 10;
       await new Promise(resolve => setTimeout(resolve, delay));
     }
-    
   }
 
   /**
@@ -336,7 +399,9 @@ export class BulkNSFWProcessor {
     userId: string,
     onProgress?: (uploaded: number, total: number) => void
   ): Promise<{ jobId: string, bucketName: string, totalUploaded: number }> {
-    console.log(`🔥 Starting ENHANCED upload stream for ${imageUris.length} images`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🔥 Starting ENHANCED upload stream for ${imageUris.length} images`);
+    }
     
     // FIXED: Session tracking with validation
     let sessionJobId: string | null = null;
@@ -382,8 +447,24 @@ export class BulkNSFWProcessor {
       
       const compressedBatch = batch.map(uri => this.compressionCache.get(uri) || uri);
       
+      // DEBUGGING: Check compression cache status for this batch
+      const cacheHits = batch.filter(uri => this.compressionCache.has(uri)).length;
+      const cacheMisses = batch.length - cacheHits;
+      console.log(`🔍 Batch ${i + 1} cache status: ${cacheHits}/${batch.length} hits, ${cacheMisses} misses`);
+      
+      if (cacheMisses > 0) {
+        console.warn(`⚠️ Missing compressed images for batch ${i + 1}:`);
+        batch.forEach((uri, idx) => {
+          if (!this.compressionCache.has(uri)) {
+            console.warn(`❌ Missing: ${uri.substring(uri.lastIndexOf('/') + 1)} -> using original`);
+          }
+        });
+      }
+      
       try {
-        console.log(`🚀 Processing batch ${i + 1}/${batches.length} (${compressedBatch.length} images)...`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🚀 Processing batch ${i + 1}/${batches.length} (${compressedBatch.length} images)...`);
+        }
         
         const result = await this.uploadBatchWithRetry(compressedBatch, userId, i, batches.length);
         
@@ -559,12 +640,37 @@ export class BulkNSFWProcessor {
       // REDUCED LOGGING: Summary logging instead of per-image logging
       console.log(`✅ FormData prepared: ${successfulImages}/${batchUris.length} images`);
       
-      // Estimate FormData size for diagnostics
-      const estimatedSizeMB = Math.round(successfulImages * 2.5); // ~2.5MB per compressed image
-      console.log(`📊 Estimated FormData size: ~${estimatedSizeMB}MB`);
+      // 📏 VALIDATE PAYLOAD SIZE BEFORE UPLOAD - FIXED: Debug compressed file existence
+      console.log(`🔍 Debugging batch ${batchIndex + 1} compressed files:`);
+      for (let i = 0; i < Math.min(3, batchUris.length); i++) {
+        const compressedUri = batchUris[i];
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(compressedUri);
+          const size = fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 0;
+          console.log(`🔍 File ${i + 1}: ${compressedUri.substring(compressedUri.lastIndexOf('/') + 1)} - exists: ${fileInfo.exists}, size: ${size || 0}B`);
+        } catch (error) {
+          console.log(`🔍 File ${i + 1}: ${compressedUri.substring(compressedUri.lastIndexOf('/') + 1)} - ERROR: ${error}`);
+        }
+      }
       
-      if (estimatedSizeMB > 50) {
-        console.warn(`⚠️ Large FormData detected (${estimatedSizeMB}MB) - this might cause network issues`);
+      const batchSizes = await this.calculateTotalSize(batchUris);
+      const estimatedFormDataSizeBytes = batchSizes.totalSizeBytes + (successfulImages * 1024); // Add overhead for form fields
+      const estimatedFormDataSizeMB = estimatedFormDataSizeBytes / (1024 * 1024);
+      
+      console.log(`📊 Batch ${batchIndex + 1} size analysis: ${this.formatFileSize(batchSizes.totalSizeBytes)} raw + overhead = ${this.formatFileSize(estimatedFormDataSizeBytes)} (${estimatedFormDataSizeMB.toFixed(1)}MB)`);
+      
+      if (estimatedFormDataSizeBytes > this.MAX_SUPABASE_PAYLOAD_BYTES) {
+        const errorMsg = `❌ Batch ${batchIndex + 1} exceeds Supabase limit: ${estimatedFormDataSizeMB.toFixed(1)}MB > ${this.MAX_SUPABASE_PAYLOAD_MB}MB`;
+        console.error(errorMsg);
+        throw new Error(`Payload too large: ${errorMsg}`);
+      }
+      
+      console.log(`✅ Payload size validation passed: ${estimatedFormDataSizeMB.toFixed(1)}MB <= ${this.MAX_SUPABASE_PAYLOAD_MB}MB`);
+      
+      // Estimate FormData size for diagnostics (legacy logging)
+      const legacyEstimatedSizeMB = Math.round(successfulImages * 2.5); // ~2.5MB per compressed image
+      if (legacyEstimatedSizeMB > 50) {
+        console.warn(`⚠️ Legacy estimate shows large FormData (${legacyEstimatedSizeMB}MB) - but actual size is ${estimatedFormDataSizeMB.toFixed(1)}MB`);
       }
 
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -580,13 +686,18 @@ export class BulkNSFWProcessor {
 
       // Quick connectivity test before large upload
       try {
+        const healthController = new AbortController();
+        const healthTimeout = setTimeout(() => healthController.abort(), 5000); // 5 second timeout
+        
         const healthCheck = await fetch(functionUrl.replace('bulk-nsfw-upload', 'bulk-nsfw-upload'), {
           method: 'HEAD',
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
           },
-          signal: AbortSignal.timeout(5000) // 5 second timeout for health check
+          signal: healthController.signal
         });
+        
+        clearTimeout(healthTimeout);
         console.log(`✅ Connectivity check: ${healthCheck.status}`);
       } catch (healthError) {
         console.warn(`⚠️ Connectivity check failed, proceeding anyway:`, healthError instanceof Error ? healthError.message : String(healthError));
@@ -608,8 +719,10 @@ export class BulkNSFWProcessor {
       const uploadStartTime = Date.now();
       
       try {
-        console.log(`🚀 Starting upload for batch ${batchIndex + 1}...`);
-        console.log(`🔧 Request details: ${batchUris.length} images, timeout: ${dynamicTimeout}ms, FormData size estimate: ~${Math.round(batchUris.length * 2)}MB`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🚀 Starting upload for batch ${batchIndex + 1}...`);
+        }
+        console.log(`🔧 Request details: ${batchUris.length} images, timeout: ${dynamicTimeout}ms, actual FormData size: ${estimatedFormDataSizeMB.toFixed(1)}MB`);
         
         const response = await fetch(functionUrl, {
           method: 'POST',
@@ -690,6 +803,7 @@ export class BulkNSFWProcessor {
             // Add more diagnostic info for network failures
             const diagnostics = {
               batchSize: batchUris.length,
+              actualPayloadSizeMB: estimatedFormDataSizeMB.toFixed(1),
               timeout: dynamicTimeout,
               uploadTime,
               functionUrl: functionUrl.substring(0, 50) + '...',
@@ -788,6 +902,11 @@ export class BulkNSFWProcessor {
         });
       }
 
+      // 📏 ANALYZE ORIGINAL FILE SIZES
+      console.log(`📊 Analyzing original files before compression...`);
+      const originalSizes = await this.calculateTotalSize(imageUris);
+      console.log(`📊 BEFORE COMPRESSION: ${imageUris.length} files, Total: ${this.formatFileSize(originalSizes.totalSizeBytes)} (${originalSizes.totalSizeMB.toFixed(1)}MB), Avg: ${this.formatFileSize(originalSizes.avgSizeBytes)}`);
+
       // Check authentication
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (!user) {
@@ -821,6 +940,14 @@ export class BulkNSFWProcessor {
       if (compressedCount === 0) {
         throw new Error('No images were successfully compressed');
       }
+
+      // 📏 ANALYZE COMPRESSED FILE SIZES
+      console.log(`📊 Analyzing compressed files after compression...`);
+      const compressedUris = imageUris.map(uri => this.compressionCache.get(uri) || uri);
+      const compressedSizes = await this.calculateTotalSize(compressedUris);
+      const compressionRatio = ((originalSizes.totalSizeBytes - compressedSizes.totalSizeBytes) / originalSizes.totalSizeBytes * 100);
+      console.log(`📊 AFTER COMPRESSION: ${compressedUris.length} files, Total: ${this.formatFileSize(compressedSizes.totalSizeBytes)} (${compressedSizes.totalSizeMB.toFixed(1)}MB), Avg: ${this.formatFileSize(compressedSizes.avgSizeBytes)}`);
+      console.log(`📊 COMPRESSION SUMMARY: Reduced by ${this.formatFileSize(originalSizes.totalSizeBytes - compressedSizes.totalSizeBytes)} (${compressionRatio.toFixed(1)}% reduction)`);
       
       if (onProgress) {
         onProgress({
@@ -878,12 +1005,16 @@ export class BulkNSFWProcessor {
             mlKitProgress = Math.round(((i + 1) / compressedUris.length) * 100);
             
             if (onProgress) {
-              onProgress({
-                current: 40 + Math.round((mlKitProgress / 100) * 15), // 40-55% for ML Kit
-                total: 100,
-                status: 'analyzing',
-                message: `🧠 Analyzed ${i + 1}/${compressedUris.length} images with ML Kit`
-              });
+              // Only update progress every 10 images or at the end to reduce spam
+              const shouldUpdate = (i + 1) % 10 === 0 || (i + 1) === compressedUris.length;
+              if (shouldUpdate) {
+                onProgress({
+                  current: 40 + Math.round((mlKitProgress / 100) * 15), // 40-55% for ML Kit
+                  total: 100,
+                  status: 'analyzing',
+                  message: `🧠 Analyzed ${i + 1}/${compressedUris.length} images`
+                });
+              }
             }
           } catch (mlError) {
             console.warn(`⚠️ ML Kit failed for ${originalUri}:`, mlError);
@@ -891,7 +1022,10 @@ export class BulkNSFWProcessor {
           }
         }
         
-        console.log(`✅ ML Kit processing complete: ${mlKitResults.size}/${imageUris.length} images analyzed`);
+        // Only log ML Kit summary, not per-image progress
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`✅ ML Kit processing complete: ${mlKitResults.size}/${imageUris.length} images analyzed`);
+        }
         
       } catch (mlKitError) {
         console.warn('⚠️ ML Kit processing failed, continuing without analysis:', mlKitError);
@@ -928,7 +1062,7 @@ export class BulkNSFWProcessor {
 
       console.log(`🚀 NATIVE sequential processing complete: job=${jobId}, bucket=${bucketName}, uploaded=${totalUploaded}`);
 
-      // 🔥 PHASE 3: Submit for processing (single job) - ENHANCED ERROR HANDLING
+      // 🔥 PHASE 3: Submit for AWS processing
       if (onProgress) {
         onProgress({
           current: 85,
@@ -939,7 +1073,7 @@ export class BulkNSFWProcessor {
       }
 
       try {
-        console.log(`🚀 Submitting job ${jobId} to AWS Rekognition...`);
+        console.log(`� Submitting job ${jobId} to AWS Rekognition...`);
         
         const { data, error } = await supabase.functions.invoke('bulk-nsfw-submit', {
           body: {
@@ -958,15 +1092,18 @@ export class BulkNSFWProcessor {
           throw new Error('Submit failed: No response data');
         }
 
+        console.log(`✅ Successfully submitted job ${jobId} to AWS Rekognition:`, {
+          status: data.status,
+          message: data.message,
+          rekognitionJobId: data.rekognitionJobId || 'N/A'
+        });
 
       } catch (submitError: unknown) {
         console.error(`❌ Submit error details:`, submitError);
         
-        // Enhanced error handling
         const errorMessage = submitError instanceof Error ? submitError.message : String(submitError);
         
         if (errorMessage.includes('Edge Function returned a non-2xx status code')) {
-          // Try to get more details from the error
           console.error(`❌ Edge function failed - this usually means AWS Rekognition error`);
           throw new Error(`AWS Rekognition submission failed. Check server logs for details.`);
         }
@@ -986,178 +1123,21 @@ export class BulkNSFWProcessor {
       // Monitor single job
       const results = await this.monitorAllJobs([jobId], onProgress);
 
-      // 🔥 PHASE 4: Update database with ML Kit analysis results
-      if (mlKitResults.size > 0) {
-        if (onProgress) {
-          onProgress({
-            current: 95,
-            total: 100,
-            status: 'finalizing',
-            message: `🧠 Updating database with ML Kit analysis for ${mlKitResults.size} images...`
-          });
-        }
+      console.log(`✅ Bulk NSFW processing completed:`, {
+        totalImages: results.allResults?.length || 0,
+        nsfwDetected: results.totalNsfwDetected,
+        jobId: jobId,
+        note: 'NSFW updates handled by bulk-nsfw-status edge function'
+      });
 
-        try {
-          const { MLKitManager } = await import('./mlkit/MLKitManager');
-          const mlKitInstance = MLKitManager.getInstance();
-          
-          // Add a small delay to ensure database records are committed
-          console.log('⏳ Waiting for database records to be committed...');
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          
-          // Create mapping that will be populated by either approach
-          const virtualImagesByOrder = new Map<number, any>();
-          
-          // First, check if bulk_job_virtual_images table exists and has data
-          const { data: relationshipCheck, error: checkError } = await supabase
-            .from('bulk_job_virtual_images')
-            .select('*')
-            .eq('job_id', jobId)
-            .limit(5);
-          
-          if (checkError) {
-            console.error('❌ bulk_job_virtual_images table not accessible:', checkError);
-            console.log('📋 Falling back to metadata-based matching...');
-            
-            // FALLBACK: Query virtual_image table directly using metadata
-            const { data: virtualImages, error: directQueryError } = await supabase
-              .from('virtual_image')
-              .select('id, original_path, original_name, hash, virtual_name, metadata')
-              .eq('user_id', userId)
-              .order('created_at', { ascending: false })
-              .limit(imageUris.length * 2);
-            
-            if (directQueryError) {
-              console.error('❌ Failed to query virtual_image directly:', directQueryError);
-              throw directQueryError;
-            }
-            
-            console.log(`🔍 Found ${virtualImages?.length || 0} recent virtual images for fallback matching`);
-            
-            // Create mapping using metadata jobId if available
-            virtualImages?.forEach(vimg => {
-              // Check if metadata contains our jobId
-              if (vimg.metadata && typeof vimg.metadata === 'object') {
-                const metadata = vimg.metadata as any;
-                if (metadata.jobId === jobId || metadata.processingJobId === jobId) {
-                  // Try to extract upload order from metadata or S3 key pattern
-                  let uploadOrder = metadata.uploadOrder;
-                  if (uploadOrder === undefined && vimg.original_path) {
-                    // Try to extract order from S3 path pattern like "batch-0-image-0007.jpg"
-                    const orderMatch = vimg.original_path.match(/image-(\d+)/);
-                    if (orderMatch) {
-                      uploadOrder = parseInt(orderMatch[1], 10);
-                    }
-                  }
-                  if (uploadOrder !== undefined) {
-                    virtualImagesByOrder.set(uploadOrder, vimg);
-                  }
-                }
-              }
-            });
-            
-            console.log(`🗺️ Created fallback mapping for ${virtualImagesByOrder.size} virtual images by metadata`);
-            
-          } else {
-            console.log(`✅ Found ${relationshipCheck?.length || 0} relationships in bulk_job_virtual_images`);
-            
-            // Use the relationship table (original approach)
-            const { data: jobRelationships, error: relationshipError } = await supabase
-              .from('bulk_job_virtual_images')
-              .select('virtual_image_id, upload_order')
-              .eq('job_id', jobId)
-              .order('upload_order', { ascending: true });
-
-            if (relationshipError) {
-              console.error('❌ Failed to query job relationships:', relationshipError);
-              throw relationshipError;
-            }
-            
-            // Get virtual image details for the related IDs
-            const virtualImageIds = jobRelationships?.map(rel => rel.virtual_image_id) || [];
-            const { data: virtualImages, error: virtualImageError } = await supabase
-              .from('virtual_image')
-              .select('id, original_path, original_name, hash, virtual_name')
-              .in('id', virtualImageIds);
-            
-            if (virtualImageError) {
-              console.error('❌ Failed to query virtual images:', virtualImageError);
-              throw virtualImageError;
-            }
-            
-            // Create mapping from upload order to virtual image data
-            jobRelationships?.forEach(rel => {
-              const vimg = virtualImages?.find(vi => vi.id === rel.virtual_image_id);
-              if (vimg && rel.upload_order !== null) {
-                virtualImagesByOrder.set(rel.upload_order, vimg);
-              }
-            });
-            
-            console.log(`🔍 Found ${jobRelationships?.length || 0} job relationships for ML Kit update`);
-            console.log(`🗺️ Created mapping for ${virtualImagesByOrder.size} virtual images by upload order`);
-          }
-          
-          // DEBUG: Log first few mappings to understand the structure
-          if (virtualImagesByOrder.size > 0) {
-            console.log(`🔍 Sample virtual image mappings:`);
-            for (let [order, vimg] of Array.from(virtualImagesByOrder.entries()).slice(0, 3)) {
-              console.log(`  Order ${order}: ID=${vimg.id}, path=${vimg.original_path}`);
-            }
-          }
-          
-          // DEBUG: Log first few original URIs to compare
-          console.log(`🔍 Sample original URIs (first 3):`);
-          imageUris.slice(0, 3).forEach((uri, index) => {
-            console.log(`  Index ${index}: ${uri}`);
-          });
-          
-          // Update virtual_image table with ML Kit results for each processed image
-          let updatedCount = 0;
-          for (let i = 0; i < imageUris.length; i++) {
-            const originalUri = imageUris[i];
-            const analysis = mlKitResults.get(originalUri);
-            
-            if (!analysis) {
-              console.warn(`⚠️ No ML Kit analysis found for ${originalUri}`);
-              continue;
-            }
-            
-            try {
-              // Use upload order (image index) to find the corresponding virtual image
-              const virtualImageRecord = virtualImagesByOrder.get(i);
-              
-              if (virtualImageRecord) {
-                console.log(`🔗 Updating virtual image ${virtualImageRecord.id} at order ${i} with ML Kit data`);
-                await mlKitInstance.updateImageWithAnalysis(virtualImageRecord.id, analysis, userId);
-                updatedCount++;
-                console.log(`✅ Updated ML Kit data: ${originalUri} → ${virtualImageRecord.id} (order: ${i})`);
-              } else {
-                console.warn(`⚠️ Could not find virtual_image record for upload order ${i} (${originalUri})`);
-                console.log(`🗺️ Available upload orders: ${Array.from(virtualImagesByOrder.keys()).slice(0, 10).join(', ')}`);
-                
-                // DEBUG: Show what orders are actually available vs what we're looking for
-                console.log(`🔍 Mapping debug: Looking for order ${i}, have orders: ${Array.from(virtualImagesByOrder.keys()).sort((a, b) => a - b).join(', ')}`);
-              }
-            } catch (updateError) {
-              console.warn(`⚠️ Failed to update ML Kit data for ${originalUri}:`, updateError);
-            }
-          }
-          
-          console.log(`✅ Updated ${updatedCount}/${mlKitResults.size} images with ML Kit analysis`);
-          
-        } catch (mlKitUpdateError) {
-          console.warn('⚠️ ML Kit database update failed:', mlKitUpdateError);
-        }
-      }
-
-      const processingTime = Date.now() - startTime;
+      const totalProcessingTime = Date.now() - startTime;
 
       return {
         jobId: `native_sequential_${Date.now()}`,
         totalImages: totalUploaded,
         nsfwDetected: results.totalNsfwDetected,
         results: results.allResults,
-        processingTimeMs: processingTime
+        processingTimeMs: totalProcessingTime
       };
 
     } catch (error) {
@@ -1596,7 +1576,9 @@ export class BulkNSFWProcessor {
       ...newSettings
     };
     
-    console.log('⚙️ Processing settings updated:', this.currentSettings);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('⚙️ Processing settings updated:', this.currentSettings);
+    }
   }
 
   /**

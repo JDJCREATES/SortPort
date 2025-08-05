@@ -146,8 +146,9 @@ export class QualityAssessmentProcessor {
     
     contentScore = Math.min(1.0, contentScore + (interestingCount * 0.1) - (boringCount * 0.15));
     
-    console.log(`🎨 Quality from labels - Sharpness: ${sharpnessScore.toFixed(2)}, Aesthetic: ${aestheticScore.toFixed(2)}`);
-    console.log(`🌈 Color: ${colorScore.toFixed(2)}, Content: ${contentScore.toFixed(2)}, Composition: ${compositionScore.toFixed(2)}`);
+    // PRODUCTION: Reduced logging - only log errors or summaries
+    // Quality scores calculated: Sharpness: ${sharpnessScore.toFixed(2)}, Aesthetic: ${aestheticScore.toFixed(2)}
+    // Color: ${colorScore.toFixed(2)}, Content: ${contentScore.toFixed(2)}, Composition: ${compositionScore.toFixed(2)}
     
     return {
       sharpnessScore,
