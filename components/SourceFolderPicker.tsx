@@ -266,46 +266,76 @@ function SourceFolderPickerComponent({
         message: `Submitting ${allPhotos.length} images for bulk processing...` 
       });
 
-      // ✅ Use optimized bulk processing pipeline (compression → ML Kit → AWS)
-      const { BulkNSFWProcessor } = await import('../utils/bulkNsfwProcessor');
+      // ✅ Use modular orchestrator for bulk processing
+      const { bulkProcessingOrchestrator, setQuietMode } = await import('../utils/modular-bulk-processor');
+      
+      // Set quiet mode to reduce console spam (only important info, no per-file details)
+      setQuietMode();
       
       // Extract URIs for bulk processing
       const imageUris = allPhotos.map(photo => photo.uri);
       
-      console.log(`☁️ Starting optimized bulk processing for ${imageUris.length} images`);
+      console.log(`☁️ Starting modular bulk processing for ${imageUris.length} images`);
 
-      // ✅ Use optimized pipeline with ML Kit integrated
-      const bulkResults = await BulkNSFWProcessor.processBulkImagesNative(
+      // ✅ Use modular orchestrator directly
+      const request = {
         imageUris,
-        userProfile.id,
-        (progress) => {
-          const completed = progress.current || 0;
-          const total = progress.total || 100;
-          const status = progress.status || progress.message || 'Processing';
+        processingId: `folder_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        userId: userProfile.id, // FIXED: Add userId for Edge Function compatibility
+        config: {
+          enableCompression: true,
+          compressionQuality: 0.6,
+          enableMLKit: true,
+          // batchSize removed - let hardware profiler determine optimal size
+          maxRetries: 3,
+          retryDelay: 1000,
+          timeoutMs: 180000,
+          cacheSize: Math.max(imageUris.length * 1.5, 200)
+        },
+        onProgress: (status: any) => {
+          const completed = status.progress || 0;
+          const totalProgress = 100;
+          const statusText = status.status || 'Processing';
           
           setScanProgress({
             current: completed,
-            total: total,
-            message: `${status}: ${progress.message || 'Processing...'}`
+            total: totalProgress,
+            message: `${statusText}: ${status.message || 'Processing...'}`
           });
+        },
+        onBatchComplete: (batchId: string, result: any) => {
+          console.log(`✅ Batch complete: ${batchId} (${result.success ? 'SUCCESS' : 'FAILED'})`);
+        },
+        onError: (error: any) => {
+          console.error(`❌ Processing error:`, error);
         }
-      );
+      };
 
-      console.log(`☁️ AWS bulk processing complete:`, {
+      const bulkResults = await bulkProcessingOrchestrator.processBulkImages(request);
+
+      console.log(`☁️ Modular bulk processing complete:`, {
         totalProcessed: bulkResults.totalImages,
-        awsConfirmed: bulkResults.nsfwDetected,
+        nsfwDetected: bulkResults.moderationResults?.length || 0,
         processingTime: bulkResults.processingTimeMs
       });
 
+      // Map modular result to legacy format for compatibility
+      const legacyResults = {
+        totalImages: bulkResults.totalImages,
+        nsfwDetected: bulkResults.moderationResults?.length || 0,
+        results: bulkResults.moderationResults || [],
+        processingTimeMs: bulkResults.processingTimeMs
+      };
+
       // ✅ Process AWS results and create albums
-      if (bulkResults.nsfwDetected > 0 && bulkResults.results) {
-        console.log(`🔍 Processing ${bulkResults.results.length} AWS results for ${allPhotos.length} photos`);
+      if (legacyResults.nsfwDetected > 0 && legacyResults.results) {
+        console.log(`🔍 Processing ${legacyResults.results.length} AWS results for ${allPhotos.length} photos`);
         
         // Import the new NSFW detection utility
         const { NsfwDetection } = await import('../utils/moderation/nsfwDetection');
         
         // Analyze all results using the sophisticated detection logic
-        const analyzedResults = NsfwDetection.batchAnalyze(bulkResults.results);
+        const analyzedResults = NsfwDetection.batchAnalyze(legacyResults.results);
         
         const finalNsfwImages: any[] = [];
         const awsResults: { [imageId: string]: any } = {};

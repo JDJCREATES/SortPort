@@ -181,7 +181,7 @@ export class SecureImageCache {
     let oldestItem = Date.now();
     let newestItem = 0;
 
-    for (const [_, info] of this.cacheIndex) {
+    for (const [_, info] of Array.from(this.cacheIndex.entries())) {
       totalSize += info.size;
       oldestItem = Math.min(oldestItem, info.createdAt);
       newestItem = Math.max(newestItem, info.createdAt);
@@ -229,7 +229,7 @@ export class SecureImageCache {
     const toRemove: string[] = [];
 
     // Find expired items
-    for (const [imageId, info] of this.cacheIndex) {
+    for (const [imageId, info] of Array.from(this.cacheIndex.entries())) {
       const age = now - info.createdAt;
       if (age > this.config.maxCacheAge) {
         toRemove.push(imageId);

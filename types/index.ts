@@ -135,9 +135,9 @@ export interface ModeratedImage {
   id: string;
   user_id: string;
   image_id: string;
-  folder_id: string;
-  is_nsfw: boolean;
-  moderation_labels: ModerationLabel[];
+  isflagged: boolean;
+  nsfw_score: number;
+  rekognition_data: any;
   created_at: string;
   updated_at: string;
 }
@@ -161,7 +161,8 @@ export interface UserCredits {
 
 export interface ModerationResult {
   image_id: string;
-  is_nsfw: boolean;
+  isflagged: boolean;
+  nsfw_score: number;
   moderation_labels: ModerationLabel[];
   confidence_score: number;
 }

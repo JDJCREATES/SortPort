@@ -3,14 +3,17 @@ import { NsfwAlbumNaming } from '../moderation/nsfwAlbumNaming';
 import { generateUUID } from '../helpers/uuid';
 
 /**
- *  Called Through AlbumUtils after bulk mdoeration is completed
- * -- May be handled or called throuhg langchain soon!
+ * Called Through AlbumUtils after bulk moderation is completed
+ * Updated to use virtual_image table instead of moderated_images
+ * -- May be handled or called through langchain soon!
  */
 
 
 interface ModerationResult {
   confidence_score: number;
   moderation_labels: any[];
+  isflagged?: boolean;
+  nsfw_score?: number;
 }
 
 interface AlbumCategory {
@@ -69,8 +72,11 @@ export class ModeratedAlbumManager {
         await this.createOrUpdateCategorizedAlbum(user.id, albumCategory, nsfwImages, moderationResults);
       }
 
-      // ✅ ModeratedAlbumManager handles detailed records
-      await this.insertDetailedModeratedImages(user.id, nsfwImages, moderationResults);
+      // ✅ FIXED: Skip redundant virtual_image updates since virtual-image-bridge already handles them
+      // AWS Rekognition data: Handled by virtual-image-bridge from bulk-nsfw-status
+      // ML Kit data: Already stored during initial batch upload via virtual-image-bridge  
+      // await this.insertDetailedModeratedImages(user.id, nsfwImages, moderationResults);
+      console.log(`✅ Skipping virtual_image updates - handled by virtual-image-bridge`);
 
     } catch (error) {
       console.error('❌ createCategorizedModeratedAlbums: Error:', error);
@@ -210,7 +216,7 @@ export class ModeratedAlbumManager {
   }
 
   /**
-   * Insert detailed moderated image records with AWS Rekognition results
+   * Insert detailed moderated image records into virtual_image table
    */
   private static async insertDetailedModeratedImages(
     userId: string, 
@@ -218,38 +224,102 @@ export class ModeratedAlbumManager {
     moderationResults: { [imageId: string]: ModerationResult }
   ): Promise<void> {
     try {
-      // Prepare detailed moderated image records with proper schema
-      const moderatedImageRecords = nsfwImages.map((image: any) => {
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Update existing virtual_image records with NSFW moderation data
+      for (const image of nsfwImages) {
         const moderationResult = moderationResults[image.id];
         
-        return {
-          // Remove manual ID generation - let DB handle it with gen_random_uuid()
-          user_id: userId,
-          image_id: image.id, // Keep as string, DB will cast to UUID
-          is_nsfw: true,
-          moderation_labels: moderationResult ? {
+        const updateData = {
+          isflagged: true,
+          nsfw_score: moderationResult?.confidence_score || 0.9,
+          rekognition_data: moderationResult ? {
             confidence_score: moderationResult.confidence_score || 0,
             labels: moderationResult.moderation_labels || [],
             aws_response: moderationResult
-          } : {},
-          created_at: new Date().toISOString(),
+          } : null,
           updated_at: new Date().toISOString(),
         };
-      });
 
-      // Insert new moderated image records with proper UUID handling
-      const { error: insertError } = await supabase
-        .from('moderated_images')
-        .upsert(moderatedImageRecords, { 
-          onConflict: 'image_id', // Use single field to avoid type conflicts
-          ignoreDuplicates: false
-        });
+        // Try multiple approaches to find the virtual_image record
+        let updateSuccess = false;
 
-      if (insertError) {
-        console.error('❌ Error inserting detailed moderated images:', insertError);
-      } else {
-        console.log(`✅ Inserted/updated ${moderatedImageRecords.length} detailed moderated image records`);
+        // Approach 1: Try direct UUID match (in case ID is already a UUID)
+        try {
+          const { data: directMatch, error: directError } = await supabase
+            .from('virtual_image')
+            .update(updateData)
+            .eq('user_id', userId)
+            .eq('id', image.id)
+            .select('id');
+
+          if (!directError && directMatch && directMatch.length > 0) {
+            console.log(`✅ Direct UUID match for ${image.id}`);
+            updateSuccess = true;
+            successCount++;
+          }
+        } catch (directErr) {
+          // UUID format error expected for device IDs, continue to next approach
+        }
+
+        // Approach 2: Search by original_path containing the device ID
+        if (!updateSuccess) {
+          const { data: pathMatches, error: pathError } = await supabase
+            .from('virtual_image')
+            .select('id')
+            .eq('user_id', userId)
+            .ilike('original_path', `%${image.id}%`);
+
+          if (!pathError && pathMatches && pathMatches.length > 0) {
+            for (const match of pathMatches) {
+              const { error: updateError } = await supabase
+                .from('virtual_image')
+                .update(updateData)
+                .eq('id', match.id);
+
+              if (!updateError) {
+                console.log(`✅ Path match update for device ID ${image.id} -> virtual ID ${match.id}`);
+                updateSuccess = true;
+                successCount++;
+                break;
+              }
+            }
+          }
+        }
+
+        // Approach 3: Search by hash field if it contains the device ID
+        if (!updateSuccess) {
+          const { data: hashMatches, error: hashError } = await supabase
+            .from('virtual_image')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('hash', image.id);
+
+          if (!hashError && hashMatches && hashMatches.length > 0) {
+            for (const match of hashMatches) {
+              const { error: updateError } = await supabase
+                .from('virtual_image')
+                .update(updateData)
+                .eq('id', match.id);
+
+              if (!updateError) {
+                console.log(`✅ Hash match update for device ID ${image.id} -> virtual ID ${match.id}`);
+                updateSuccess = true;
+                successCount++;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!updateSuccess) {
+          console.warn(`⚠️ Could not find virtual_image record for device ID ${image.id}`);
+          errorCount++;
+        }
       }
+
+      console.log(`✅ Virtual image update completed: ${successCount} successful, ${errorCount} failed out of ${nsfwImages.length} total`);
 
     } catch (error) {
       console.error('❌ insertDetailedModeratedImages: Error:', error);

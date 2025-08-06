@@ -4,16 +4,16 @@ export interface NsfwImageRecord {
   id: string;
   user_id: string;
   image_id: string;
-  folder_id: string;
-  is_nsfw: boolean;
-  moderation_labels: any;
+  isflagged: boolean;
+  nsfw_score: number;
+  rekognition_data: any;
   created_at: string;
   updated_at: string;
 }
 
 export class NsfwImageManager {
   /**
-   * Store NSFW image IDs in the database with proper error handling
+   * Store NSFW image IDs in the virtual_image table with proper error handling
    */
   static async storeNsfwImageIds(nsfwImageIds: string[]): Promise<void> {
     if (!nsfwImageIds || nsfwImageIds.length === 0) {
@@ -28,33 +28,25 @@ export class NsfwImageManager {
         return;
       }
 
-      console.log(`🔒 Storing ${nsfwImageIds.length} NSFW image IDs for user ${user.id}`);
+      console.log(`🔒 Updating ${nsfwImageIds.length} NSFW image flags for user ${user.id}`);
 
-      // Prepare records for insertion
-      const nsfwRecords = nsfwImageIds.map((imageId: string) => ({
-        user_id: user.id,
-        image_id: imageId,
-        folder_id: 'unknown',
-        is_nsfw: true,
-        moderation_labels: {},
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }));
-
-      // Insert with conflict resolution
+      // Update existing virtual_image records to mark as NSFW
       const { error } = await supabase
-        .from('moderated_images')
-        .upsert(nsfwRecords, { 
-          onConflict: 'user_id,image_id',
-          ignoreDuplicates: false 
-        });
+        .from('virtual_image')
+        .update({
+          isflagged: true,
+          nsfw_score: 0.9, // Default high confidence for manual flagging
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id)
+        .in('id', nsfwImageIds);
 
       if (error) {
-        console.error('❌ Error storing NSFW image IDs:', error);
-        throw new Error(`Failed to store NSFW image IDs: ${error.message}`);
+        console.error('❌ Error updating NSFW image flags:', error);
+        throw new Error(`Failed to update NSFW image flags: ${error.message}`);
       }
 
-      console.log(`✅ Successfully stored ${nsfwImageIds.length} NSFW image IDs`);
+      console.log(`✅ Successfully updated ${nsfwImageIds.length} NSFW image flags`);
 
     } catch (error) {
       console.error('❌ Error in storeNsfwImageIds:', error);
@@ -63,7 +55,7 @@ export class NsfwImageManager {
   }
 
   /**
-   * Get NSFW image IDs from database
+   * Get NSFW image IDs from virtual_image table
    */
   static async getNsfwImageIds(): Promise<string[]> {
     try {
@@ -73,21 +65,21 @@ export class NsfwImageManager {
         return [];
       }
 
-      console.log('🔒 Fetching NSFW image IDs from database...');
+      console.log('🔒 Fetching NSFW image IDs from virtual_image table...');
 
       const { data, error } = await supabase
-        .from('moderated_images')
-        .select('image_id')
+        .from('virtual_image')
+        .select('id')
         .eq('user_id', user.id)
-        .eq('is_nsfw', true);
+        .eq('isflagged', true);
 
       if (error) {
         console.error('❌ Error fetching NSFW image IDs:', error);
         return [];
       }
 
-      const imageIds = data?.map((row: any) => row.image_id) || [];
-      console.log(`🔒 Fetched ${imageIds.length} NSFW image IDs from database`);
+      const imageIds = data?.map((row: any) => row.id) || [];
+      console.log(`🔒 Fetched ${imageIds.length} NSFW image IDs from virtual_image table`);
       return imageIds;
 
     } catch (error) {
@@ -129,7 +121,7 @@ export class NsfwImageManager {
   }
 
   /**
-   * Remove images from NSFW status (user approval)
+   * Remove images from NSFW status (user approval) in virtual_image table
    */
   static async removeFromNsfwStatus(imageIds: string[]): Promise<void> {
     if (!imageIds || imageIds.length === 0) return;
@@ -142,15 +134,16 @@ export class NsfwImageManager {
 
       console.log(`🔒 Removing ${imageIds.length} images from NSFW status`);
 
-      // Update database
+      // Update virtual_image table
       const { error } = await supabase
-        .from('moderated_images')
+        .from('virtual_image')
         .update({
-          is_nsfw: false,
+          isflagged: false,
+          nsfw_score: 0,
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', user.id)
-        .in('image_id', imageIds);
+        .in('id', imageIds);
 
       if (error) {
         console.error('❌ Error removing NSFW status:', error);
@@ -166,7 +159,7 @@ export class NsfwImageManager {
   }
 
   /**
-   * Get moderated images for a specific user
+   * Get moderated images from virtual_image table
    */
   static async getModeratedImages(userId?: string): Promise<NsfwImageRecord[]> {
     try {
@@ -179,18 +172,27 @@ export class NsfwImageManager {
       const targetUserId = userId || user.id;
 
       const { data, error } = await supabase
-        .from('moderated_images')
-        .select('*')
+        .from('virtual_image')
+        .select('id, user_id, id as image_id, isflagged, nsfw_score, rekognition_data, created_at, updated_at')
         .eq('user_id', targetUserId)
-        .eq('is_nsfw', true)
-        .order('created_at', { ascending: false });
+        .eq('isflagged', true)
+        .order('updated_at', { ascending: false });
 
       if (error) {
         console.error('Error loading moderated images:', error);
         return [];
       }
 
-      return data || [];
+      return data?.map((item: any) => ({
+        id: item.id,
+        user_id: item.user_id,
+        image_id: item.id, // In virtual_image, id is the image_id
+        isflagged: item.isflagged,
+        nsfw_score: item.nsfw_score || 0,
+        rekognition_data: item.rekognition_data,
+        created_at: item.created_at,
+        updated_at: item.updated_at
+      })) || [];
     } catch (error) {
       console.error('Error in getModeratedImages:', error);
       return [];
@@ -229,7 +231,7 @@ export class NsfwImageManager {
   }
 
   /**
-   * Get statistics about moderated content
+   * Get statistics about moderated content from virtual_image table
    */
   static async getModerationStats(): Promise<{
     totalModeratedImages: number;
@@ -248,12 +250,12 @@ export class NsfwImageManager {
         };
       }
 
-      // Get moderated images count
+      // Get moderated images count from virtual_image
       const { data: moderatedImages, error: imagesError } = await supabase
-        .from('moderated_images')
-        .select('folder_id')
+        .from('virtual_image')
+        .select('id, updated_at')
         .eq('user_id', user.id)
-        .eq('is_nsfw', true);
+        .eq('isflagged', true);
 
       if (imagesError) {
         console.error('Error loading moderated images stats:', imagesError);
@@ -273,14 +275,13 @@ export class NsfwImageManager {
       // Calculate stats
       const totalModeratedImages = moderatedImages?.length || 0;
       const totalScannedFolders = scannedFolders?.length || 0;
-      const lastScanDate = scannedFolders?.[0]?.last_scanned_at || null;
+      const lastScanDate = scannedFolders?.[0]?.last_scanned_at || 
+                          (moderatedImages && moderatedImages.length > 0 ? 
+                           moderatedImages.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0].updated_at : 
+                           null);
 
-      // Count NSFW images by folder
+      // Folder-based counting not available in current virtual_image schema
       const nsfwByFolder: { [folderId: string]: number } = {};
-      moderatedImages?.forEach((image: any) => {
-        const folderId = image.folder_id;
-        nsfwByFolder[folderId] = (nsfwByFolder[folderId] || 0) + 1;
-      });
 
       return {
         totalModeratedImages,

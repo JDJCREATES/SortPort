@@ -302,7 +302,7 @@ export class AlbumUtils {
           ...album,
           categoryInfo: categoryTag ? { id: categoryTag } : null,
           moderationStats: {
-            // These could be calculated from moderated_images table if needed
+            // These could be calculated from virtual_image table if needed
             averageConfidence: 0,
             topLabels: [],
           }

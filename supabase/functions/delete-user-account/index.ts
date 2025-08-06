@@ -93,7 +93,6 @@ async function handleRequest(req: Request): Promise<Response> {
       'albums',
       'credit_transactions', 
       'moderated_folders',
-      'moderated_images',
       'nsfw_bulk_jobs',
       'nsfw_bulk_results',
       'sort_sessions',

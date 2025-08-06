@@ -2,13 +2,13 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // ================================================================================
-// VIRTUAL IMAGE BRIDGE - INTEGRATION WITH LCEL SERVER
+// VIRTUAL IMAGE BRIDGE - DIRECT SUPABASE OPERATIONS
 // ================================================================================
-// This edge function serves as a bridge between bulk NSFW processing 
-// and the LCEL server's virtual image system. It handles:
+// This edge function handles:
 // 1. Creating virtual images after S3 upload
 // 2. Updating virtual images after Rekognition processing
 // 3. Batch operations for performance
+// Note: This function only does direct Supabase operations, no external calls
 // ================================================================================
 
 // CORS headers
@@ -126,24 +126,6 @@ function createErrorResponse(
   })
 }
 
-// Get LCEL server configuration
-function getLCELConfig() {
-  const baseUrl = Deno.env.get('LCEL_SERVER_URL') || 'http://localhost:3001'
-  const apiKey = Deno.env.get('LCEL_API_KEY') || ''
-  
-  console.log(`🔧 LCEL Config: baseUrl=${baseUrl}, hasApiKey=${!!apiKey}`);
-  
-  return {
-    baseUrl: baseUrl.replace(/\/$/, ''), // Remove trailing slash
-    apiKey,
-    endpoints: {
-      createVirtualImages: '/api/virtual-images',
-      updateVirtualImages: '/api/virtual-images/batch-update'
-    }
-  }
-}
-
-// Create virtual images via LCEL server
 // Create virtual images directly in Supabase database
 async function createVirtualImagesDirectly(
   images: CreateVirtualImagesRequest['images'],
@@ -434,160 +416,6 @@ async function updateVirtualImagesDirectly(
   }
 }
 
-// Update virtual images via LCEL server
-async function updateVirtualImagesViaLCEL(
-  updates: UpdateVirtualImagesRequest['updates'],
-  jobId: string,
-  userId: string | undefined, // NEW: Add userId parameter
-  requestId: string
-): Promise<{ success: boolean; data?: any[]; error?: string }> {
-  const config = getLCELConfig()
-  
-  try {
-    console.log(`📡 [${requestId}] Updating ${updates.length} virtual images via LCEL server`)
-    console.log(`🔍 [${requestId}] Update params: jobId=${jobId}, userId=${userId}, configUrl=${config.baseUrl}`)
-    
-    // Log sample update data for debugging
-    if (updates.length > 0) {
-      const sampleUpdate = updates[0];
-      console.log(`🔍 [${requestId}] Sample update data:`, {
-        imagePath: sampleUpdate.imagePath,
-        isNsfw: sampleUpdate.isNsfw,
-        hasFullRekognitionData: !!sampleUpdate.fullRekognitionData,
-        fullRekognitionDataKeys: sampleUpdate.fullRekognitionData ? Object.keys(sampleUpdate.fullRekognitionData) : []
-      });
-    }
-    
-    const payload = {
-      jobId,
-      updates: updates.map(update => ({
-        virtualImageId: update.virtualImageId, // Use database ID for tracking
-        imagePath: update.imagePath || update.virtualImageId, // Fallback for backwards compatibility
-        // Backwards compatible NSFW data (always included)
-        nsfwDetection: {
-          isNsfw: update.isNsfw,
-          confidenceScore: update.confidenceScore,
-          moderationLabels: update.moderationLabels,
-          processedAt: new Date().toISOString()
-        },
-        // Enhanced: Include full rekognition data if available
-        fullRekognitionData: update.fullRekognitionData || null,
-        // NEW: Include comprehensive virtual_image fields for direct database updates
-        comprehensiveFields: update.comprehensiveFields || {
-          // Fallback to legacy NSFW data if comprehensive fields not available
-          nsfw_score: update.confidenceScore,
-          isflagged: update.isNsfw,
-          rekognition_data: update.fullRekognitionData
-        }
-      }))
-    }
-    
-    const fullUrl = `${config.baseUrl}${config.endpoints.updateVirtualImages}`;
-    console.log(`🌐 [${requestId}] Making virtual image update request to: ${fullUrl}`);
-    console.log(`📝 [${requestId}] Payload contains ${payload.updates.length} updates`);
-    
-    // NEW: Add retry logic for rate limiting
-    let retryCount = 0;
-    const maxRetries = 3;
-    const baseDelay = 1000; // 1 second base delay
-    
-    while (retryCount <= maxRetries) {
-      try {
-        const response = await fetch(fullUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-            'X-Job-ID': jobId,
-            // NEW: Add X-User-ID header if userId is provided
-            ...(userId ? { 'X-User-ID': userId } : {})
-          },
-          body: JSON.stringify(payload)
-        });
-        
-        console.log(`📡 [${requestId}] Update response status: ${response.status} (attempt ${retryCount + 1})`);
-        console.log(`📡 [${requestId}] Update response headers:`, Object.fromEntries(response.headers.entries()));
-        
-        // Check if it's a rate limit error (429 or 503)
-        if (response.status === 429 || response.status === 503) {
-          retryCount++;
-          if (retryCount <= maxRetries) {
-            const delayMs = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
-            const maxDelay = 30000; // 30 seconds max
-            const actualDelay = Math.min(delayMs, maxDelay);
-            
-            console.log(`⏳ [${requestId}] Rate limited (${response.status}), retrying in ${actualDelay}ms (attempt ${retryCount}/${maxRetries})`);
-            
-            // Try to get retry-after header if available
-            const retryAfter = response.headers.get('retry-after');
-            if (retryAfter) {
-              const retryAfterMs = parseInt(retryAfter) * 1000;
-              if (retryAfterMs > 0 && retryAfterMs < maxDelay) {
-                console.log(`⏳ [${requestId}] Using server's retry-after: ${retryAfterMs}ms`);
-                await new Promise(resolve => setTimeout(resolve, retryAfterMs));
-              } else {
-                await new Promise(resolve => setTimeout(resolve, actualDelay));
-              }
-            } else {
-              await new Promise(resolve => setTimeout(resolve, actualDelay));
-            }
-            continue; // Try again
-          } else {
-            const errorText = await response.text();
-            console.error(`❌ [${requestId}] Max retries reached for rate limiting. Final error: ${errorText}`);
-            throw new Error(`LCEL server rate limited: ${response.status} - ${errorText} (tried ${maxRetries + 1} times)`);
-          }
-        }
-        
-        // Handle other errors
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`❌ [${requestId}] LCEL server update error: ${errorText}`);
-          throw new Error(`LCEL server error: ${response.status} - ${errorText}`);
-        }
-        
-        // Success case
-        const result = await response.json();
-        console.log(`✅ [${requestId}] LCEL server update response:`, result);
-        console.log(`✅ [${requestId}] Updated ${result.data?.successful || 0} virtual images (success after ${retryCount} retries)`);
-        
-        return { success: true, data: result.data?.images || [] };
-        
-      } catch (fetchError) {
-        // If it's not a rate limit error, or we've exceeded retries, throw immediately
-        if (retryCount >= maxRetries || 
-            !(fetchError instanceof Error && fetchError.message.includes('rate limited'))) {
-          console.error(`🌐 [${requestId}] Update fetch error details:`, {
-            url: fullUrl,
-            error: fetchError instanceof Error ? fetchError.message : String(fetchError),
-            stack: fetchError instanceof Error ? fetchError.stack : undefined,
-            retryCount
-          });
-          throw fetchError;
-        }
-        
-        // If it's a network error that might be rate-limit related, try again
-        retryCount++;
-        if (retryCount <= maxRetries) {
-          const delayMs = baseDelay * Math.pow(2, retryCount - 1);
-          console.log(`⏳ [${requestId}] Network error, retrying in ${delayMs}ms: ${fetchError.message}`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        } else {
-          throw fetchError;
-        }
-      }
-    }
-    
-    // This should never be reached due to the loop logic, but TypeScript requires it
-    throw new Error(`Failed to update virtual images after ${maxRetries + 1} attempts`);
-    
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    console.error(`❌ [${requestId}] Failed to update virtual images:`, errorMessage)
-    return { success: false, error: errorMessage }
-  }
-}
-
 // Main request handler
 async function handleRequest(req: Request): Promise<Response> {
   const requestId = generateRequestId()
@@ -689,9 +517,9 @@ async function handleCreateVirtualImages(
     )
   }
 
-  console.log(`🚀 [${requestId}] Starting virtual image creation via LCEL server...`)
+  console.log(`🚀 [${requestId}] Starting virtual image creation...`)
 
-  // Create virtual images via LCEL server
+  // Create virtual images directly in Supabase
   const result = await createVirtualImagesDirectly(
     body.images,
     body.userId,
@@ -699,18 +527,18 @@ async function handleCreateVirtualImages(
     requestId
   )
 
-  console.log(`🔍 [${requestId}] LCEL result:`, {
+  console.log(`🔍 [${requestId}] Direct creation result:`, {
     success: result.success,
     error: result.error,
     dataLength: result.data?.length || 0
   })
 
   if (!result.success) {
-    console.error(`❌ [${requestId}] LCEL server failed:`, result.error)
+    console.error(`❌ [${requestId}] Direct creation failed:`, result.error)
     return createErrorResponse(
       'Failed to create virtual images',
       result.error || 'Unknown error',
-      'LCEL_ERROR',
+      'CREATION_ERROR',
       requestId,
       500
     )

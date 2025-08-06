@@ -363,8 +363,8 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
 
   logWithContext('INFO', 'Processed AWS moderation results', {
     totalResults: results.length,
-    nsfwCount: results.filter(r => r.is_nsfw).length,
-    sampleNsfwResult: results.find(r => r.is_nsfw) || null,
+    nsfwCount: results.filter(r => r.isflagged).length,
+    sampleNsfwResult: results.find(r => r.isflagged) || null,
     sampleLabels: results.length > 0 ? results[0].moderation_labels : [],
     hasFullRekognitionData: results.some(r => r.full_rekognition_data !== null),
     // Log sample of flattened fields to verify they exist
@@ -468,15 +468,11 @@ serve(async (req: Request): Promise<Response> => {
       requestId
     })
 
-    // If job is already completed, return cached results
+    // If job is already completed, return completed status
     if (job.status === 'completed') {
-      const { data: results } = await supabase
-        .from('nsfw_bulk_results')
-        .select('*')
-        .eq('job_id', jobId)
-
-      logWithContext('INFO', `Returning cached results for completed job ${jobId}`, {
-        resultCount: results?.length || 0,
+      logWithContext('INFO', `Job ${jobId} already completed`, {
+        totalImages: job.total_images,
+        nsfwDetected: job.nsfw_detected,
         requestId
       })
 
@@ -484,9 +480,9 @@ serve(async (req: Request): Promise<Response> => {
         JSON.stringify({
           status: 'completed',
           progress: 100,
-          results: results || [],
           totalImages: job.total_images,
           nsfwDetected: job.nsfw_detected,
+          message: 'Results available in virtual_image table',
           request_id: requestId
         }),
         { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
@@ -587,7 +583,7 @@ serve(async (req: Request): Promise<Response> => {
           })
           
           // Now look for result files - only process actual results
-          const resultFiles = listAllResponse.Contents?.filter(obj => 
+          const resultFiles = listAllResponse.Contents?.filter((obj: any) => 
             obj.Key && (
               obj.Key.includes('results.jsonl') ||  // AWS batch job results
               (obj.Key.includes('result') && obj.Key.endsWith('.json') && !obj.Key.includes('manifest'))
@@ -595,7 +591,7 @@ serve(async (req: Request): Promise<Response> => {
           ) || []
           
           logWithContext('INFO', 'FOUND RESULT FILES', {
-            resultFiles: resultFiles.map(f => f.Key),
+            resultFiles: resultFiles.map((f: any) => f.Key),
             tempBucketName,
             requestId
           })
@@ -759,43 +755,16 @@ serve(async (req: Request): Promise<Response> => {
           
           logWithContext('INFO', 'FINAL RESULTS SUMMARY', {
             totalResults: processedResults.length,
-            nsfwCount: processedResults.filter(r => r.is_nsfw).length,
+            nsfwCount: processedResults.filter(r => r.isflagged).length,
             sampleResult: processedResults[0],
             tempBucketName,
             requestId
           })
           
-          // Store results in database
-          if (processedResults.length > 0) {
-            const dbResults = processedResults.map((result: any, index: number) => ({
-              job_id: jobId,
-              image_path: `temp-${tempBucketName}/${result.image_path}`, // Mark as temp
-              image_id: result.image_id,
-              is_nsfw: result.is_nsfw,
-              confidence_score: result.confidence_score,
-              moderation_labels: result.moderation_labels
-            }))
-
-            const { error: insertError } = await supabase
-              .from('nsfw_bulk_results')
-              .insert(dbResults)
-
-            if (insertError) {
-              logWithContext('ERROR', 'Failed to store results in database', { 
-                insertError: insertError.message, 
-                resultCount: dbResults.length,
-                requestId 
-              })
-            } else {
-              logWithContext('INFO', 'Results stored in database successfully', {
-                resultCount: dbResults.length,
-                requestId
-              })
-            }
-          }
-
+          // Results processing completed - virtual-image-bridge handles data storage
+          
           // Update job as completed
-          const nsfwCount = processedResults.filter((r: any) => r.is_nsfw).length
+          const nsfwCount = processedResults.filter((r: any) => r.isflagged).length
           await supabase
             .from('nsfw_bulk_jobs')
             .update({
@@ -902,13 +871,13 @@ serve(async (req: Request): Promise<Response> => {
                 
                 return {
                   virtualImageId: virtualImage.id,
-                  isNsfw: nsfwResult?.is_nsfw || false,
+                  isNsfw: nsfwResult?.isflagged || false,
                   confidenceScore: nsfwResult?.confidence_score || 0,
                   moderationLabels: nsfwResult?.moderation_labels || [],
                   fullRekognitionData: nsfwResult?.full_rekognition_data || null,
                   comprehensiveFields: {
                     nsfw_score: nsfwResult?.confidence_score || 0,
-                    isflagged: nsfwResult?.is_nsfw || false,
+                    isflagged: nsfwResult?.isflagged || false,
                     rekognition_data: nsfwResult?.full_rekognition_data || null,
                     // Keep existing ML Kit data - will be updated by client if available
                     virtual_tags: virtualImage.virtual_tags || [],

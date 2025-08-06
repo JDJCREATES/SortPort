@@ -691,7 +691,6 @@ export function AppProvider({ children }: AppProviderProps) {
     const tablesToClear = [
       { table: 'albums', userColumn: 'user_id' },
       { table: 'moderated_folders', userColumn: 'user_id' }, 
-      { table: 'moderated_images', userColumn: 'user_id' },
       { table: 'nsfw_bulk_jobs', userColumn: 'user_id' },
       { table: 'sort_sessions', userColumn: 'user_id' },
       { table: 'virtual_image', userColumn: 'user_id' }
@@ -865,9 +864,10 @@ export function AppProvider({ children }: AppProviderProps) {
       if (moderatedFoldersCheckError) console.log('Moderated folders check error:', moderatedFoldersCheckError);
 
       const { data: moderatedImagesCheck, error: moderatedImagesCheckError } = await supabase
-        .from('moderated_images')
+        .from('virtual_image')
         .select('*')
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('isflagged', true);
       
       console.log('Moderated images found:', moderatedImagesCheck?.length || 0, 'records');
       if (moderatedImagesCheckError) console.log('Moderated images check error:', moderatedImagesCheckError);
@@ -925,14 +925,15 @@ export function AppProvider({ children }: AppProviderProps) {
         count: moderatedFoldersDeleteCount
       });
 
-      console.log('🗑️ Testing moderated images deletion...');
+      console.log('🗑️ Testing moderated images flags reset...');
       const { data: moderatedImagesDeleteData, error: moderatedImagesDeleteError, count: moderatedImagesDeleteCount } = await supabase
-        .from('moderated_images')
-        .delete({ count: 'exact' })
+        .from('virtual_image')
+        .update({ isflagged: false, nsfw_score: 0 })
         .eq('user_id', userId)
+        .eq('isflagged', true)
         .select();
 
-      console.log('Moderated images delete result:', {
+      console.log('Moderated images reset result:', {
         data: moderatedImagesDeleteData,
         error: moderatedImagesDeleteError,
         count: moderatedImagesDeleteCount
