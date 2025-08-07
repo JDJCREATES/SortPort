@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import * as FileSystem from 'expo-file-system';
-import ImageResizer from 'react-native-image-resizer';
+import ImageResizer from '@bam.tech/react-native-image-resizer';
 import { HardwareProfiler, HardwareProfile, ProcessingSettings } from './hardwareProfiler';
 import { DynamicPerformanceAdjuster, PerformanceMetrics } from './performance/dynamicPerformanceAdjuster';
 

@@ -1,4 +1,5 @@
 import { MLKitManager } from '../mlkit/MLKitManager';
+import { MLKitVirtualImageMapper } from '../mlkit/mappers/MLKitVirtualImageMapper';
 import { FileSystemService } from '../filesystem/FileSystemService';
 import { CompressionCacheService } from '../cache/CompressionCacheService';
 import { ImageCompressionService } from '../compression/ImageCompressionService';
@@ -189,8 +190,10 @@ export class BulkProcessingOrchestrator {
         compressionQuality: 0.4 // More aggressive compression
       });
       
-      // Reduce cache size by clearing old entries
-      this.compressionCache.clearOldEntries();
+      // Only clear cache if not processing-locked
+      if (!this.compressionCache.isProcessingLocked()) {
+        this.compressionCache.clearOldEntries();
+      }
       
       console.log('🚨 Emergency throttling activated');
     } else if (availableMB < 1024) {
@@ -242,7 +245,27 @@ export class BulkProcessingOrchestrator {
         throw new Error('No valid images found to process');
       }
 
-      // Phase 2: Image compression (if enabled)
+      // Phase 2: ML Kit analysis (run on original high-quality images BEFORE compression)
+      let mlkitResults: Record<string, MLKitAnalysisResult> = {};
+      if (config.enableMLKit) {
+        logInfo('🤖 Phase 2: Running ML Kit analysis on original images...');
+        // ✅ CRITICAL FIX: Use original URIs for ML Kit to avoid file stability issues
+        mlkitResults = await this.runMLKitAnalysis(
+          validImageUris,
+          (analyzed, total) => {
+            if (onProgress) {
+              const progress = Math.round((analyzed / total) * 30); // 0-30% for ML Kit
+              const updatedStatus = this.jobMonitoring.updateProgress(processingId, progress, 0);
+              if (updatedStatus) {
+                onProgress(updatedStatus);
+              }
+            }
+          }
+        );
+        logInfo(`✅ ML Kit analysis completed for ${Object.keys(mlkitResults).length} images`);
+      }
+
+      // Phase 3: Image compression (after ML Kit to avoid file conflicts)
       let compressionStats = {
         originalSize: 0,
         compressedSize: 0,
@@ -250,29 +273,29 @@ export class BulkProcessingOrchestrator {
       };
 
       if (config.enableCompression) {
-        logInfo('🗜️ Phase 2: Compressing images...');
-        const compressionResult = await this.compressImages(validImageUris, config);
+        logInfo('🗜️ Phase 3: Compressing images...');
+        
+        // Lock cache to prevent cleanup during compression and upload
+        this.compressionCache.lockProcessing();
+        
+        const compressionResult = await this.compressImages(
+          validImageUris, 
+          config,
+          (compressed, total) => {
+            if (onProgress) {
+              const progress = 30 + Math.round((compressed / total) * 30); // 30-60% for compression
+              const updatedStatus = this.jobMonitoring.updateProgress(processingId, progress, 0);
+              if (updatedStatus) {
+                onProgress(updatedStatus);
+              }
+            }
+          }
+        );
         compressionStats = compressionResult.stats;
         
         logInfo(`✅ Compression completed: ${(compressionStats.compressionRatio * 100).toFixed(1)}% size reduction`);
       }
-
-      // Phase 3: ML Kit analysis (if enabled)
-      let mlkitResults: Record<string, MLKitAnalysisResult> = {};
-      if (config.enableMLKit) {
-        logInfo('🤖 Phase 3: Running ML Kit analysis...');
-        // Use compressed URIs for ML Kit analysis
-        const mlkitUris = config.enableCompression ? 
-          validImageUris.map(uri => this.compressionCache.get(uri) || uri) : 
-          validImageUris;
-        mlkitResults = await this.runMLKitAnalysis(mlkitUris);
-        logInfo(`✅ ML Kit analysis completed for ${Object.keys(mlkitResults).length} images`);
-      }
-
-      // Phase 4: Create upload batches (use original URIs, upload service will handle cache lookup)
-      logInfo('📦 Phase 4: Creating upload batches...');
       
-      // FIXED: Reset upload session to ensure fresh job IDs (matches old system)
       this.batchUpload.resetSession();
       
       const effectiveBatchSize = config.batchSize || this.hardwareOptimizedBatchSize;
@@ -284,10 +307,8 @@ export class BulkProcessingOrchestrator {
 
       // Update job monitoring with batch count
       jobStatus.totalBatches = batches.length;
-      this.jobMonitoring.updateProgress(processingId, 0, 0);
+      this.jobMonitoring.updateTotalBatches(processingId, batches.length);
 
-      // Phase 5: Upload batches with progress tracking
-      logInfo(`🚀 Phase 5: Uploading ${batches.length} batches...`);
       const uploadResults = await this.uploadBatches(
         batches,
         userId,
@@ -297,16 +318,23 @@ export class BulkProcessingOrchestrator {
         onBatchComplete
       );
 
-      // Phase 6: Submit job to AWS Rekognition for analysis
-      console.log('⚡ Phase 6: Submitting job to AWS Rekognition...');
+      // Unlock cache now that uploads are complete
+      if (config.enableCompression) {
+        this.compressionCache.unlockProcessing();
+      }
+
       const submitResults = await this.submitJobForAnalysis(
         jobStatus,
         userId,
         onProgress
       );
 
-      // Phase 7: Wait for server processing and get results
-      console.log('⏳ Phase 7: Waiting for server processing...');
+      // Store AWS job ID for tracking if available
+      if (submitResults.awsJobId) {
+        this.jobMonitoring.updateJobId(processingId, submitResults.awsJobId);
+        console.log(`🔗 AWS Job ID stored for tracking: ${submitResults.awsJobId}`);
+      }
+
       const serverResults = await this.waitForServerProcessing(
         processingId,
         jobStatus,
@@ -359,6 +387,11 @@ export class BulkProcessingOrchestrator {
     } catch (error) {
       const errorMsg = (error as Error).message;
       console.error(`❌ Bulk processing failed: ${processingId}:`, error);
+
+      // Unlock cache in case of error
+      if (config.enableCompression) {
+        this.compressionCache.unlockProcessing();
+      }
 
       if (onError) {
         onError(errorMsg);
@@ -458,7 +491,8 @@ export class BulkProcessingOrchestrator {
    */
   private async compressImages(
     imageUris: string[],
-    config: BulkProcessingConfig
+    config: BulkProcessingConfig,
+    onProgress?: (compressed: number, total: number) => void
   ): Promise<{
     compressedUris: string[];
     stats: { originalSize: number; compressedSize: number; compressionRatio: number };
@@ -475,6 +509,11 @@ export class BulkProcessingOrchestrator {
     await this.imageCompression.compressImages(
       imageUris,
       (compressed: number, total: number) => {
+        // Call external progress callback if provided
+        if (onProgress) {
+          onProgress(compressed, total);
+        }
+        
         // Only log progress every 5% or every 10 images to reduce spam
         if (compressed % 10 === 0 || compressed === total || (compressed / total) % 0.05 < (1 / total)) {
           logInfo(`🗜️ Compression progress: ${compressed}/${total} (${Math.round(compressed/total*100)}%)`);
@@ -516,42 +555,44 @@ export class BulkProcessingOrchestrator {
   }
 
   /**
-   * Run ML Kit analysis on images
-   * FIXED: Match old system's sequential processing (no batching) to avoid race conditions
+   * Run ML Kit analysis on original images before compression
+   * Processes images sequentially to prevent memory issues and ensure file stability
    */
-  private async runMLKitAnalysis(imageUris: string[]): Promise<Record<string, MLKitAnalysisResult>> {
-    console.log(`🤖 Running ML Kit analysis on ${imageUris.length} images...`);
+  private async runMLKitAnalysis(
+    imageUris: string[], 
+    onProgress?: (analyzed: number, total: number) => void
+  ): Promise<Record<string, MLKitAnalysisResult>> {
+    console.log(`🤖 Running ML Kit analysis on ${imageUris.length} original images...`);
 
     const results: Record<string, MLKitAnalysisResult> = {};
 
-    // Process images sequentially like the old system (no batching)
-    // This prevents race conditions and matches the original implementation
+    // Process images sequentially to prevent memory issues and race conditions
     for (let i = 0; i < imageUris.length; i++) {
       const uri = imageUris[i];
       
       try {
-        // ✅ CRITICAL FIX: Ensure compressed file is stable before ML Kit processing
-        // This prevents race conditions where ImageResizer is still writing the file
-        await this.ensureFileStability(uri);
+        // ✅ CRITICAL FIX: No file stability check needed for original files
+        // Original files are always stable and accessible
         
         // Generate a temporary ID for ML Kit processing
-        const tempImageId = `compressed_${Date.now()}_${i}`;
+        const tempImageId = `original_${Date.now()}_${i}`;
         
         const result = await this.mlkitManager.processImage(
           tempImageId, // imageId
-          uri, // imagePath  
+          uri, // imagePath (original file)
           'bulk-processor', // userId
           { skipDatabaseUpdate: true } // Don't update database during bulk processing
         );
         results[uri] = result;
         
-        // Log progress every 10 images or at the end to reduce spam
-        const shouldLog = (i + 1) % 10 === 0 || (i + 1) === imageUris.length;
-        if (shouldLog) {
-        // Only log progress every 10 images to reduce spam
-        if ((i + 1) % 10 === 0 || i + 1 === imageUris.length) {
-          logInfo(`🔄 ML Kit analysis: ${i + 1}/${imageUris.length} images processed`);
+        // Call progress callback if provided
+        if (onProgress) {
+          onProgress(i + 1, imageUris.length);
         }
+        
+        // Log progress every 10 images or at the end to reduce spam
+        if ((i + 1) % 10 === 0 || (i + 1) === imageUris.length) {
+          logInfo(`🔄 ML Kit analysis: ${i + 1}/${imageUris.length} images processed`);
         }
       } catch (error) {
         console.error(`❌ ML Kit analysis failed for ${uri}:`, error);
@@ -585,13 +626,41 @@ export class BulkProcessingOrchestrator {
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
       
-      // Add ML Kit results to batch
+      // Add ML Kit results to batch with proper mapping for virtual-image-bridge
       batch.mlkitResults = {};
+      
+      // Create a separate mapped data structure for virtual-image integration
+      const batchMappedData: Record<string, any> = {};
+      
       batch.images.forEach(uri => {
         if (mlkitResults[uri]) {
+          // ✅ CRITICAL FIX: Map ML Kit results to virtual_image format using the mapper
+          const mappedData = MLKitVirtualImageMapper.mapMLKitToVirtualImage(mlkitResults[uri]);
+          
+          // Validate mapped data before adding to batch
+          const validation = MLKitVirtualImageMapper.validateMappedData(mappedData);
+          if (!validation.valid) {
+            console.warn(`⚠️ ML Kit data validation failed for ${uri}:`, validation.errors);
+          }
+          
+          // Store raw ML Kit results for edge function compatibility
           batch.mlkitResults![uri] = mlkitResults[uri];
+          
+          // Store mapped data separately for virtual-image-bridge integration
+          batchMappedData[uri] = validation.sanitized;
+          
+          logVerbose(`🧠 Mapped ML Kit data for ${uri}:`, {
+            tags: validation.sanitized.virtual_tags.length,
+            objects: validation.sanitized.detected_objects.length,
+            faces: validation.sanitized.detected_faces_count,
+            quality: validation.sanitized.quality_score,
+            scene: validation.sanitized.scene_type
+          });
         }
       });
+      
+      // Attach mapped data to batch for virtual-image-bridge integration
+      (batch as any).mappedMLKitData = batchMappedData;
 
       console.log(`📤 Uploading batch ${i + 1}/${batches.length}: ${batch.batchId}...`);
 
@@ -744,7 +813,7 @@ export class BulkProcessingOrchestrator {
     console.log(`⏳ Waiting for server processing: ${processingId}...`);
 
     const startTime = Date.now();
-    const pollInterval = 2000; // Poll every 2 seconds
+    const pollInterval = 10000; // Poll every 2 seconds
 
     while (Date.now() - startTime < maxWaitTime) {
       try {

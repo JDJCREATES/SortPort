@@ -792,6 +792,11 @@ serve(async (req: Request): Promise<Response> => {
           try {
             console.log(`🚀 [${requestId}] Creating virtual images for ${processedResults.length} processed images...`);
             
+            // Extract ML Kit data from job metadata if available
+            const jobMLKitData = job.metadata?.mappedMLKitData || {};
+            const hasMLKitData = Object.keys(jobMLKitData).length > 0;
+            console.log(`🧠 [${requestId}] Job has ML Kit data: ${hasMLKitData}, images: ${Object.keys(jobMLKitData).length}`);
+            
             // Prepare images data for virtual-image-bridge
             const imagesForBridge = processedResults.map((result: any, index: number) => {
               // Extract original path from temp path if available
@@ -801,6 +806,35 @@ serve(async (req: Request): Promise<Response> => {
                 originalPath = originalPath.replace(/^temp-[^/]+\//, '');
               }
               
+              // Try to find corresponding ML Kit data
+              // We need to match the image somehow - using index or path
+              const imageKey = originalPath || `image_${index}`;
+              let mlkitData = null;
+              
+              // Try different key formats to find ML Kit data
+              if (hasMLKitData) {
+                // First try exact path match
+                mlkitData = jobMLKitData[originalPath];
+                
+                // If not found, try other potential key formats
+                if (!mlkitData) {
+                  const possibleKeys = [
+                    `image_${index}`,
+                    `bulk-${jobId}-image-${index}`,
+                    result.image_id,
+                    Object.keys(jobMLKitData)[index] // Fallback to index-based matching
+                  ];
+                  
+                  for (const key of possibleKeys) {
+                    if (key && jobMLKitData[key]) {
+                      mlkitData = jobMLKitData[key];
+                      console.log(`🔍 [${requestId}] Found ML Kit data for image ${index} using key: ${key}`);
+                      break;
+                    }
+                  }
+                }
+              }
+              
               return {
                 imagePath: originalPath || `bulk-${jobId}-image-${index}`,
                 originalFileName: `image_${index}.jpg`,
@@ -808,9 +842,30 @@ serve(async (req: Request): Promise<Response> => {
                 contentType: 'image/jpeg',
                 s3Key: result.image_id || `input/batch-0-image-${index.toString().padStart(4, '0')}.jpg`,
                 uploadOrder: index,
-                // Include ML Kit data if available (will be passed from client)
-                mlkit_data: {
-                  virtual_tags: [], // Will be updated by client ML Kit processing
+                // ✅ CRITICAL FIX: Use actual ML Kit data if available, otherwise use defaults
+                mlkit_data: mlkitData ? {
+                  virtual_tags: mlkitData.virtual_tags || [],
+                  detected_objects: mlkitData.detected_objects || [],
+                  emotion_detected: mlkitData.emotion_detected || [],
+                  activity_detected: mlkitData.activity_detected || [],
+                  detected_faces_count: mlkitData.detected_faces_count || 0,
+                  quality_score: mlkitData.quality_score,
+                  brightness_score: mlkitData.brightness_score,
+                  blur_score: mlkitData.blur_score,
+                  aesthetic_score: mlkitData.aesthetic_score,
+                  scene_type: mlkitData.scene_type,
+                  image_orientation: mlkitData.image_orientation,
+                  has_text: mlkitData.has_text || false,
+                  caption: mlkitData.caption,
+                  vision_summary: mlkitData.vision_summary,
+                  metadata: mlkitData.metadata || {
+                    source: 'bulk-nsfw-processing-with-mlkit',
+                    processingJobId: jobId,
+                    processedAt: new Date().toISOString()
+                  }
+                } : {
+                  // Default empty ML Kit data structure if no data available
+                  virtual_tags: [],
                   detected_objects: [],
                   emotion_detected: [],
                   activity_detected: [],
@@ -825,7 +880,7 @@ serve(async (req: Request): Promise<Response> => {
                   caption: null,
                   vision_summary: null,
                   metadata: {
-                    source: 'bulk-nsfw-processing',
+                    source: 'bulk-nsfw-processing-no-mlkit',
                     processingJobId: jobId,
                     processedAt: new Date().toISOString()
                   }

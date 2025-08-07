@@ -99,7 +99,12 @@ export class JobMonitoringService {
     job.completedBatches = completedBatches;
     job.processedImages = processedImages;
     job.progress = job.totalBatches > 0 ? (completedBatches / job.totalBatches) * 100 : 0;
-    job.status = completedBatches >= job.totalBatches ? 'completed' : 'processing';
+    
+    // Job is completed only when:
+    // 1. We have batches configured (totalBatches > 0)
+    // 2. All batches are completed (completedBatches >= totalBatches)
+    job.status = (job.totalBatches > 0 && completedBatches >= job.totalBatches) ? 'completed' : 'processing';
+    
     job.errors.push(...errors);
     job.warnings.push(...warnings);
 
@@ -203,6 +208,21 @@ export class JobMonitoringService {
 
     job.bucketName = bucketName;
     console.log(`🪣 Bucket name assigned: ${processingId} → ${bucketName}`);
+    return job;
+  }
+
+  /**
+   * Update job with total batch count after batch creation
+   */
+  updateTotalBatches(processingId: string, totalBatches: number): JobStatus | null {
+    const job = this.activeJobs.get(processingId);
+    if (!job) {
+      console.warn(`⚠️ Attempted to update totalBatches for unknown job: ${processingId}`);
+      return null;
+    }
+
+    job.totalBatches = totalBatches;
+    console.log(`📦 Total batches updated: ${processingId} → ${totalBatches} batches`);
     return job;
   }
 

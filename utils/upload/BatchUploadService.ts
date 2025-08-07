@@ -151,7 +151,12 @@ export class BatchUploadService {
           // FIXED: Handle race condition where compressed file might be temporarily 0 bytes
           // This can happen if compression is still writing the file when we check
           if (fileSize === 0 && isCompressed) {
+            // ✅ Enhanced logging: Track when and why files become 0 bytes
+            const cacheStats = this.cache.getStats();
+            const timeSinceCompressionComplete = Date.now(); // We don't have exact timestamp, but log current time
+            
             console.warn(`⚠️ Compressed file is 0 bytes, retrying in 100ms: ${actualUri}`);
+            console.warn(`🔍 Cache corruption context: Cache size=${cacheStats.size}, Processing locked=${this.cache.isProcessingLocked() ? 'YES' : 'NO'}`);
             
             // Wait and retry up to 3 times for compressed files
             let retryCount = 0;
@@ -162,6 +167,9 @@ export class BatchUploadService {
               
               if (fileSize === 0) {
                 console.warn(`⚠️ Retry ${retryCount}/3: Compressed file still 0 bytes: ${actualUri}`);
+                // Check if file still exists or was deleted
+                const validation = await FileSystemService.validateFile(actualUri);
+                console.warn(`🔍 File validation: ${actualUri} exists=${validation.exists}, size=${validation.size}, error=${validation.error || 'none'}`);
               }
             }
             
@@ -255,6 +263,11 @@ export class BatchUploadService {
     // Add ML Kit results if available
     if (batch.mlkitResults) {
       formData.append('mlkitResults', JSON.stringify(batch.mlkitResults));
+    }
+    
+    // Add mapped ML Kit data for virtual-image-bridge integration
+    if ((batch as any).mappedMLKitData) {
+      formData.append('mappedMLKitData', JSON.stringify((batch as any).mappedMLKitData));
     }
 
     let uploadSize = 0;

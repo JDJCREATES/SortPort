@@ -30,6 +30,7 @@ import { PhotoLoader } from '../utils/photoLoader';
 import { AuthModal } from '../components/AuthModal';
 import { useApp } from '../contexts/AppContext';
 import { lightTheme } from '../utils/theme';
+import SortxPortSplash from '../components/SortxPortSplash';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ONBOARDING_COMPLETED_KEY = '@sortxport_onboarding_completed';

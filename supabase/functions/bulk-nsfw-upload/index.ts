@@ -608,17 +608,29 @@ async function handleRequest(req: Request): Promise<Response> {
     let userId: string | null = null;
     let batchIndex = 0;
     let totalImages = 0;
+    let mappedMLKitData: any = null;
     
     try {
       const userIdValue = formData.get('userId');
       const batchIndexValue = formData.get('batchIndex');
       const totalImagesValue = formData.get('totalImages');
+      const mappedMLKitDataValue = formData.get('mappedMLKitData');
       
       userId = userIdValue ? String(userIdValue) : null;
       batchIndex = batchIndexValue ? parseInt(String(batchIndexValue)) : 0;
       totalImages = totalImagesValue ? parseInt(String(totalImagesValue)) : 0;
       
-      console.log(`📋 [${requestId}] Extracted metadata: userId=${userId}, batchIndex=${batchIndex}, totalImages=${totalImages}`);
+      // Parse mapped ML Kit data if available
+      if (mappedMLKitDataValue) {
+        try {
+          mappedMLKitData = JSON.parse(String(mappedMLKitDataValue));
+          console.log(`🧠 [${requestId}] Received mapped ML Kit data for ${Object.keys(mappedMLKitData).length} images`);
+        } catch (parseError) {
+          console.warn(`⚠️ [${requestId}] Failed to parse mapped ML Kit data:`, parseError);
+        }
+      }
+      
+      console.log(`📋 [${requestId}] Extracted metadata: userId=${userId}, batchIndex=${batchIndex}, totalImages=${totalImages}, hasMLKitData=${!!mappedMLKitData}`);
       
     } catch (error) {
       console.error(`❌ [${requestId}] Error extracting metadata:`, error);
@@ -797,6 +809,19 @@ async function handleRequest(req: Request): Promise<Response> {
       // Create new job record
       console.log(`🆕 [${requestId}] Creating new job record: ${sessionJobId}`);
       
+      // Prepare job metadata including ML Kit data
+      const jobMetadata: any = {
+        uploadBatch: batchIndex,
+        uploadedCount: uploadResult.successCount,
+        failedCount: uploadResult.failedCount
+      };
+      
+      // Add mapped ML Kit data to job metadata for later retrieval during status processing
+      if (mappedMLKitData && Object.keys(mappedMLKitData).length > 0) {
+        jobMetadata.mappedMLKitData = mappedMLKitData;
+        console.log(`🧠 [${requestId}] Storing ML Kit data for ${Object.keys(mappedMLKitData).length} images in job metadata`);
+      }
+      
       const { error } = await supabase
         .from('nsfw_bulk_jobs')
         .insert({
@@ -808,6 +833,7 @@ async function handleRequest(req: Request): Promise<Response> {
           nsfw_detected: 0,
           aws_temp_bucket: bucketName,
           bucket_path: `s3://${bucketName}/input/`,
+          metadata: jobMetadata, // Store ML Kit data and other metadata
           created_at: new Date().toISOString(),
         });
       
@@ -826,12 +852,26 @@ async function handleRequest(req: Request): Promise<Response> {
       // Update existing job record
       console.log(`🔄 [${requestId}] Updating existing job: ${sessionJobId}`);
       
-      // Get current job state first
+      // Get current job state first including metadata
       const { data: currentJob } = await supabase
         .from('nsfw_bulk_jobs')
-        .select('total_images, processed_images')
+        .select('total_images, processed_images, metadata')
         .eq('id', sessionJobId)
         .single();
+      
+      // Merge existing metadata with new ML Kit data
+      const existingMetadata = currentJob?.metadata || {};
+      const updatedMetadata = { ...existingMetadata };
+      
+      // Merge mapped ML Kit data if available
+      if (mappedMLKitData && Object.keys(mappedMLKitData).length > 0) {
+        if (!updatedMetadata.mappedMLKitData) {
+          updatedMetadata.mappedMLKitData = {};
+        }
+        // Merge new ML Kit data with existing data
+        Object.assign(updatedMetadata.mappedMLKitData, mappedMLKitData);
+        console.log(`🧠 [${requestId}] Merging ML Kit data - now have data for ${Object.keys(updatedMetadata.mappedMLKitData).length} images`);
+      }
       
       const { error } = await supabase
         .from('nsfw_bulk_jobs')
@@ -839,6 +879,7 @@ async function handleRequest(req: Request): Promise<Response> {
           total_images: Math.max(currentJob?.total_images || 0, totalImages),
           processed_images: (currentJob?.processed_images || 0) + uploadResult.successCount,
           status: 'uploading', // Keep in uploading status
+          metadata: updatedMetadata, // Update metadata with merged ML Kit data
           updated_at: new Date().toISOString(),
         })
         .eq('id', sessionJobId);

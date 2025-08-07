@@ -1,4 +1,4 @@
-import ImageResizer from 'react-native-image-resizer';
+import ImageResizer from '@bam.tech/react-native-image-resizer';
 import * as FileSystem from 'expo-file-system';
 import { CompressionCacheService } from '../cache/CompressionCacheService';
 import { FileSystemService } from '../filesystem/FileSystemService';
@@ -78,31 +78,45 @@ export class ImageCompressionService {
       // Per-image compression start logging removed to reduce terminal spam
       // console.log(`🔄 Compressing: ${uri.substring(uri.lastIndexOf('/') + 1)} (${FileSystemService.formatFileSize(validation.size)})`);
 
-      // ✅ SMART COMPRESSION: Detect file type and handle PNG transparency
+      // ✅ SMART COMPRESSION: Detect file type and handle PNG vs JPEG differently
       const isPng = uri.toLowerCase().includes('.png');
-      const outputFormat = isPng ? 'PNG' : 'JPEG';
-      const compressionQuality = isPng ? 100 : this.settings.compressionQuality * 100; // PNG needs 100% quality to preserve transparency
       
-      // Log compression strategy for debugging
+      let result;
       if (isPng) {
-        console.log(`🖼️ PNG detected: preserving transparency (${outputFormat}, ${compressionQuality}% quality)`);
+        // For PNG files: focus on resizing rather than quality compression
+        // PNG is lossless, so we rely on dimension reduction for file size savings
+        console.log(`🖼️ PNG detected: preserving format and transparency`);
+        result = await ImageResizer.createResizedImage(
+          uri,
+          this.settings.maxImageSize,
+          this.settings.maxImageSize,
+          'PNG', // Preserve PNG format and transparency
+          100,   // PNG doesn't use quality - this is ignored
+          0,
+          undefined,
+          false,
+          {
+            mode: 'contain',
+            onlyScaleDown: true
+          }
+        );
+      } else {
+        // For JPEG and other formats: use standard compression
+        result = await ImageResizer.createResizedImage(
+          uri,
+          this.settings.maxImageSize,
+          this.settings.maxImageSize,
+          'JPEG',
+          this.settings.compressionQuality * 100,
+          0,
+          undefined,
+          false,
+          {
+            mode: 'contain',
+            onlyScaleDown: true
+          }
+        );
       }
-
-      // Perform compression with smart format handling
-      const result = await ImageResizer.createResizedImage(
-        uri,
-        this.settings.maxImageSize,
-        this.settings.maxImageSize,
-        outputFormat, // ✅ Preserve PNG format for transparency
-        compressionQuality, // ✅ Use appropriate quality settings
-        0,
-        undefined,
-        false,
-        {
-          mode: 'contain',
-          onlyScaleDown: true
-        }
-      );
 
       // FIXED: Increased delay to ensure file is fully written by ImageResizer
       // This prevents race conditions where file exists but is still being written
