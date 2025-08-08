@@ -397,6 +397,7 @@ export class BulkNSFWProcessor {
   private static async startEnhancedUploadStream(
     imageUris: string[],
     userId: string,
+    mlKitResults?: Map<string, any>,
     onProgress?: (uploaded: number, total: number) => void
   ): Promise<{ jobId: string, bucketName: string, totalUploaded: number }> {
     if (process.env.NODE_ENV === 'development') {
@@ -466,7 +467,7 @@ export class BulkNSFWProcessor {
           console.log(`🚀 Processing batch ${i + 1}/${batches.length} (${compressedBatch.length} images)...`);
         }
         
-        const result = await this.uploadBatchWithRetry(compressedBatch, userId, i, batches.length);
+        const result = await this.uploadBatchWithRetry(compressedBatch, userId, i, batches.length, mlKitResults);
         
         // FIXED: Establish or validate session
         if (sessionJobId === null) {
@@ -583,6 +584,7 @@ export class BulkNSFWProcessor {
     userId: string,
     batchIndex: number,
     totalBatches: number,
+    mlKitResults?: Map<string, any>,
     retryCount = 0
   ): Promise<{ jobId: string; bucketName: string; uploadedCount: number }> {
     const maxRetries = 3; // Increased retries
@@ -595,6 +597,58 @@ export class BulkNSFWProcessor {
       formData.append('batchIndex', batchIndex.toString());
       formData.append('totalImages', batchUris.length.toString());
       formData.append('isLastBatch', (batchIndex === totalBatches - 1).toString());
+
+      // ✅ CRITICAL FIX: Add ML Kit data to form data with standardized keys
+      if (mlKitResults && mlKitResults.size > 0) {
+        console.log(`🧠 Adding ML Kit data for batch ${batchIndex + 1}/${totalBatches}...`);
+        console.log(`🧠 ML Kit results available: ${mlKitResults.size} images`);
+        console.log(`🧠 Batch contains: ${batchUris.length} images`);
+        
+        const mappedMLKitData: Record<string, any> = {};
+        
+        batchUris.forEach((compressedUri, localIndex) => {
+          // Get the original URI from the reverse cache
+          const originalUri = this.compressionCacheReverse.get(compressedUri) || compressedUri;
+          const analysis = mlKitResults.get(originalUri);
+          
+          if (analysis) {
+            console.log(`📊 Found ML Kit analysis for local image ${localIndex}, original URI: ${originalUri}`);
+            
+            const { MLKitVirtualImageMapper } = require('./mlkit/mappers/MLKitVirtualImageMapper');
+            const mappedData = MLKitVirtualImageMapper.mapMLKitToVirtualImage(analysis);
+            
+            // Calculate global index for this image across all batches
+            const globalIndex = (batchIndex * this.currentSettings.batchSize) + localIndex;
+            
+            // ✅ Use simple, predictable key formats
+            const primaryKey = `image_${globalIndex}`;                                   // Primary: global index
+            const fallbackKey = `image_${localIndex}`;                                   // Fallback: local index  
+            const awsKey = `batch-0-image-${globalIndex.toString().padStart(4, '0')}`;   // AWS format
+            
+            // Store with simple, predictable keys (fewer duplicates = less confusion)
+            mappedMLKitData[primaryKey] = mappedData;     // Global index (most reliable)
+            mappedMLKitData[fallbackKey] = mappedData;    // Local index (backup)
+            mappedMLKitData[awsKey] = mappedData;         // AWS S3 format (for matching AWS results)
+            
+            console.log(`🔗 Mapped ML Kit data for local image ${localIndex} (global: ${globalIndex})`);
+            console.log(`🔑 Primary key: ${primaryKey}, Fallback: ${fallbackKey}, AWS: ${awsKey}`);
+          } else {
+            console.warn(`⚠️ No ML Kit analysis found for local image ${localIndex}, original URI: ${originalUri}`);
+          }
+        });
+        
+        if (Object.keys(mappedMLKitData).length > 0) {
+          formData.append('mappedMLKitData', JSON.stringify(mappedMLKitData));
+          const uniqueImages = batchUris.length; // Simple count - one image per URI in batch
+          console.log(`🧠 Added ML Kit data for ${uniqueImages} images to batch ${batchIndex + 1}`);
+          console.log(`🔍 DEBUG: Total ML Kit keys stored: ${Object.keys(mappedMLKitData).length}`);
+          console.log(`🔍 DEBUG: Sample keys:`, Object.keys(mappedMLKitData).slice(0, 6));
+        } else {
+          console.warn(`⚠️ No ML Kit data mapped for batch ${batchIndex + 1} - check key matching`);
+        }
+      } else {
+        console.log(`📭 No ML Kit data available for batch ${batchIndex + 1}/${totalBatches}`);
+      }
 
       // REDUCED LOGGING: Less verbose FormData logging
       console.log(`📦 Preparing FormData for ${batchUris.length} images...`);
@@ -828,7 +882,7 @@ export class BulkNSFWProcessor {
         const delay = Math.pow(2, retryCount) * 1000;
         console.log(`⏳ Retrying batch ${batchIndex + 1} in ${delay}ms... (${retryCount + 1}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delay));
-        return this.uploadBatchWithRetry(batchUris, userId, batchIndex, retryCount + 1);
+        return this.uploadBatchWithRetry(batchUris, userId, batchIndex, totalBatches, mlKitResults, retryCount + 1);
       } else {
         throw new Error(`Batch ${batchIndex + 1} failed after ${maxRetries + 1} attempts: ${errorMessage}`);
       }
@@ -1045,7 +1099,8 @@ export class BulkNSFWProcessor {
       const uploadResult = await this.startEnhancedUploadStream(
         imageUris,
         userId,
-        (uploaded, total) => {
+        mlKitResults, // Pass ML Kit results to upload function
+        (uploaded: number, total: number) => {
           uploadProgress = 60 + Math.round((uploaded / total) * 20); // 60-80% for upload
           if (onProgress) {
             onProgress({

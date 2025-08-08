@@ -625,9 +625,13 @@ async function handleRequest(req: Request): Promise<Response> {
         try {
           mappedMLKitData = JSON.parse(String(mappedMLKitDataValue));
           console.log(`🧠 [${requestId}] Received mapped ML Kit data for ${Object.keys(mappedMLKitData).length} images`);
+          console.log(`🔍 [${requestId}] ML Kit data sample keys:`, Object.keys(mappedMLKitData).slice(0, 5));
+          console.log(`🔍 [${requestId}] ML Kit data sample structure:`, Object.keys(Object.values(mappedMLKitData)[0] || {}).slice(0, 10));
         } catch (parseError) {
           console.warn(`⚠️ [${requestId}] Failed to parse mapped ML Kit data:`, parseError);
         }
+      } else {
+        console.log(`📭 [${requestId}] No ML Kit data received in this batch`);
       }
       
       console.log(`📋 [${requestId}] Extracted metadata: userId=${userId}, batchIndex=${batchIndex}, totalImages=${totalImages}, hasMLKitData=${!!mappedMLKitData}`);

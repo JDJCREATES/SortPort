@@ -379,6 +379,54 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
   return results
 }
 
+// Enhanced ML Kit data matching function
+function findMLKitDataForImage(jobMLKitData: any, result: any, index: number, jobId: string): any {
+  if (!jobMLKitData || Object.keys(jobMLKitData).length === 0) {
+    console.warn(`🚫 findMLKitDataForImage: No ML Kit data available (empty object)`);
+    return null;
+  }
+
+  console.log(`🔍 findMLKitDataForImage: Available keys in jobMLKitData:`, Object.keys(jobMLKitData));
+  console.log(`🔍 findMLKitDataForImage: Looking for index ${index}, result:`, { 
+    image_id: result.image_id, 
+    image_path: result.image_path 
+  });
+
+  // ✅ SIMPLIFIED: Try key strategies in order of most likely to work
+  const keyStrategies = [
+    `image_${index}`,                     // Direct index match (most reliable)
+    `batch-0-image-${index.toString().padStart(4, '0')}`, // AWS S3 key format (without .jpg)
+    result.image_id?.replace('.jpg', ''), // AWS result without extension
+    result.image_id,                      // AWS result with extension
+  ];
+
+  console.log(`🔍 findMLKitDataForImage: Trying ${keyStrategies.length} simplified strategies:`, keyStrategies);
+
+  for (const key of keyStrategies) {
+    if (key && jobMLKitData[key]) {
+      console.log(`✅ Found ML Kit data using key: '${key}' for image ${index}`);
+      console.log(`📊 ML Kit data structure:`, Object.keys(jobMLKitData[key] || {}));
+      return jobMLKitData[key];
+    } else if (key) {
+      console.log(`❌ Key '${key}' not found in ML Kit data`);
+    }
+  }
+
+  console.error(`🚨 CRITICAL: No ML Kit data found for image ${index}`);
+  console.error(`🚨 Available ML Kit keys:`, Object.keys(jobMLKitData));
+  console.error(`🚨 Tried strategies:`, keyStrategies);
+  
+  // ✅ LAST RESORT: Try positional matching as backup
+  const keysByIndex = Object.keys(jobMLKitData);
+  if (keysByIndex[index]) {
+    const fallbackKey = keysByIndex[index];
+    console.warn(`🔄 Using positional fallback key: '${fallbackKey}' for image ${index}`);
+    return jobMLKitData[fallbackKey];
+  }
+  
+  return null;
+}
+
 serve(async (req: Request): Promise<Response> => {
   const requestId = req.headers.get('X-Request-ID') || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   
@@ -795,7 +843,21 @@ serve(async (req: Request): Promise<Response> => {
             // Extract ML Kit data from job metadata if available
             const jobMLKitData = job.metadata?.mappedMLKitData || {};
             const hasMLKitData = Object.keys(jobMLKitData).length > 0;
-            console.log(`🧠 [${requestId}] Job has ML Kit data: ${hasMLKitData}, images: ${Object.keys(jobMLKitData).length}`);
+            
+            console.log(`🧠 [${requestId}] Job has ML Kit data: ${hasMLKitData}, total keys: ${Object.keys(jobMLKitData).length}`);
+            
+            if (hasMLKitData) {
+              console.log(`🔍 [${requestId}] Sample ML Kit keys:`, Object.keys(jobMLKitData).slice(0, 10));
+              console.log(`🔍 [${requestId}] Key patterns detected:`);
+              
+              const imageKeys = Object.keys(jobMLKitData).filter(k => k.startsWith('image_'));
+              const batchKeys = Object.keys(jobMLKitData).filter(k => k.startsWith('batch-'));
+              const uriKeys = Object.keys(jobMLKitData).filter(k => k.includes('file://') || k.includes('content://'));
+              
+              console.log(`   - image_ keys: ${imageKeys.length} (e.g., ${imageKeys[0] || 'none'})`);
+              console.log(`   - batch- keys: ${batchKeys.length} (e.g., ${batchKeys[0] || 'none'})`);
+              console.log(`   - URI keys: ${uriKeys.length} (e.g., ${uriKeys[0]?.substring(0, 50) || 'none'}...)`);
+            }
             
             // Prepare images data for virtual-image-bridge
             const imagesForBridge = processedResults.map((result: any, index: number) => {
@@ -806,34 +868,8 @@ serve(async (req: Request): Promise<Response> => {
                 originalPath = originalPath.replace(/^temp-[^/]+\//, '');
               }
               
-              // Try to find corresponding ML Kit data
-              // We need to match the image somehow - using index or path
-              const imageKey = originalPath || `image_${index}`;
-              let mlkitData = null;
-              
-              // Try different key formats to find ML Kit data
-              if (hasMLKitData) {
-                // First try exact path match
-                mlkitData = jobMLKitData[originalPath];
-                
-                // If not found, try other potential key formats
-                if (!mlkitData) {
-                  const possibleKeys = [
-                    `image_${index}`,
-                    `bulk-${jobId}-image-${index}`,
-                    result.image_id,
-                    Object.keys(jobMLKitData)[index] // Fallback to index-based matching
-                  ];
-                  
-                  for (const key of possibleKeys) {
-                    if (key && jobMLKitData[key]) {
-                      mlkitData = jobMLKitData[key];
-                      console.log(`🔍 [${requestId}] Found ML Kit data for image ${index} using key: ${key}`);
-                      break;
-                    }
-                  }
-                }
-              }
+              // Try to find corresponding ML Kit data using enhanced matching
+              const mlkitData = findMLKitDataForImage(jobMLKitData, result, index, jobId);
               
               return {
                 imagePath: originalPath || `bulk-${jobId}-image-${index}`,

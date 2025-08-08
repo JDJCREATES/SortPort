@@ -118,11 +118,14 @@ export class JobMonitoringService {
     job.errors.push(...errors);
     job.warnings.push(...warnings);
 
+    // ✅ CRITICAL FIX: Don't move to history immediately - let virtual image processing complete
+    // But keep the status as 'completed' for compatibility with existing system
     if (job.status === 'completed') {
       job.endTime = Date.now();
-      this.moveToHistory(job);
+      // DON'T move to history here - the job stays active for virtual image processing
+      console.log(`✅ Job upload completed, keeping active for virtual image processing: ${processingId}`);
     }
-
+    
     console.log(`📈 Job progress updated: ${processingId}`, {
       progress: `${job.progress.toFixed(1)}%`,
       completedBatches: `${completedBatches}/${job.totalBatches}`,
@@ -193,6 +196,14 @@ export class JobMonitoringService {
   updateJobId(processingId: string, jobId: string): JobStatus | null {
     const job = this.activeJobs.get(processingId);
     if (!job) {
+      // ✅ CRITICAL FIX: Check job history before warning - job might be completed but still processing virtual images
+      const historicalJob = this.jobHistory.find(j => j.processingId === processingId);
+      if (historicalJob) {
+        console.log(`🔗 Job ID assigned to completed job (OK): ${processingId} → ${jobId}`);
+        historicalJob.jobId = jobId;
+        return historicalJob;
+      }
+      
       console.warn(`⚠️ Attempted to update jobId for unknown job: ${processingId}`);
       return null;
     }
@@ -266,6 +277,31 @@ export class JobMonitoringService {
       compressionRatio: `${(results.compressionStats.compressionRatio * 100).toFixed(1)}%`,
       errors: job.errors.length,
       warnings: job.warnings.length
+    });
+
+    this.moveToHistory(job);
+    return job;
+  }
+
+  /**
+   * ✅ CRITICAL FIX: Complete job after virtual image processing
+   * This ensures ML Kit data is preserved until the full pipeline is done
+   */
+  completeJobWithVirtualImages(processingId: string): JobStatus | null {
+    const job = this.activeJobs.get(processingId);
+    if (!job) {
+      console.warn(`⚠️ Attempted to complete unknown job: ${processingId}`);
+      return null;
+    }
+
+    job.status = 'completed';
+    job.endTime = Date.now();
+    
+    console.log(`✅ Job fully completed including virtual images: ${processingId}`, {
+      totalTime: `${((job.endTime - job.startTime) / 1000).toFixed(1)}s`,
+      finalStatus: job.status,
+      processedImages: job.processedImages,
+      totalImages: job.totalImages
     });
 
     this.moveToHistory(job);

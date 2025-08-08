@@ -45,32 +45,33 @@ export class ImagePathHelper {
       throw new Error('Invalid image path provided');
     }
 
-    // Use modern path sanitization
+    // Fast path: Android file URIs don't need sanitization
+    if (imagePath.startsWith('file:///')) {
+      return imagePath;
+    }
+
+    // For other paths, use sanitization
     const sanitized = PathSanitizer.sanitizeForMLKit(imagePath);
     
     // Trim and clean the path
     let cleanPath = sanitized.trim();
     
-    // Log conversion process for debugging (in development only)
-    if (__DEV__) {
-      console.log(`🔧 ML Kit path conversion:`, {
+    // Log conversion process only in development and for errors
+    const shouldLogDebug = __DEV__ && Math.random() < 0.1; // Only log 10% of the time in dev
+    if (shouldLogDebug) {
+      console.log(`🔧 ML Kit path conversion sample:`, {
         original: imagePath,
         sanitized: sanitized,
         cleaned: cleanPath
       });
     }
 
-    // Special case: If sanitized path is same as original Android file URI, handle it properly
-    if (cleanPath.startsWith('file:///')) {
-      // For Android file URIs, ML Kit expects the original URI format, not the extracted path
-      console.log(`📱 Using Android file URI for ML Kit: ${cleanPath}`);
-      return cleanPath;
-    }
-    
     // Handle different URI schemes
     if (cleanPath.startsWith('content://') || cleanPath.startsWith('asset://')) {
       // Android content URIs and assets should be passed as-is
-      console.log(`📱 Using Android content/asset URI: ${cleanPath}`);
+      if (shouldLogDebug) {
+        console.log(`📱 Using Android content/asset URI: ${cleanPath}`);
+      }
       return cleanPath;
     }
     

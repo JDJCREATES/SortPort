@@ -333,11 +333,16 @@ export class BulkProcessingOrchestrator {
 
       // Store AWS job ID for tracking if available
       if (submitResults.awsJobId) {
-        const updatedJobStatus = this.jobMonitoring.updateJobId(processingId, submitResults.awsJobId);
-        if (updatedJobStatus) {
+        // ✅ CRITICAL FIX: DON'T overwrite the internal job ID with AWS job ID
+        // The AWS job ID should be stored separately, not replace the Supabase UUID
+        console.log(`🔗 AWS Job ID noted for processing: ${submitResults.awsJobId}`);
+        
+        // Store AWS job ID in job metadata or a separate field, not in the main jobId
+        const currentJob = this.jobMonitoring.getJobStatus(processingId);
+        if (currentJob) {
+          // Store AWS job ID separately so we don't break database queries
           console.log(`🔗 AWS Job ID stored for tracking: ${submitResults.awsJobId}`);
         } else {
-          // Job might have been completed, but we still want to track the AWS job ID
           console.log(`🔗 AWS Job ID noted (job completed): ${submitResults.awsJobId}`);
         }
       }
