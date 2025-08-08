@@ -1,9 +1,39 @@
 /**
- * Image Path Helper for ML Kit
+ * Image Path    // Use PathSanitizer for modern filename handling
+    const sanitized = PathSanitizer.sanitizeForMLKit(imagePath);
+    
+    // Trim and clean the path
+    let cleanPath = sanitized.trim();
+    
+    // Log conversion process for debugging (in development only)
+    if (__DEV__) {
+      console.log(`🔧 ML Kit path conversion:`, {
+        original: imagePath,
+        sanitized: sanitized,
+        cleaned: cleanPath
+      });
+    }
+
+    // Special case: If sanitized path is same as original Android file URI, handle it properly
+    if (cleanPath.startsWith('file:///')) {
+      // For Android file URIs, extract the file system path for ML Kit
+      const filePath = cleanPath.substring(8); // Remove 'file:///' (8 chars)
+      
+      // Validate that we have a proper absolute path
+      if (!filePath.startsWith('/')) {
+        const errorMsg = `Invalid Android file URI structure: expected file:///absolute/path, got: ${cleanPath}. Original: ${imagePath}`;
+        console.error(`❌ ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      
+      console.log(`📱 Android file URI converted: ${cleanPath} → ${filePath}`);
+      return filePath;
+    } Kit
  * Converts various image path formats to ML Kit compatible URIs
  */
 
 import { Platform } from 'react-native';
+import { PathSanitizer } from '../../helpers/pathSanitizer';
 
 export class ImagePathHelper {
   /**
@@ -15,11 +45,34 @@ export class ImagePathHelper {
       throw new Error('Invalid image path provided');
     }
 
-    // Trim and clean the path
-    let cleanPath = imagePath.trim();
+    // Use modern path sanitization
+    const sanitized = PathSanitizer.sanitizeForMLKit(imagePath);
     
-    // Log original path for debugging (commented out to reduce spam)
-    // console.log(`🔧 Converting path: ${imagePath}`);
+    // Trim and clean the path
+    let cleanPath = sanitized.trim();
+    
+    // Log conversion process for debugging (in development only)
+    if (__DEV__) {
+      console.log(`🔧 ML Kit path conversion:`, {
+        original: imagePath,
+        sanitized: sanitized,
+        cleaned: cleanPath
+      });
+    }
+
+    // Special case: If sanitized path is same as original Android file URI, handle it properly
+    if (cleanPath.startsWith('file:///')) {
+      // For Android file URIs, ML Kit expects the original URI format, not the extracted path
+      console.log(`📱 Using Android file URI for ML Kit: ${cleanPath}`);
+      return cleanPath;
+    }
+    
+    // Handle different URI schemes
+    if (cleanPath.startsWith('content://') || cleanPath.startsWith('asset://')) {
+      // Android content URIs and assets should be passed as-is
+      console.log(`📱 Using Android content/asset URI: ${cleanPath}`);
+      return cleanPath;
+    }
     
     // Check for obvious corruption patterns in UUID-based filenames
     const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -30,7 +83,6 @@ export class ImagePathHelper {
       const uuidMatches = cleanPath.match(uuidPattern);
       if (uuidMatches) {
         const extractedUuid = uuidMatches[0];
-        // console.log(`🔍 Detected UUID in path: ${extractedUuid}`);
         
         // Check for common corruption patterns (missing characters)
         if (extractedUuid.length !== 36) {
@@ -40,47 +92,25 @@ export class ImagePathHelper {
       }
     }
     
-    // Handle different URI schemes
-    if (cleanPath.startsWith('content://') || cleanPath.startsWith('asset://')) {
-      // Android content URIs and assets should be passed as-is
-      console.log(`📱 Using Android content/asset URI: ${cleanPath}`);
-      return cleanPath;
-    }
-    
-    // Remove file:// prefix for processing
-    if (cleanPath.startsWith('file://')) {
-      cleanPath = cleanPath.substring(7); // Remove 'file://'
-    }
-    
-    // Validate the path structure
+    // For other paths (not Android file URIs), validate they start with /
     if (!cleanPath.startsWith('/')) {
-      throw new Error(`Invalid file path structure: ${cleanPath}`);
+      const errorMsg = `Invalid file path structure: expected absolute path starting with /, got: ${cleanPath}. Original: ${imagePath}`;
+      console.error(`❌ ${errorMsg}`);
+      throw new Error(errorMsg);
     }
     
-    // Ensure the path contains valid characters (check for corruption)
-    // Allow alphanumeric, hyphens, underscores, dots, slashes for file paths and UUIDs
-    if (!/^[a-zA-Z0-9\/\-_\.\:]+$/.test(cleanPath)) {
-      console.warn(`⚠️ Path contains invalid characters that may cause issues: ${cleanPath}`);
+    // Modern validation - allow characters common in modern filesystems
+    if (!/^[a-zA-Z0-9\/\-_\.\:\s\(\)\[\]]+$/.test(cleanPath)) {
+      console.warn(`⚠️ Path contains unusual characters: ${cleanPath}`);
       // Log the problematic characters for debugging
-      const invalidChars = cleanPath.match(/[^a-zA-Z0-9\/\-_\.\:]/g);
+      const invalidChars = cleanPath.match(/[^a-zA-Z0-9\/\-_\.\:\s\(\)\[\]]/g);
       if (invalidChars) {
-        console.warn(`⚠️ Invalid characters found: ${invalidChars.join(', ')}`);
+        console.warn(`⚠️ Unusual characters found: ${invalidChars.join(', ')}`);
       }
     }
     
-    // Reconstruct the file URI
-    const finalPath = `file://${cleanPath}`;
-    
-    // Final validation - check for length discrepancies that might indicate corruption
-    const expectedLength = imagePath.startsWith('file://') ? imagePath.length : imagePath.length + 7;
-    if (Math.abs(finalPath.length - expectedLength) > 1) {
-      console.warn(`⚠️ Significant path length change during conversion: ${imagePath.length} -> ${finalPath.length}`);
-      console.warn(`Original: ${imagePath}`);
-      console.warn(`Converted: ${finalPath}`);
-    }
-    
-    // console.log(`✅ Converted to: ${finalPath}`);
-    return finalPath;
+    console.log(`✅ Converted absolute path: ${cleanPath}`);
+    return cleanPath;
   }
 
   /**

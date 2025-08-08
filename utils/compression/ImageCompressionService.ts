@@ -50,7 +50,7 @@ export class ImageCompressionService {
   async compressImage(uri: string): Promise<string> {
     const startTime = Date.now();
     
-    try {
+     try {
       // Check cache first
       if (this.cache.has(uri)) {
         const cached = this.cache.get(uri)!;

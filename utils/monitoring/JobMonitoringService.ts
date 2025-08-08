@@ -98,7 +98,17 @@ export class JobMonitoringService {
 
     job.completedBatches = completedBatches;
     job.processedImages = processedImages;
-    job.progress = job.totalBatches > 0 ? (completedBatches / job.totalBatches) * 100 : 0;
+    
+    // Calculate progress based on phase:
+    // - If totalBatches > 0: use batch completion progress (upload phase)
+    // - If totalBatches = 0: use image processing progress (ML Kit/compression phase)
+    if (job.totalBatches > 0) {
+      job.progress = (completedBatches / job.totalBatches) * 100;
+    } else if (job.totalImages > 0) {
+      job.progress = (processedImages / job.totalImages) * 100;
+    } else {
+      job.progress = 0;
+    }
     
     // Job is completed only when:
     // 1. We have batches configured (totalBatches > 0)

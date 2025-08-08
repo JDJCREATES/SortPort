@@ -3,6 +3,7 @@ import { FileSystemService } from '../filesystem/FileSystemService';
 import { CompressionCacheService } from '../cache/CompressionCacheService';
 import { HardwareProfiler, HardwareProfile } from '../hardwareProfiler';
 import { supabase } from '../supabase';
+import { PathSanitizer } from '../helpers/pathSanitizer';
 
 export interface UploadBatch {
   images: string[];
@@ -267,7 +268,12 @@ export class BatchUploadService {
     
     // Add mapped ML Kit data for virtual-image-bridge integration
     if ((batch as any).mappedMLKitData) {
-      formData.append('mappedMLKitData', JSON.stringify((batch as any).mappedMLKitData));
+      const mappedData = (batch as any).mappedMLKitData;
+      const mappedCount = Object.keys(mappedData).length;
+      console.log(`🧠 Sending ML Kit data to server: ${mappedCount} images mapped for batch ${batch.batchId}`);
+      formData.append('mappedMLKitData', JSON.stringify(mappedData));
+    } else {
+      console.warn(`⚠️ No ML Kit data attached to batch ${batch.batchId}`);
     }
 
     let uploadSize = 0;
@@ -329,11 +335,12 @@ export class BatchUploadService {
         //   attempt
         // });
 
-        // Create file object for upload with the exact format expected by Edge Function
+        // Create file object for upload with modernized filename handling
+        const safeFilename = PathSanitizer.generateUploadFilename(uri, `image_${i}`);
         const fileObj = {
           uri: actualUri,
           type: 'image/jpeg',
-          name: `image_${i}.jpg`
+          name: safeFilename
         } as any;
 
         // FIXED: Use individual field names that Edge Function expects (image_0, image_1, etc.)

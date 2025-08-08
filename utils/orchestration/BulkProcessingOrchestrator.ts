@@ -9,6 +9,8 @@ import { HardwareProfiler } from '../hardwareProfiler';
 import { MLKitAnalysisResult } from '../mlkit/types/MLKitTypes';
 import { supabase } from '../supabase';
 import { logInfo, logDebug, logVerbose, logWarn, logError } from '../shared/LoggingConfig';
+import { PathSanitizer } from '../helpers/pathSanitizer';
+import { PathIssuesReporter } from '../helpers/pathIssuesReporter';
 
 export interface BulkProcessingConfig {
   enableCompression: boolean;
@@ -254,8 +256,8 @@ export class BulkProcessingOrchestrator {
           validImageUris,
           (analyzed, total) => {
             if (onProgress) {
-              const progress = Math.round((analyzed / total) * 30); // 0-30% for ML Kit
-              const updatedStatus = this.jobMonitoring.updateProgress(processingId, progress, 0);
+              // Track ML Kit analysis progress with actual processed images count
+              const updatedStatus = this.jobMonitoring.updateProgress(processingId, 0, analyzed);
               if (updatedStatus) {
                 onProgress(updatedStatus);
               }
@@ -283,8 +285,8 @@ export class BulkProcessingOrchestrator {
           config,
           (compressed, total) => {
             if (onProgress) {
-              const progress = 30 + Math.round((compressed / total) * 30); // 30-60% for compression
-              const updatedStatus = this.jobMonitoring.updateProgress(processingId, progress, 0);
+              // Track compression progress with actual processed images count
+              const updatedStatus = this.jobMonitoring.updateProgress(processingId, 0, compressed);
               if (updatedStatus) {
                 onProgress(updatedStatus);
               }
@@ -331,8 +333,13 @@ export class BulkProcessingOrchestrator {
 
       // Store AWS job ID for tracking if available
       if (submitResults.awsJobId) {
-        this.jobMonitoring.updateJobId(processingId, submitResults.awsJobId);
-        console.log(`🔗 AWS Job ID stored for tracking: ${submitResults.awsJobId}`);
+        const updatedJobStatus = this.jobMonitoring.updateJobId(processingId, submitResults.awsJobId);
+        if (updatedJobStatus) {
+          console.log(`🔗 AWS Job ID stored for tracking: ${submitResults.awsJobId}`);
+        } else {
+          // Job might have been completed, but we still want to track the AWS job ID
+          console.log(`🔗 AWS Job ID noted (job completed): ${submitResults.awsJobId}`);
+        }
       }
 
       const serverResults = await this.waitForServerProcessing(
@@ -474,6 +481,17 @@ export class BulkProcessingOrchestrator {
     const skippedCount = imageUris.length - validImages.length;
     if (skippedCount > 0) {
       console.log(`📋 Filtered out ${skippedCount} unsupported/invalid files`);
+    }
+
+    // 🆕 MODERN PATH ANALYSIS - Analyze paths for potential issues
+    if (validImages.length > 0) {
+      const pathReport = PathIssuesReporter.generateReport(validImages);
+      if (pathReport.includes('ISSUES')) {
+        console.warn('⚠️ Path analysis detected potential issues:');
+        console.warn(pathReport);
+      } else {
+        logDebug('✅ Path analysis: No issues detected');
+      }
     }
 
     console.log(`📊 Validation completed:`, {
@@ -632,6 +650,18 @@ export class BulkProcessingOrchestrator {
       // Create a separate mapped data structure for virtual-image integration
       const batchMappedData: Record<string, any> = {};
       
+      // Debug: Log ML Kit results availability before mapping
+      const totalMLKitResults = Object.keys(mlkitResults).length;
+      const batchUriCount = batch.images.length;
+      console.log(`🧠 ML Kit mapping for batch ${batch.batchId}: ${totalMLKitResults} results available for ${batchUriCount} images`);
+      
+      if (totalMLKitResults === 0) {
+        console.warn(`⚠️ NO ML Kit results available for batch ${batch.batchId}! This will result in empty virtual_image fields.`);
+        // Log sample URIs for debugging
+        console.log(`🧠 Batch URIs (first 3):`, batch.images.slice(0, 3).map(uri => uri.substring(uri.lastIndexOf('/') + 1)));
+        console.log(`🧠 ML Kit result keys (first 3):`, Object.keys(mlkitResults).slice(0, 3).map(uri => uri.substring(uri.lastIndexOf('/') + 1)));
+      }
+      
       batch.images.forEach(uri => {
         if (mlkitResults[uri]) {
           // ✅ CRITICAL FIX: Map ML Kit results to virtual_image format using the mapper
@@ -656,11 +686,30 @@ export class BulkProcessingOrchestrator {
             quality: validation.sanitized.quality_score,
             scene: validation.sanitized.scene_type
           });
+        } else {
+          console.warn(`⚠️ No ML Kit result found for URI: ${uri.substring(uri.lastIndexOf('/') + 1)}`);
+          console.log(`🧠 Looking for key in mlkitResults:`, uri);
+          console.log(`🧠 Available ML Kit keys (first 5):`, Object.keys(mlkitResults).slice(0, 5));
         }
       });
       
       // Attach mapped data to batch for virtual-image-bridge integration
       (batch as any).mappedMLKitData = batchMappedData;
+      
+      // Debug: Log ML Kit data attachment
+      const mlkitCount = Object.keys(batchMappedData).length;
+      console.log(`🧠 Attached ML Kit data to batch ${batch.batchId}: ${mlkitCount} images mapped`);
+      if (mlkitCount > 0) {
+        const sampleKey = Object.keys(batchMappedData)[0];
+        const sampleData = batchMappedData[sampleKey];
+        console.log(`🧠 Sample ML Kit data:`, {
+          uri: sampleKey,
+          tags: sampleData.virtual_tags?.length || 0,
+          objects: sampleData.detected_objects?.length || 0,
+          faces: sampleData.detected_faces_count || 0,
+          scene: sampleData.scene_type
+        });
+      }
 
       console.log(`📤 Uploading batch ${i + 1}/${batches.length}: ${batch.batchId}...`);
 
@@ -676,8 +725,12 @@ export class BulkProcessingOrchestrator {
             const updatedJobStatus = this.jobMonitoring.updateJobId(jobStatus.processingId, result.jobId);
             if (updatedJobStatus) {
               jobStatus.jobId = updatedJobStatus.jobId; // Update local reference
+              console.log(`🔗 Server job ID captured for status tracking: ${result.jobId}`);
+            } else {
+              // Job might have been completed or cleaned up, just update local reference
+              jobStatus.jobId = result.jobId;
+              console.log(`🔗 Server job ID captured locally (job completed): ${result.jobId}`);
             }
-            console.log(`🔗 Server job ID captured for status tracking: ${result.jobId}`);
           }
           
           // Capture bucketName from first successful upload for AWS operations

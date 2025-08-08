@@ -8,6 +8,7 @@ export class CompressionCacheService {
   private compressionCacheReverse = new Map<string, string>();
   private maxCacheSize: number;
   private processingLocked = false; // Prevent cleanup during active processing
+  private debugCacheAccess = false; // Enable for debugging cache access patterns
   
   constructor(maxSize: number = 200) {
     this.maxCacheSize = maxSize;
@@ -62,8 +63,8 @@ export class CompressionCacheService {
   get(originalUri: string): string | undefined {
     const compressedUri = this.compressionCache.get(originalUri);
     
-    // Add detailed logging for cache hits to track file corruption
-    if (compressedUri && compressedUri !== originalUri) {
+    // Only log cache access when debugging is enabled (to reduce terminal spam)
+    if (this.debugCacheAccess && compressedUri && compressedUri !== originalUri) {
       console.log(`🔍 Cache access: ${originalUri.substring(originalUri.lastIndexOf('/') + 1)} → ${compressedUri.substring(compressedUri.lastIndexOf('/') + 1)}`);
     }
     
@@ -96,6 +97,14 @@ export class CompressionCacheService {
     }
     
     return deleted;
+  }
+
+  /**
+   * Enable or disable debug cache access logging
+   */
+  setDebugCacheAccess(enabled: boolean): void {
+    this.debugCacheAccess = enabled;
+    console.log(`🔧 Cache access debugging ${enabled ? 'ENABLED' : 'DISABLED'}`);
   }
 
   /**
