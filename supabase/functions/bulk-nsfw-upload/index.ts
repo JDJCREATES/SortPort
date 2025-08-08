@@ -10,6 +10,9 @@ import {
   ListObjectsV2Command,
 } from "npm:@aws-sdk/client-s3@^3.840.0"
 
+// @ts-ignore
+declare const Deno: any;
+
 /**
  * Bulk upload images to a temp S3 before AWS Rekognition can scan them
  */
@@ -168,8 +171,8 @@ async function finalizeUploadSession(
     const response = await s3Client.send(listCommand);
     const objects = response.Contents || [];
     const objectKeys = objects
-      .map(obj => obj.Key ?? '')
-      .filter(key => key.endsWith('.jpg') || key.endsWith('.jpeg') || key.endsWith('.png'));
+      .map((obj: { Key?: string }) => obj.Key ?? '')
+      .filter((key: string) => key.endsWith('.jpg') || key.endsWith('.jpeg') || key.endsWith('.png'));
     
     if (objectKeys.length === 0) {
       throw new Error('No image objects found to create manifest');
@@ -813,19 +816,6 @@ async function handleRequest(req: Request): Promise<Response> {
       // Create new job record
       console.log(`🆕 [${requestId}] Creating new job record: ${sessionJobId}`);
       
-      // Prepare job metadata including ML Kit data
-      const jobMetadata: any = {
-        uploadBatch: batchIndex,
-        uploadedCount: uploadResult.successCount,
-        failedCount: uploadResult.failedCount
-      };
-      
-      // Add mapped ML Kit data to job metadata for later retrieval during status processing
-      if (mappedMLKitData && Object.keys(mappedMLKitData).length > 0) {
-        jobMetadata.mappedMLKitData = mappedMLKitData;
-        console.log(`🧠 [${requestId}] Storing ML Kit data for ${Object.keys(mappedMLKitData).length} images in job metadata`);
-      }
-      
       const { error } = await supabase
         .from('nsfw_bulk_jobs')
         .insert({
@@ -837,7 +827,6 @@ async function handleRequest(req: Request): Promise<Response> {
           nsfw_detected: 0,
           aws_temp_bucket: bucketName,
           bucket_path: `s3://${bucketName}/input/`,
-          metadata: jobMetadata, // Store ML Kit data and other metadata
           created_at: new Date().toISOString(),
         });
       
@@ -856,26 +845,12 @@ async function handleRequest(req: Request): Promise<Response> {
       // Update existing job record
       console.log(`🔄 [${requestId}] Updating existing job: ${sessionJobId}`);
       
-      // Get current job state first including metadata
+      // Get current job state first
       const { data: currentJob } = await supabase
         .from('nsfw_bulk_jobs')
-        .select('total_images, processed_images, metadata')
+        .select('total_images, processed_images')
         .eq('id', sessionJobId)
         .single();
-      
-      // Merge existing metadata with new ML Kit data
-      const existingMetadata = currentJob?.metadata || {};
-      const updatedMetadata = { ...existingMetadata };
-      
-      // Merge mapped ML Kit data if available
-      if (mappedMLKitData && Object.keys(mappedMLKitData).length > 0) {
-        if (!updatedMetadata.mappedMLKitData) {
-          updatedMetadata.mappedMLKitData = {};
-        }
-        // Merge new ML Kit data with existing data
-        Object.assign(updatedMetadata.mappedMLKitData, mappedMLKitData);
-        console.log(`🧠 [${requestId}] Merging ML Kit data - now have data for ${Object.keys(updatedMetadata.mappedMLKitData).length} images`);
-      }
       
       const { error } = await supabase
         .from('nsfw_bulk_jobs')
@@ -883,7 +858,6 @@ async function handleRequest(req: Request): Promise<Response> {
           total_images: Math.max(currentJob?.total_images || 0, totalImages),
           processed_images: (currentJob?.processed_images || 0) + uploadResult.successCount,
           status: 'uploading', // Keep in uploading status
-          metadata: updatedMetadata, // Update metadata with merged ML Kit data
           updated_at: new Date().toISOString(),
         })
         .eq('id', sessionJobId);
@@ -915,7 +889,99 @@ async function handleRequest(req: Request): Promise<Response> {
           uploadOrder: imageFiles[0].uploadOrder
         } : null
       });
-      
+      // ----------------- DIRECT VIRTUAL IMAGE CREATION -----------------
+      if (imageFiles.length > 0) {
+        try {
+          // Prepare images array with ML Kit data for direct virtual_image creation
+          const imagesForCreation = imageFiles.map(img => {
+            let mlkit_data = null;
+            
+            if (mappedMLKitData && typeof mappedMLKitData === 'object') {
+              // Key resolution priority: original device path, image_{uploadOrder}, order_{uploadOrder}, basename match
+              const baseName = img.imagePath.split('/').pop() || img.imagePath;
+              const candidates = [
+                img.imagePath,
+                `image_${img.uploadOrder}`,
+                `order_${img.uploadOrder}`,
+                baseName
+              ];
+              
+              for (const candidate of candidates) {
+                if (candidate && mappedMLKitData[candidate]) {
+                  const ml = mappedMLKitData[candidate];
+                  mlkit_data = {
+                    virtual_tags: ml.virtual_tags || ml.tags || [],
+                    detected_objects: ml.detected_objects || ml.objects || [],
+                    emotion_detected: ml.emotion_detected || ml.emotions || [],
+                    activity_detected: ml.activity_detected || ml.activities || [],
+                    detected_faces_count: ml.detected_faces_count ?? 0,
+                    quality_score: ml.quality_score ?? null,
+                    brightness_score: ml.brightness_score ?? null,
+                    blur_score: ml.blur_score ?? null,
+                    aesthetic_score: ml.aesthetic_score ?? null,
+                    scene_type: ml.scene_type ?? null,
+                    image_orientation: ml.image_orientation ?? null,
+                    has_text: ml.has_text ?? (ml.text_blocks ? true : false),
+                    caption: ml.caption ?? null,
+                    vision_summary: ml.vision_summary ?? null,
+                    metadata: ml // Store raw ML Kit data for reference
+                  };
+                  break;
+                }
+              }
+            }
+            
+            return {
+              imagePath: img.imagePath,
+              originalFileName: img.originalFileName,
+              fileSize: img.fileSize,
+              contentType: img.contentType,
+              s3Key: img.s3Key,
+              uploadOrder: img.uploadOrder,
+              mlkit_data
+            };
+          });
+          
+          // Call virtual-image-bridge/create directly
+          console.log(`🚀 [${requestId}] Creating virtual images directly for ${imagesForCreation.length} images`);
+          
+          const supabaseUrlEnv = Deno.env.get('SUPABASE_URL');
+          const serviceKeyEnv = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+          
+          if (supabaseUrlEnv && serviceKeyEnv) {
+            const createUrl = `${supabaseUrlEnv}/functions/v1/virtual-image-bridge/create`;
+            const createPayload = {
+              jobId: sessionJobId,
+              bucketName,
+              userId,
+              images: imagesForCreation
+            };
+            
+            const createRes = await fetch(createUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceKeyEnv}`
+              },
+              body: JSON.stringify(createPayload)
+            });
+            
+            if (createRes.ok) {
+              const createResult = await createRes.json();
+              console.log(`✅ [${requestId}] Virtual images created: ${createResult.processedCount}/${imagesForCreation.length} successful`);
+            } else {
+              const errorText = await createRes.text();
+              console.error(`❌ [${requestId}] Virtual image creation failed (${createRes.status}): ${errorText}`);
+            }
+          } else {
+            console.warn(`⚠️ [${requestId}] Missing env vars for virtual image creation`);
+          }
+          
+        } catch (createEx) {
+          console.error(`❌ [${requestId}] Exception creating virtual images:`, createEx);
+        }
+      }
+      // -----------------------------------------------------------
       console.log(`✅ [${requestId}] Upload session completed - ready for NSFW processing`);
     }
 

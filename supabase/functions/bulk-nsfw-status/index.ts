@@ -13,6 +13,9 @@ import {
   _Object // Add this import for the S3 object type
 } from "npm:@aws-sdk/client-s3@^3.840.0"
 
+// @ts-ignore
+declare const Deno: any;
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -113,7 +116,7 @@ class TempS3BucketManager {
         
         if (listResponse.Contents && listResponse.Contents.length > 0) {
           // Delete objects in batches
-          const deletePromises = listResponse.Contents.map(object => {
+          const deletePromises = listResponse.Contents.map((object: any) => {
             if (object.Key) {
               return s3.send(new DeleteObjectCommand({
                 Bucket: bucketName,
@@ -377,54 +380,6 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
   })
 
   return results
-}
-
-// Enhanced ML Kit data matching function
-function findMLKitDataForImage(jobMLKitData: any, result: any, index: number, jobId: string): any {
-  if (!jobMLKitData || Object.keys(jobMLKitData).length === 0) {
-    console.warn(`🚫 findMLKitDataForImage: No ML Kit data available (empty object)`);
-    return null;
-  }
-
-  console.log(`🔍 findMLKitDataForImage: Available keys in jobMLKitData:`, Object.keys(jobMLKitData));
-  console.log(`🔍 findMLKitDataForImage: Looking for index ${index}, result:`, { 
-    image_id: result.image_id, 
-    image_path: result.image_path 
-  });
-
-  // ✅ SIMPLIFIED: Try key strategies in order of most likely to work
-  const keyStrategies = [
-    `image_${index}`,                     // Direct index match (most reliable)
-    `batch-0-image-${index.toString().padStart(4, '0')}`, // AWS S3 key format (without .jpg)
-    result.image_id?.replace('.jpg', ''), // AWS result without extension
-    result.image_id,                      // AWS result with extension
-  ];
-
-  console.log(`🔍 findMLKitDataForImage: Trying ${keyStrategies.length} simplified strategies:`, keyStrategies);
-
-  for (const key of keyStrategies) {
-    if (key && jobMLKitData[key]) {
-      console.log(`✅ Found ML Kit data using key: '${key}' for image ${index}`);
-      console.log(`📊 ML Kit data structure:`, Object.keys(jobMLKitData[key] || {}));
-      return jobMLKitData[key];
-    } else if (key) {
-      console.log(`❌ Key '${key}' not found in ML Kit data`);
-    }
-  }
-
-  console.error(`🚨 CRITICAL: No ML Kit data found for image ${index}`);
-  console.error(`🚨 Available ML Kit keys:`, Object.keys(jobMLKitData));
-  console.error(`🚨 Tried strategies:`, keyStrategies);
-  
-  // ✅ LAST RESORT: Try positional matching as backup
-  const keysByIndex = Object.keys(jobMLKitData);
-  if (keysByIndex[index]) {
-    const fallbackKey = keysByIndex[index];
-    console.warn(`🔄 Using positional fallback key: '${fallbackKey}' for image ${index}`);
-    return jobMLKitData[fallbackKey];
-  }
-  
-  return null;
 }
 
 serve(async (req: Request): Promise<Response> => {
@@ -837,208 +792,119 @@ serve(async (req: Request): Promise<Response> => {
           console.log(`📍 [INTEGRATION-POINT] [${requestId}] Job details: jobId=${jobId}, tempBucket=${tempBucketName}`);
 
           // 🔥 CREATE VIRTUAL IMAGES: Call virtual-image-bridge to create virtual_image records
+          let createdVirtualImages = 0;
           try {
-            console.log(`🚀 [${requestId}] Creating virtual images for ${processedResults.length} processed images...`);
+            console.log(`🚀 [${requestId}] Looking up existing virtual images for ${processedResults.length} processed results...`);
             
-            // Extract ML Kit data from job metadata if available
-            const jobMLKitData = job.metadata?.mappedMLKitData || {};
-            const hasMLKitData = Object.keys(jobMLKitData).length > 0;
+            // Get existing virtual images via relationship table
+            const { data: existingRelations, error: relationError } = await supabase
+              .from('bulk_job_virtual_images')
+              .select('virtual_image_id, upload_order, s3_key')
+              .eq('job_id', jobId)
+              .order('upload_order');
             
-            console.log(`🧠 [${requestId}] Job has ML Kit data: ${hasMLKitData}, total keys: ${Object.keys(jobMLKitData).length}`);
-            
-            if (hasMLKitData) {
-              console.log(`🔍 [${requestId}] Sample ML Kit keys:`, Object.keys(jobMLKitData).slice(0, 10));
-              console.log(`🔍 [${requestId}] Key patterns detected:`);
-              
-              const imageKeys = Object.keys(jobMLKitData).filter(k => k.startsWith('image_'));
-              const batchKeys = Object.keys(jobMLKitData).filter(k => k.startsWith('batch-'));
-              const uriKeys = Object.keys(jobMLKitData).filter(k => k.includes('file://') || k.includes('content://'));
-              
-              console.log(`   - image_ keys: ${imageKeys.length} (e.g., ${imageKeys[0] || 'none'})`);
-              console.log(`   - batch- keys: ${batchKeys.length} (e.g., ${batchKeys[0] || 'none'})`);
-              console.log(`   - URI keys: ${uriKeys.length} (e.g., ${uriKeys[0]?.substring(0, 50) || 'none'}...)`);
+            if (relationError) {
+              console.error(`❌ [${requestId}] Failed to fetch virtual image relationships:`, relationError);
+              throw new Error(`Failed to fetch virtual image relationships: ${relationError.message}`);
             }
             
-            // Prepare images data for virtual-image-bridge
-            const imagesForBridge = processedResults.map((result: any, index: number) => {
-              // Extract original path from temp path if available
-              let originalPath = result.image_path;
-              if (originalPath && originalPath.startsWith('temp-')) {
-                // Remove temp prefix: temp-bucketname/path -> path
-                originalPath = originalPath.replace(/^temp-[^/]+\//, '');
+            if (!existingRelations || existingRelations.length === 0) {
+              console.warn(`⚠️ [${requestId}] No existing virtual images found for job ${jobId} - they should have been created during upload`);
+              // Continue anyway - this might be a legacy job
+            }
+            
+            console.log(`� [${requestId}] Found ${existingRelations?.length || 0} existing virtual image relationships`);
+            
+            // Prepare updates for existing virtual images (Rekognition data only)
+            const virtualImageUpdates = processedResults.map((result: any, index: number) => {
+              // Find corresponding virtual image
+              const relation = existingRelations?.find((r: any) => r.upload_order === index);
+              
+              if (!relation?.virtual_image_id) {
+                console.warn(`⚠️ [${requestId}] No virtual image found for upload order ${index}`);
+                return null;
               }
               
-              // Try to find corresponding ML Kit data using enhanced matching
-              const mlkitData = findMLKitDataForImage(jobMLKitData, result, index, jobId);
+              const moderationLabels = result.moderation_labels || [];
+              const nsfwDetected = moderationLabels.some((label: any) => 
+                NSFW_CATEGORIES.includes(label.Name) && label.Confidence > 80
+              );
+              const confidenceScore = moderationLabels.length > 0 
+                ? Math.max(...moderationLabels.map((l: any) => l.Confidence || 0))
+                : 0;
               
               return {
-                imagePath: originalPath || `bulk-${jobId}-image-${index}`,
-                originalFileName: `image_${index}.jpg`,
-                fileSize: 0, // Unknown from Rekognition results
-                contentType: 'image/jpeg',
-                s3Key: result.image_id || `input/batch-0-image-${index.toString().padStart(4, '0')}.jpg`,
-                uploadOrder: index,
-                // ✅ CRITICAL FIX: Use actual ML Kit data if available, otherwise use defaults
-                mlkit_data: mlkitData ? {
-                  virtual_tags: mlkitData.virtual_tags || [],
-                  detected_objects: mlkitData.detected_objects || [],
-                  emotion_detected: mlkitData.emotion_detected || [],
-                  activity_detected: mlkitData.activity_detected || [],
-                  detected_faces_count: mlkitData.detected_faces_count || 0,
-                  quality_score: mlkitData.quality_score,
-                  brightness_score: mlkitData.brightness_score,
-                  blur_score: mlkitData.blur_score,
-                  aesthetic_score: mlkitData.aesthetic_score,
-                  scene_type: mlkitData.scene_type,
-                  image_orientation: mlkitData.image_orientation,
-                  has_text: mlkitData.has_text || false,
-                  caption: mlkitData.caption,
-                  vision_summary: mlkitData.vision_summary,
-                  metadata: mlkitData.metadata || {
-                    source: 'bulk-nsfw-processing-with-mlkit',
-                    processingJobId: jobId,
-                    processedAt: new Date().toISOString()
-                  }
-                } : {
-                  // Default empty ML Kit data structure if no data available
-                  virtual_tags: [],
-                  detected_objects: [],
-                  emotion_detected: [],
-                  activity_detected: [],
-                  detected_faces_count: 0,
-                  quality_score: null,
-                  brightness_score: null,
-                  blur_score: null,
-                  aesthetic_score: null,
-                  scene_type: null,
-                  image_orientation: null,
-                  has_text: false,
-                  caption: null,
-                  vision_summary: null,
-                  metadata: {
-                    source: 'bulk-nsfw-processing-no-mlkit',
-                    processingJobId: jobId,
-                    processedAt: new Date().toISOString()
-                  }
+                virtualImageId: relation.virtual_image_id,
+                isNsfw: nsfwDetected,
+                confidenceScore,
+                moderationLabels: moderationLabels.map((l: any) => l.Name),
+                fullRekognitionData: result,
+                // Only update Rekognition fields - ML Kit data should already be there
+                comprehensiveFields: {
+                  rekognition_data: result,
+                  nsfw_score: confidenceScore,
+                  isflagged: nsfwDetected
                 }
               };
-            });
-
-            // Call virtual-image-bridge to create virtual images
-            const bridgeResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/virtual-image-bridge/create`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-                'X-Request-ID': requestId
-              },
-              body: JSON.stringify({
-                jobId: jobId,
-                bucketName: tempBucketName,
-                userId: job.user_id,
-                images: imagesForBridge
-              })
-            });
-
-            if (!bridgeResponse.ok) {
-              const errorText = await bridgeResponse.text();
-              throw new Error(`Virtual image bridge failed: ${bridgeResponse.status} - ${errorText}`);
-            }
-
-            const bridgeResult = await bridgeResponse.json();
-            console.log(`✅ [${requestId}] Virtual images created successfully:`, {
-              processedCount: bridgeResult.processedCount,
-              failedCount: bridgeResult.failedCount,
-              totalVirtualImages: bridgeResult.virtualImages?.length || 0
-            });
-
-            // Update virtual images with NSFW results
-            if (bridgeResult.virtualImages && bridgeResult.virtualImages.length > 0) {
-              console.log(`🔄 [${requestId}] Updating virtual images with NSFW analysis results...`);
+            }).filter(Boolean); // Remove null entries
+            
+            console.log(`📊 [${requestId}] Prepared ${virtualImageUpdates.length} virtual image updates (Rekognition only)`);
+            
+            if (virtualImageUpdates.length === 0) {
+              console.warn(`⚠️ [${requestId}] No virtual image updates prepared`);
+            } else {
+              // ⏳ RACE CONDITION MITIGATION: Add small delay to ensure create operations have settled
+              console.log(`⏳ [${requestId}] Adding 500ms delay to allow virtual image creation to settle...`);
+              await new Promise(resolve => setTimeout(resolve, 500));
               
-              // Prepare updates for virtual-image-bridge
-              const virtualImageUpdates = bridgeResult.virtualImages.map((virtualImage: any, index: number) => {
-                const nsfwResult = processedResults[index];
-                
-                return {
-                  virtualImageId: virtualImage.id,
-                  isNsfw: nsfwResult?.isflagged || false,
-                  confidenceScore: nsfwResult?.confidence_score || 0,
-                  moderationLabels: nsfwResult?.moderation_labels || [],
-                  fullRekognitionData: nsfwResult?.full_rekognition_data || null,
-                  comprehensiveFields: {
-                    nsfw_score: nsfwResult?.confidence_score || 0,
-                    isflagged: nsfwResult?.isflagged || false,
-                    rekognition_data: nsfwResult?.full_rekognition_data || null,
-                    // Keep existing ML Kit data - will be updated by client if available
-                    virtual_tags: virtualImage.virtual_tags || [],
-                    detected_objects: virtualImage.detected_objects || [],
-                    scene_type: virtualImage.scene_type || null,
-                    detected_faces_count: virtualImage.detected_faces_count || null,
-                    emotion_detected: virtualImage.emotion_detected || [],
-                    activity_detected: virtualImage.activity_detected || [],
-                    caption: virtualImage.caption || null,
-                    vision_summary: virtualImage.vision_summary || null,
-                    quality_score: virtualImage.quality_score || null,
-                    brightness_score: virtualImage.brightness_score || null,
-                    blur_score: virtualImage.blur_score || null,
-                    aesthetic_score: virtualImage.aesthetic_score || null,
-                    dominant_colors: virtualImage.dominant_colors || null,
-                    image_orientation: virtualImage.image_orientation || null
-                  }
-                };
-              });
-
-              // Call virtual-image-bridge to update with NSFW results
-              const updateResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/virtual-image-bridge/update`, {
+              // Call virtual-image-bridge update endpoint
+              const bridgeResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/virtual-image-bridge/update`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                   'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-                  'X-Request-ID': requestId
+                  'X-Request-ID': requestId,
                 },
                 body: JSON.stringify({
-                  jobId: jobId,
+                  jobId,
                   userId: job.user_id,
                   updates: virtualImageUpdates
                 })
               });
-
-              if (!updateResponse.ok) {
-                const errorText = await updateResponse.text();
-                console.error(`❌ [${requestId}] Virtual image update failed: ${updateResponse.status} - ${errorText}`);
-              } else {
-                const updateResult = await updateResponse.json();
-                console.log(`✅ [${requestId}] Virtual images updated with NSFW results:`, {
-                  processedCount: updateResult.processedCount,
-                  failedCount: updateResult.failedCount
-                });
+              
+              if (!bridgeResponse.ok) {
+                const errorText = await bridgeResponse.text();
+                console.error(`❌ [${requestId}] Virtual image bridge update failed:`, errorText);
+                throw new Error(`Virtual image update failed: ${bridgeResponse.status} ${errorText}`);
               }
+              
+              const bridgeResult = await bridgeResponse.json();
+              console.log(`✅ [${requestId}] Virtual image update complete:`, {
+                processed: bridgeResult.processedCount,
+                failed: bridgeResult.failedCount,
+                total: virtualImageUpdates.length
+              });
+              
+              createdVirtualImages = bridgeResult.processedCount || 0;
+              console.log(`📍 [INTEGRATION-POINT] [${requestId}] Virtual image Rekognition updates complete: ${createdVirtualImages} processed`);
             }
-
           } catch (bridgeError) {
-            console.error(`❌ [${requestId}] Virtual image bridge integration failed:`, bridgeError);
-            // Don't fail the entire job if virtual image creation fails
-            logWithContext('ERROR', 'Virtual image bridge failed but continuing with job completion', {
-              jobId,
-              bridgeError: bridgeError instanceof Error ? bridgeError.message : String(bridgeError),
-              requestId
-            });
+            console.error(`❌ [${requestId}] Error updating virtual images:`, bridgeError);
+            throw bridgeError;
           }
 
-          // NSFW PROCESSING COMPLETED: Results processed and virtual images created
-          console.log(`📍 [INTEGRATION-POINT] [${requestId}] Processing completed - virtual image updates should happen here`);
+          // Count NSFW detected for summary (reuse existing nsfwCount)
+
+          // NSFW PROCESSING COMPLETED: Results processed and virtual images updated
+          console.log(`📍 [INTEGRATION-POINT] [${requestId}] Processing completed - virtual image updates complete`);
           console.log(`📍 [INTEGRATION-POINT] [${requestId}] Results: ${processedResults.length} images, ${nsfwCount} NSFW detected`);
           console.log(`📍 [INTEGRATION-POINT] [${requestId}] Job details: jobId=${jobId}, tempBucket=${tempBucketName}`);
 
-          // BASIC NSFW PROCESSING: Results processed, no virtual image management needed
-          console.log(`� [${requestId}] Basic NSFW processing completed for ${processedResults.length} images`);
-          
-          console.log(`� [${requestId}] NSFW analysis summary:`, {
+          console.log(`✅ [${requestId}] NSFW analysis summary:`, {
             totalResults: processedResults.length,
             nsfwDetected: nsfwCount,
             safeImages: processedResults.length - nsfwCount,
-            analysisType: 'Basic moderation labels only'
+            virtualImagesUpdated: createdVirtualImages
           });
 
           // Cleanup temp S3 bucket (don't await - let it run in background)
@@ -1064,6 +930,7 @@ serve(async (req: Request): Promise<Response> => {
               results: processedResults,
               totalImages: job.total_images,
               nsfwDetected: nsfwCount,
+              virtualImagesCreated: createdVirtualImages,
               request_id: requestId
             }),
             { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
@@ -1166,7 +1033,7 @@ serve(async (req: Request): Promise<Response> => {
               
               if (resultFiles.length > 0) {
                 logWithContext('WARN', 'FOUND RESULTS DESPITE IN_PROGRESS STATUS - PROCESSING ANYWAY', {
-                  resultFiles: resultFiles.map(f => f.Key),
+                  resultFiles: resultFiles.map((f: any) => f.Key),
                   requestId
                 })
                 

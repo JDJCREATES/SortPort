@@ -1055,6 +1055,8 @@ export class BulkNSFWProcessor {
             );
             
             mlKitResults.set(originalUri, analysis);
+            mlKitResults.set(`image_${i}`, analysis); // Also store by index for easy lookup
+            mlKitResults.set(`order_${i}`, analysis); // Additional index key
             
             mlKitProgress = Math.round(((i + 1) / compressedUris.length) * 100);
             
@@ -1184,6 +1186,18 @@ export class BulkNSFWProcessor {
         jobId: jobId,
         note: 'NSFW updates handled by bulk-nsfw-status edge function'
       });
+
+      // 🔥 PRODUCTION ML KIT UPDATE: Update virtual images after AWS completes
+      if (mlKitResults && mlKitResults.size > 0) {
+        console.log(`🧠 Starting post-processing ML Kit data update...`);
+        try {
+          await this.updateVirtualImagesWithMLKit(jobId, mlKitResults);
+          console.log(`✅ ML Kit data successfully integrated into virtual images`);
+        } catch (mlKitError) {
+          console.warn(`⚠️ ML Kit update failed (non-critical):`, mlKitError);
+          // Don't fail the entire process - ML Kit is a bonus feature
+        }
+      }
 
       const totalProcessingTime = Date.now() - startTime;
 
@@ -1810,6 +1824,135 @@ export class BulkNSFWProcessor {
     const recommendations = DynamicPerformanceAdjuster.getOptimizationRecommendations(metrics);
     if (recommendations.length > 0) {
       console.log('💡 Performance recommendations:', recommendations);
+    }
+  }
+
+  /**
+   * 🔥 PRODUCTION-READY ML KIT UPDATE
+   * Updates virtual images with ML Kit data after they're created by AWS processing
+   */
+  private static async updateVirtualImagesWithMLKit(
+    jobId: string, 
+    mlKitResults: Map<string, any>
+  ): Promise<void> {
+    try {
+      console.log(`🧠 Updating virtual images with ML Kit data for job ${jobId}...`);
+      
+      // Import supabase client
+      const { supabase } = await import('./supabase');
+      
+      // Get virtual images created by this job
+      const { data: jobRelations, error: queryError } = await supabase
+        .from('bulk_job_virtual_images')
+        .select(`
+          virtual_image_id,
+          upload_order
+        `)
+        .eq('job_id', jobId);
+
+      if (queryError || !jobRelations || jobRelations.length === 0) {
+        console.warn(`⚠️ No virtual images found for job ${jobId}:`, queryError);
+        return;
+      }
+
+      console.log(`🔍 Found ${jobRelations.length} virtual images to update with ML Kit data`);
+
+      // Update each virtual image with corresponding ML Kit data
+      const updates = [];
+      
+      for (const relation of jobRelations) {
+        const virtualImageId = relation.virtual_image_id;
+        const uploadOrder = relation.upload_order;
+        
+        // Try to find ML Kit data using multiple strategies
+        let mlKitData = null;
+        
+        // Strategy 1: By upload order index (primary)
+        const indexKey = `image_${uploadOrder}`;
+        mlKitData = mlKitResults.get(indexKey);
+        
+        // Strategy 2: Try global index if we know batch size
+        if (!mlKitData) {
+          for (const [key, data] of mlKitResults.entries()) {
+            if (key.includes(String(uploadOrder))) {
+              mlKitData = data;
+              console.log(`🔍 Found ML Kit data using key pattern match: ${key}`);
+              break;
+            }
+          }
+        }
+        
+        // Strategy 3: By position in results array
+        if (!mlKitData) {
+          const resultsByIndex = Array.from(mlKitResults.values());
+          if (uploadOrder < resultsByIndex.length) {
+            mlKitData = resultsByIndex[uploadOrder];
+            console.log(`🔍 Found ML Kit data using position match: ${uploadOrder}`);
+          }
+        }
+        
+        // Strategy 4: Check all keys for this order (fallback)
+        if (!mlKitData) {
+          for (const [key, data] of mlKitResults.entries()) {
+            if (key.endsWith(`_${uploadOrder}`) || key.endsWith(`-${uploadOrder}`)) {
+              mlKitData = data;
+              console.log(`🔍 Found ML Kit data using suffix match: ${key}`);
+              break;
+            }
+          }
+        }
+        
+        if (mlKitData) {
+          const { MLKitVirtualImageMapper } = await import('./mlkit/mappers/MLKitVirtualImageMapper');
+          const mappedData = MLKitVirtualImageMapper.mapMLKitToVirtualImage(mlKitData);
+          
+          updates.push({
+            id: virtualImageId,
+            ...mappedData
+          });
+          
+          console.log(`🔗 Mapped ML Kit data for virtual image ${virtualImageId} (order: ${uploadOrder})`);
+        } else {
+          console.warn(`⚠️ No ML Kit data found for virtual image ${virtualImageId} (order: ${uploadOrder})`);
+        }
+      }
+
+      if (updates.length > 0) {
+        // Batch update virtual images
+        for (const update of updates) {
+          const { error: updateError } = await supabase
+            .from('virtual_image')
+            .update({
+              virtual_tags: update.virtual_tags,
+              detected_objects: update.detected_objects,
+              emotion_detected: update.emotion_detected,
+              activity_detected: update.activity_detected,
+              detected_faces_count: update.detected_faces_count,
+              quality_score: update.quality_score,
+              brightness_score: update.brightness_score,
+              blur_score: update.blur_score,
+              aesthetic_score: update.aesthetic_score,
+              scene_type: update.scene_type,
+              image_orientation: update.image_orientation,
+              has_text: update.has_text,
+              caption: update.caption,
+              vision_summary: update.vision_summary
+            })
+            .eq('id', update.id);
+
+          if (updateError) {
+            console.error(`❌ Failed to update virtual image ${update.id}:`, updateError);
+          }
+        }
+
+        console.log(`✅ Successfully updated ${updates.length} virtual images with ML Kit data`);
+      } else {
+        console.warn(`⚠️ No ML Kit data could be matched to virtual images for job ${jobId}`);
+      }
+
+    } catch (error) {
+      console.error(`❌ Failed to update virtual images with ML Kit data:`, error);
+      throw error;
     }
   }
 }
