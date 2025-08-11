@@ -3,6 +3,7 @@
  * Handles comprehensive image analysis and database updates
  */
 
+import * as FileSystem from 'expo-file-system';
 import { supabase } from '../supabase';
 import { SecureImageCache } from './cache/SecureImageCache';
 import { ImageLabelingProcessor } from './processors/ImageLabelingProcessor';
@@ -11,8 +12,7 @@ import { TextRecognitionProcessor } from './processors/TextRecognitionProcessor'
 import { QualityAssessmentProcessor } from './processors/QualityAssessmentProcessor';
 import { SceneAnalysisProcessor } from './processors/SceneAnalysisProcessor';
 import { MLKitDiagnostics } from './diagnostics/MLKitDiagnostics';
-import { FileValidator } from './validation/FileValidator';
-import { MLKitProcessingHelper } from './helpers/MLKitProcessingHelper';
+import { VirtualImageIdService } from '../shared/VirtualImageIdService';
 
 import {
   MLKitAnalysisResult,
@@ -23,6 +23,16 @@ import {
   BatchProcessingResult,
   AnalysisMetadata
 } from './types/MLKitTypes';
+
+// Import centralized logging system
+import { 
+  logError, 
+  logWarn, 
+  logInfo, 
+  logDebug, 
+  LogLevel,
+  loggingConfig
+} from '../shared/LoggingConfig';
 
 export class MLKitManager {
   private static instance: MLKitManager;
@@ -86,16 +96,28 @@ export class MLKitManager {
     if (this.isInitialized) return;
 
     try {
-      console.log('🚀 Initializing ML Kit Manager...');
+      logInfo('Initializing ML Kit Manager', {
+        component: 'MLKitManager',
+        cachingEnabled: this.config.cachingEnabled,
+        maxImageSize: this.config.maxImageSize,
+        batchSize: this.config.batchSize
+      });
       
       if (this.config.cachingEnabled) {
         await this.cache.initialize();
       }
       
       this.isInitialized = true;
-      console.log('✅ ML Kit Manager initialized successfully');
+      logInfo('ML Kit Manager initialized successfully', {
+        component: 'MLKitManager',
+        processorCount: 5
+      });
     } catch (error) {
-      console.error('❌ Failed to initialize ML Kit Manager:', error);
+      logError('Failed to initialize ML Kit Manager', {
+        component: 'MLKitManager',
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw error;
     }
   }
@@ -117,24 +139,13 @@ export class MLKitManager {
 
     this.activeProcessing.add(imageId);
 
-    try {
-      const startTime = Date.now();
+    const startTime = Date.now();
 
-      // Validate file before processing
-      const validationResult = await FileValidator.validateFile(imagePath);
-      
-      if (!validationResult.accessible) {
-        console.error(`❌ File validation failed for ${imageId}: ${validationResult.error}`);
-        
-        // Check for path corruption
-        const corruptionCheck = FileValidator.detectPathCorruption(imagePath);
-        if (corruptionCheck.isCorrupted) {
-          console.error(`💥 Path corruption detected in ${imageId}:`);
-          corruptionCheck.issues.forEach(issue => console.error(`  - ${issue}`));
-          corruptionCheck.suggestions.forEach(suggestion => console.error(`  💡 ${suggestion}`));
-        }
-        
-        throw new Error(`File validation failed: ${validationResult.error}`);
+    try {
+      // Basic file existence check only
+      const stats = await FileSystem.getInfoAsync(imagePath);
+      if (!stats.exists) {
+        throw new Error(`Image file not found: ${imagePath}`);
       }
 
       // Cache image for processing
@@ -214,21 +225,39 @@ export class MLKitManager {
       return analysisResult;
 
     } catch (error) {
-      console.error(`❌ Error processing image ${imageId}:`, error);
+      logError('Image processing failed', {
+        component: 'MLKitManager',
+        imageId,
+        imagePath,
+        processingTime: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       
       // Run diagnostics if it's a file path issue
       if (error && error.toString().includes('FileNotFoundException')) {
-        console.log(`🔍 Running diagnostics for file path issue...`);
         try {
           const diagnostic = await MLKitDiagnostics.diagnoseImagePath(imagePath);
-          console.error(`📊 Diagnostic report:`, diagnostic);
+          logDebug('File path diagnostic completed', {
+            component: 'MLKitManager',
+            imageId,
+            diagnostic,
+            errorCount: diagnostic.errors?.length || 0
+          });
           
-          if (diagnostic.errors.length > 0) {
-            console.error(`🔴 Specific issues found:`);
-            diagnostic.errors.forEach(err => console.error(`  - ${err}`));
+          if (diagnostic.errors && diagnostic.errors.length > 0) {
+            logWarn('Specific path issues detected', {
+              component: 'MLKitManager',
+              imageId,
+              issues: diagnostic.errors
+            });
           }
         } catch (diagError) {
-          console.warn(`⚠️ Diagnostic check failed:`, diagError);
+          logWarn('Diagnostic check failed', {
+            component: 'MLKitManager',
+            imageId,
+            diagnosticError: diagError instanceof Error ? diagError.message : String(diagError)
+          });
         }
       }
       
@@ -302,12 +331,20 @@ export class MLKitManager {
       request.onComplete(successful);
     }
 
-    console.log(`📊 Batch processing complete: ${successful.length} successful, ${failed.length} failed in ${totalTime}ms`);
+    logInfo('Batch processing completed', {
+      component: 'MLKitManager',
+      successful: successful.length,
+      failed: failed.length,
+      totalProcessed: processedCount,
+      processingTime: totalTime,
+      averageTimePerImage: totalTime / processedCount
+    });
+    
     return result;
   }
 
   /**
-   * Update virtual_image table with ML Kit analysis
+   * Update virtual_image table with ML Kit analysis using ID-based service
    */
   private async updateVirtualImageDatabase(
     imageId: string, 
@@ -315,42 +352,44 @@ export class MLKitManager {
     userId: string
   ): Promise<void> {
     try {
-      // Map analysis to database fields
-      const update: VirtualImageMLUpdate = {
-        virtual_tags: analysisResult.analysis.labels.map(label => label.text),
-        detected_objects: analysisResult.analysis.objects.map(obj => obj.labels.map(l => l.text)).flat(),
-        emotion_detected: analysisResult.analysis.faces.emotions,
-        activity_detected: analysisResult.analysis.scene.activities,
-        detected_faces_count: analysisResult.analysis.faces.count,
-        quality_score: analysisResult.analysis.quality.overall,
-        brightness_score: analysisResult.analysis.quality.brightness,
-        blur_score: analysisResult.analysis.quality.blur,
-        aesthetic_score: analysisResult.analysis.quality.aesthetic,
-        scene_type: analysisResult.analysis.scene.primaryScene,
-        image_orientation: analysisResult.analysis.scene.orientation,
+      // Prepare ML Kit data for storage
+      const mlkitData = {
+        labels: analysisResult.analysis.labels,
+        objects: analysisResult.analysis.objects,
+        faces: analysisResult.analysis.faces,
+        text: analysisResult.analysis.text,
+        quality: analysisResult.analysis.quality,
+        scene: analysisResult.analysis.scene,
+        metadata: analysisResult.analysis.metadata,
         caption: this.generateCaption(analysisResult),
-        vision_summary: this.generateSummary(analysisResult),
-        metadata: {
-          mlkit_analysis: analysisResult.analysis,
-          processing_info: analysisResult.analysis.metadata
-        },
-        has_text: analysisResult.analysis.text.hasText
+        summary: this.generateSummary(analysisResult),
+        processedAt: new Date().toISOString()
       };
 
-      // Update the virtual_image record
-      const { error } = await supabase
-        .from('virtual_image')
-        .update(update)
-        .eq('id', imageId)
-        .eq('user_id', userId);
+      // Use ID-based service for clean updates
+      await VirtualImageIdService.updateVirtualImage({
+        virtualImageId: imageId,
+        mlkitData,
+        tags: analysisResult.analysis.labels.map(label => label.text)
+      });
 
-      if (error) {
-        console.error('❌ Failed to update virtual_image:', error);
-        throw error;
-      }
+      logDebug('Updated virtual image with ML Kit analysis', {
+        component: 'MLKitManager',
+        imageId,
+        userId,
+        labelsCount: analysisResult.analysis.labels.length,
+        facesCount: analysisResult.analysis.faces.count,
+        hasText: analysisResult.analysis.text.hasText
+      });
 
     } catch (error) {
-      console.error(`❌ Error updating database for image ${imageId}:`, error);
+      logError('Failed to update virtual_image database', {
+        component: 'MLKitManager',
+        imageId,
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw error;
     }
   }
@@ -471,6 +510,9 @@ export class MLKitManager {
   public async cleanup(): Promise<void> {
     await this.cache.clearAll();
     this.activeProcessing.clear();
-    console.log('🧹 ML Kit Manager cleaned up');
+    logDebug('ML Kit Manager cleaned up', {
+      component: 'MLKitManager',
+      timestamp: new Date().toISOString()
+    });
   }
 }

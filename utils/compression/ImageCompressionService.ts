@@ -3,6 +3,17 @@ import * as FileSystem from 'expo-file-system';
 import { CompressionCacheService } from '../cache/CompressionCacheService';
 import { FileSystemService } from '../filesystem/FileSystemService';
 
+// Import centralized logging system
+import { 
+  logError, 
+  logWarn, 
+  logInfo, 
+  logDebug, 
+  logVerbose,
+  LogLevel,
+  loggingConfig
+} from '../shared/LoggingConfig';
+
 export interface CompressionSettings {
   maxImageSize: number;
   compressionQuality: number;
@@ -45,134 +56,115 @@ export class ImageCompressionService {
   }
 
   /**
-   * Compress a single image with enhanced validation and debugging
+   * Compress a single image using ID-based approach
    */
   async compressImage(uri: string): Promise<string> {
     const startTime = Date.now();
-    
-     try {
-      // Check cache first
-      if (this.cache.has(uri)) {
-        const cached = this.cache.get(uri)!;
-        // Cache hit logging removed to reduce terminal spam
-        // console.log(`💨 Cache hit: ${uri.substring(uri.lastIndexOf('/') + 1)}`);
-        return cached;
-      }
-
-      // Validate input file
-      const validation = await FileSystemService.validateFile(uri);
-      if (!validation.exists) {
-        console.warn(`⚠️ Input file doesn't exist: ${uri}, using original`);
-        this.cache.set(uri, uri);
-        this.stats.failureCount++;
-        return uri;
-      }
-
-      if (validation.size === 0) {
-        console.warn(`⚠️ Input file is empty: ${uri}, using original`);
-        this.cache.set(uri, uri);
-        this.stats.failureCount++;
-        return uri;
-      }
-
-      // Per-image compression start logging removed to reduce terminal spam
-      // console.log(`🔄 Compressing: ${uri.substring(uri.lastIndexOf('/') + 1)} (${FileSystemService.formatFileSize(validation.size)})`);
-
-      // ✅ SMART COMPRESSION: Detect file type and handle PNG vs JPEG differently
-      const isPng = uri.toLowerCase().includes('.png');
-      
-      let result;
-      if (isPng) {
-        // For PNG files: focus on resizing rather than quality compression
-        // PNG is lossless, so we rely on dimension reduction for file size savings
-        console.log(`🖼️ PNG detected: preserving format and transparency`);
-        result = await ImageResizer.createResizedImage(
-          uri,
-          this.settings.maxImageSize,
-          this.settings.maxImageSize,
-          'PNG', // Preserve PNG format and transparency
-          100,   // PNG doesn't use quality - this is ignored
-          0,
-          undefined,
-          false,
-          {
-            mode: 'contain',
-            onlyScaleDown: true
-          }
-        );
-      } else {
-        // For JPEG and other formats: use standard compression
-        result = await ImageResizer.createResizedImage(
-          uri,
-          this.settings.maxImageSize,
-          this.settings.maxImageSize,
-          'JPEG',
-          this.settings.compressionQuality * 100,
-          0,
-          undefined,
-          false,
-          {
-            mode: 'contain',
-            onlyScaleDown: true
-          }
-        );
-      }
-
-      // FIXED: Increased delay to ensure file is fully written by ImageResizer
-      // This prevents race conditions where file exists but is still being written
-      // Increased from 10ms to 50ms for better reliability under heavy load
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      // Validate compressed file with retries
-      let compressedValidation = await FileSystemService.validateFile(result.uri);
-      let retryCount = 0;
-      const maxRetries = 3;
-      
-      while ((!compressedValidation.exists || compressedValidation.size === 0) && retryCount < maxRetries) {
-        console.warn(`⚠️ Compressed file not ready (attempt ${retryCount + 1}/${maxRetries}): ${result.uri}`);
-        await new Promise(resolve => setTimeout(resolve, 25));
-        compressedValidation = await FileSystemService.validateFile(result.uri);
-        retryCount++;
-      }
-
-      if (!compressedValidation.exists) {
-        console.warn(`⚠️ Compressed file doesn't exist after retries: ${result.uri}, falling back to original`);
-        this.cache.set(uri, uri);
-        this.stats.failureCount++;
-        return uri;
-      }
-
-      if (compressedValidation.size === 0) {
-        console.warn(`⚠️ Compressed file is empty: ${result.uri}, falling back to original`);
-        this.cache.set(uri, uri);
-        this.stats.failureCount++;
-        return uri;
-      }
-
-      // Success - update stats and cache
-      const processingTime = Date.now() - startTime;
-      this.updateStats(processingTime, true, uri); // ✅ Pass URI for file type detection
-      
-      const compressionRatio = ((validation.size - compressedValidation.size) / validation.size * 100).toFixed(1);
-      // Per-image compression success logging removed to reduce terminal spam
-      // console.log(`✅ Compressed: ${uri.substring(uri.lastIndexOf('/') + 1)} -> ${FileSystemService.formatFileSize(compressedValidation.size)} (${compressionRatio}% reduction, ${processingTime}ms)`);
-      
-      this.cache.set(uri, result.uri);
-      return result.uri;
-
-    } catch (error) {
-      const processingTime = Date.now() - startTime;
-      this.updateStats(processingTime, false, uri); // ✅ Pass URI for file type detection
-      
-      // ✅ Enhanced error logging with PNG-specific context
-      const isPng = uri.toLowerCase().includes('.png');
-      const fileType = isPng ? 'PNG' : 'JPEG';
-      const errorContext = isPng ? ' (PNG transparency preservation failed)' : '';
-      
-      console.warn(`⚠️ ${fileType} compression failed for ${uri.substring(uri.lastIndexOf('/') + 1)}${errorContext}:`, error);
-      this.cache.set(uri, uri);
-      return uri;
+    const originalUri = uri;
+    const filename = originalUri.split('/').pop() || 'image.jpg';    // Check cache first
+    if (this.cache.has(originalUri)) {
+      const cached = this.cache.get(originalUri)!;
+      logVerbose('Compression cache hit', {
+        component: 'ImageCompressionService',
+        originalUri: originalUri.substring(originalUri.lastIndexOf('/') + 1),
+        usedCache: cached !== originalUri
+      });
+      return cached;
     }
+
+    // Validate input file (original)
+    const validation = await FileSystemService.validateFile(originalUri);
+    if (!validation.exists) {
+      throw new Error(`Input file doesn't exist: ${originalUri}`);
+    }
+    if (validation.size === 0) {
+      throw new Error(`Input file is empty: ${originalUri}`);
+    }
+
+    // Only log PNG detection at debug level to reduce noise
+    const isPng = originalUri.toLowerCase().includes('.png');
+    if (isPng) {
+      logDebug('PNG file detected, preserving format and transparency', {
+        component: 'ImageCompressionService',
+        filename
+      });
+    }
+
+    // Compression retry loop with diagnostics
+    let result: { uri: string } | undefined;
+    let compressionError = null;
+    const maxCompressionAttempts = 3;
+    for (let attempt = 1; attempt <= maxCompressionAttempts; attempt++) {
+      try {
+        if (isPng) {
+          result = await ImageResizer.createResizedImage(
+            originalUri,
+            this.settings.maxImageSize,
+            this.settings.maxImageSize,
+            'PNG',
+            100,
+            0,
+            undefined,
+            false,
+            {
+              mode: 'contain',
+              onlyScaleDown: true
+            }
+          );
+        } else {
+          result = await ImageResizer.createResizedImage(
+            originalUri,
+            this.settings.maxImageSize,
+            this.settings.maxImageSize,
+            'JPEG',
+            this.settings.compressionQuality * 100,
+            0,
+            undefined,
+            false,
+            {
+              mode: 'contain',
+              onlyScaleDown: true
+            }
+          );
+        }
+        // Wait for file write to complete
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Validate compressed file exists and has content
+        const compressedValidation = await FileSystemService.validateFile(result.uri);
+        if (compressedValidation.exists && compressedValidation.size > 0) {
+          // Double-check file stability by waiting and checking again
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const finalValidation = await FileSystemService.validateFile(result.uri);
+          if (finalValidation.exists && finalValidation.size > 0) {
+            break; // Success - file is stable
+          } else {
+            throw new Error(`Compressed file became unstable after validation: ${result.uri}`);
+          }
+        } else {
+          throw new Error(`Compressed file not valid after attempt ${attempt}: ${result.uri}`);
+        }
+      } catch (err) {
+        compressionError = err;
+        logWarn('Compression attempt failed', {
+          component: 'ImageCompressionService',
+          attempt,
+          maxAttempts: maxCompressionAttempts,
+          originalUri: originalUri,
+          error: err instanceof Error ? err.message : String(err)
+        });
+        // Try next attempt
+      }
+    }
+    if (!result) {
+      throw new Error(`Compression failed for '${originalUri}' after ${maxCompressionAttempts} attempts. Last error: ${compressionError}`);
+    }
+
+    // Success - update stats and cache
+    const processingTime = Date.now() - startTime;
+    this.updateStats(processingTime, true, originalUri);
+  this.cache.set(originalUri, result.uri);
+  return result.uri;
   }
 
   /**
@@ -204,7 +196,12 @@ export class ImageCompressionService {
     const requiredCacheSize = Math.max(imageUris.length * 1.2, 200);
     this.cache.setMaxSize(requiredCacheSize);
 
-    console.log(`🚀 Starting compression: ${imageUris.length} images, ${this.settings.workers} workers`);
+    logInfo('Starting image compression batch', {
+      component: 'ImageCompressionService', 
+      totalImages: imageUris.length,
+      workers: this.settings.workers,
+      cacheSize: requiredCacheSize
+    });
     
     let completedCount = 0;
     
@@ -222,8 +219,15 @@ export class ImageCompressionService {
       await Promise.all(workers);
       
       const stats = this.getStats();
-      console.log(`⚡ Compression complete: ${stats.successCount}/${imageUris.length} successful (avg: ${stats.averageTimeMs.toFixed(0)}ms per image)`);
-      console.log(`📊 File types processed: ${stats.pngCount} PNG, ${stats.jpegCount} JPEG`); // ✅ Show PNG vs JPEG breakdown
+      logInfo('Compression batch completed', {
+        component: 'ImageCompressionService',
+        totalImages: imageUris.length,
+        successful: stats.successCount,
+        failed: stats.failureCount,
+        avgTimeMs: stats.averageTimeMs.toFixed(0),
+        pngCount: stats.pngCount,
+        jpegCount: stats.jpegCount
+      });
       
     } finally {
       this.isProcessing = false;
@@ -239,10 +243,10 @@ export class ImageCompressionService {
     workerId: number,
     onComplete: () => void
   ): Promise<void> {
-    if (process.env.NODE_ENV === 'development') {
-      // Worker start logging removed to reduce terminal spam
-      // console.log(`🔧 Compression worker ${workerId} started`);
-    }
+    logDebug('Compression worker started', {
+      component: 'ImageCompressionService',
+      workerId
+    });
     
     while (this.compressionQueue.length > 0 && this.isProcessing) {
       const uri = this.compressionQueue.shift();
@@ -260,7 +264,12 @@ export class ImageCompressionService {
         await this.compressImage(uri);
         // onComplete() call moved to finally block to ensure it's called exactly once
       } catch (error) {
-        console.error(`❌ Worker ${workerId} failed for ${uri}:`, error);
+        logError('Compression worker failed', {
+          component: 'ImageCompressionService',
+          workerId,
+          uri: uri.substring(uri.lastIndexOf('/') + 1),
+          error: error instanceof Error ? error.message : String(error)
+        });
       } finally {
         onComplete();
         this.activeCompressions--;
@@ -270,10 +279,10 @@ export class ImageCompressionService {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     
-    if (process.env.NODE_ENV === 'development') {
-      // Worker finish logging removed to reduce terminal spam
-      // console.log(`🏁 Compression worker ${workerId} finished`);
-    }
+    logDebug('Compression worker finished', {
+      component: 'ImageCompressionService',
+      workerId
+    });
   }
 
   /**
@@ -281,23 +290,40 @@ export class ImageCompressionService {
    */
   async waitForCompressionReady(uris: string[], timeoutMs: number = 45000): Promise<void> {
     const startTime = Date.now();
-    console.log(`⏳ Waiting for compression of ${uris.length} images...`);
+    logInfo('Waiting for compression completion', {
+      component: 'ImageCompressionService',
+      imageCount: uris.length,
+      timeoutMs
+    });
     
     while (Date.now() - startTime < timeoutMs) {
       const status = this.cache.getBatchStatus(uris);
       
       if (status.misses.length === 0) {
-        console.log(`✅ All ${uris.length} images compressed and ready (100%)`);
+        logInfo('All images compressed successfully', {
+          component: 'ImageCompressionService',
+          imageCount: uris.length,
+          completionTime: Date.now() - startTime
+        });
         return;
       }
       
       // Log progress every 5 seconds
       if ((Date.now() - startTime) % 5000 < 100) {
-        console.log(`⏳ Compression progress: ${status.hits.length}/${uris.length} (${status.hitRate.toFixed(0)}%) ready...`);
+        logDebug('Compression progress update', {
+          component: 'ImageCompressionService',
+          completed: status.hits.length,
+          total: uris.length,
+          hitRate: status.hitRate.toFixed(0),
+          remaining: status.misses.length
+        });
         
         if (status.misses.length <= 5) {
           const missingNames = status.misses.map(uri => uri.substring(uri.lastIndexOf('/') + 1));
-          console.log(`🔍 Still waiting for: ${missingNames.join(', ')}`);
+          logVerbose('Remaining files to compress', {
+            component: 'ImageCompressionService',
+            remainingFiles: missingNames
+          });
         }
       }
       
@@ -306,10 +332,15 @@ export class ImageCompressionService {
     
     const finalStatus = this.cache.getBatchStatus(uris);
     if (finalStatus.misses.length > 0) {
-      console.warn(`⚠️ Compression timeout after ${timeoutMs}ms. Only ${finalStatus.hits.length}/${uris.length} (${finalStatus.hitRate.toFixed(0)}%) images ready. Proceeding anyway...`);
-      
       const missingNames = finalStatus.misses.map(uri => uri.substring(uri.lastIndexOf('/') + 1));
-      console.warn(`❌ Missing compressed images: ${missingNames.join(', ')}`);
+      logWarn('Compression timeout occurred', {
+        component: 'ImageCompressionService',
+        timeoutMs,
+        completed: finalStatus.hits.length,
+        total: uris.length,
+        hitRate: finalStatus.hitRate.toFixed(0),
+        missingFiles: missingNames
+      });
     }
   }
 
@@ -364,7 +395,10 @@ export class ImageCompressionService {
    */
   updateSettings(settings: Partial<CompressionSettings>): void {
     this.settings = { ...this.settings, ...settings };
-    console.log(`⚙️ Compression settings updated:`, this.settings);
+    logInfo('Compression settings updated', {
+      component: 'ImageCompressionService',
+      newSettings: this.settings
+    });
   }
 
   /**

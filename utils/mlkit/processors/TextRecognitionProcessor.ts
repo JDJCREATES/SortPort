@@ -108,17 +108,10 @@ export class TextRecognitionProcessor {
       } catch (error) {
         console.warn('⚠️ ML Kit text recognition failed:', error);
         
-        // Use the new corruption detection
+        // Simple error logging
         if (error && error.toString().includes('FileNotFoundException')) {
-          console.error(`🔍 File path issue detected for text recognition: ${imagePath}`);
+          console.error(`🔍 File not found for text recognition: ${imagePath}`);
           console.error(`Error details:`, error);
-          
-          // Analyze the corruption
-          const corruptionAnalysis = ImagePathHelper.detectPathCorruption(imagePath, error.toString());
-          if (corruptionAnalysis.isCorrupted) {
-            console.error(`💥 Text recognition path corruption detected: ${corruptionAnalysis.corruptionType}`);
-            console.error(`💡 Suggested fix: ${corruptionAnalysis.suggestedFix}`);
-          }
         }
         
         return this.getFallbackTextAnalysis();

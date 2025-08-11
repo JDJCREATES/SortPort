@@ -365,7 +365,6 @@ function SourceFolderPickerComponent({
               awsConfidence: analyzed.nsfwResult.confidence,
             });
             
-            console.log(`🔒 NSFW detected for image ${index}: ${analyzed.nsfwResult.primaryCategory} (${analyzed.nsfwResult.severity})`);
           }
         });
 

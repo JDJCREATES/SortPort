@@ -52,7 +52,7 @@ export class AlbumManager {
           
           // Filter NSFW images from regular albums (not moderated albums)
           if (!album.is_moderated_album && !showModerated) {
-            const filteredImages = await NsfwImageManager.filterNsfwImages(
+            const filteredImages = await NsfwImageManager.filterNsfwPhotosByPath(
               imageIds.map((id: string) => ({ id })), 
               showModerated
             );

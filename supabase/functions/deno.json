@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["deno.window"],
+    "strict": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 80,
+    "indentWidth": 2,
+    "semiColons": false,
+    "singleQuote": true,
+    "proseWrap": "preserve",
+    "include": ["**/*.ts", "**/*.js"],
+    "exclude": ["node_modules/"]
+  },
+  "lint": {
+    "include": ["**/*.ts", "**/*.js"],
+    "exclude": ["node_modules/"]
+  },
+  "imports": {
+    "https://deno.land/std@0.168.0/": "https://deno.land/std@0.168.0/",
+    "https://esm.sh/": "https://esm.sh/"
+  }
+}

@@ -175,17 +175,10 @@ export class FaceDetectionProcessor {
       } catch (mlError) {
         console.warn('⚠️ ML Kit face detection failed, using fallback:', mlError);
         
-        // Use the new corruption detection
+        // Simple error logging
         if (mlError && mlError.toString().includes('FileNotFoundException')) {
-          console.error(`🔍 File path issue detected for face detection: ${imagePath}`);
+          console.error(`🔍 File not found for face detection: ${imagePath}`);
           console.error(`Error details:`, mlError);
-          
-          // Analyze the corruption
-          const corruptionAnalysis = ImagePathHelper.detectPathCorruption(imagePath, mlError.toString());
-          if (corruptionAnalysis.isCorrupted) {
-            console.error(`💥 Face detection path corruption detected: ${corruptionAnalysis.corruptionType}`);
-            console.error(`💡 Suggested fix: ${corruptionAnalysis.suggestedFix}`);
-          }
         }
         
         return this.getFallbackFaceAnalysis();

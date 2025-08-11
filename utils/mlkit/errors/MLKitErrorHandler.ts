@@ -49,20 +49,6 @@ export class MLKitErrorHandler {
       details.type = MLKitErrorType.FILE_NOT_FOUND;
       details.suggestions.push('Verify file exists before processing');
       details.retryable = false;
-      
-      // Check for path corruption
-      const corruptionAnalysis = ImagePathHelper.detectPathCorruption(imagePath, errorString);
-      if (corruptionAnalysis.isCorrupted) {
-        details.type = MLKitErrorType.PATH_CORRUPTION;
-        details.corruptionAnalysis = {
-          detected: corruptionAnalysis.isCorrupted,
-          type: corruptionAnalysis.corruptionType || 'unknown',
-          suggestion: corruptionAnalysis.suggestedFix || 'no suggestion available'
-        };
-        details.suggestions.push('Fix path corruption before retrying');
-        details.recoverable = true;
-        details.retryable = true;
-      }
     }
     
     // Invalid image format

@@ -216,7 +216,9 @@ export class BulkProcessingOrchestrator {
     await this.initialize();
 
     const startTime = Date.now();
-    const { imageUris, processingId, userId, config, onProgress, onBatchComplete, onError } = request;
+    let { imageUris, processingId, userId, config, onProgress, onBatchComplete, onError } = request;
+    // Sanitize all image URIs before processing
+    imageUris = imageUris.map(uri => PathSanitizer.sanitizeForMLKit(uri));
 
     console.log(`🎯 Starting bulk processing: ${processingId}`, {
       totalImages: imageUris.length,
@@ -296,6 +298,10 @@ export class BulkProcessingOrchestrator {
         compressionStats = compressionResult.stats;
         
         logInfo(`✅ Compression completed: ${(compressionStats.compressionRatio * 100).toFixed(1)}% size reduction`);
+        
+        // Wait for cache to stabilize after parallel compression
+        console.log(`⏳ Allowing cache to stabilize after parallel compression...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Give 1 second for all writes to complete
       }
       
       this.batchUpload.resetSession();
@@ -310,6 +316,12 @@ export class BulkProcessingOrchestrator {
       // Update job monitoring with batch count
       jobStatus.totalBatches = batches.length;
       this.jobMonitoring.updateTotalBatches(processingId, batches.length);
+
+      // ✅ CRITICAL FIX: Add small delay to ensure cache stability after parallel ML Kit processing
+      if (config.enableMLKit && Object.keys(mlkitResults).length > 0) {
+        console.log('⏳ Allowing cache to stabilize after parallel ML Kit processing...');
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second stabilization delay
+      }
 
       const uploadResults = await this.uploadBatches(
         batches,
@@ -579,26 +591,33 @@ export class BulkProcessingOrchestrator {
 
   /**
    * Run ML Kit analysis on original images before compression
-   * Processes images sequentially to prevent memory issues and ensure file stability
+   * Uses parallel processing with hardware-optimized concurrency
    */
   private async runMLKitAnalysis(
     imageUris: string[], 
     onProgress?: (analyzed: number, total: number) => void
   ): Promise<Record<string, MLKitAnalysisResult>> {
+    const startTime = Date.now();
     console.log(`🤖 Running ML Kit analysis on ${imageUris.length} original images...`);
 
     const results: Record<string, MLKitAnalysisResult> = {};
+    let processedCount = 0;
 
-    // Process images sequentially to prevent memory issues and race conditions
-    for (let i = 0; i < imageUris.length; i++) {
-      const uri = imageUris[i];
-      
+    // Get hardware-optimized concurrency from compression settings
+    // Use compressionWorkers as they're CPU-intensive like ML Kit processing
+    const hardwareProfile = await HardwareProfiler.getHardwareProfile();
+    const maxConcurrency = Math.max(2, Math.min(6, hardwareProfile.recommendedSettings.compressionWorkers));
+    
+    console.log(`⚡ Using parallel processing with ${maxConcurrency} concurrent workers for ML Kit analysis`);
+
+    // Create a semaphore-like mechanism for controlled concurrency
+    const processImageWithSemaphore = async (uri: string, index: number): Promise<void> => {
       try {
-        // ✅ CRITICAL FIX: No file stability check needed for original files
-        // Original files are always stable and accessible
+        // ✅ Original files are always stable and accessible
+        const tempImageId = `original_${Date.now()}_${index}`;
         
-        // Generate a temporary ID for ML Kit processing
-        const tempImageId = `original_${Date.now()}_${i}`;
+        logVerbose(`✅ Cached image ${tempImageId}`);
+        logVerbose(`🔄 Image Labeling attempt 1/3 for: ${uri}`);
         
         const result = await this.mlkitManager.processImage(
           tempImageId, // imageId
@@ -606,29 +625,67 @@ export class BulkProcessingOrchestrator {
           'bulk-processor', // userId
           { skipDatabaseUpdate: true } // Don't update database during bulk processing
         );
+        
         results[uri] = result;
+        processedCount++;
         
         // Call progress callback if provided
         if (onProgress) {
-          onProgress(i + 1, imageUris.length);
+          onProgress(processedCount, imageUris.length);
         }
         
-        // Log progress every 10 images or at the end to reduce spam
-        if ((i + 1) % 10 === 0 || (i + 1) === imageUris.length) {
-          logInfo(`🔄 ML Kit analysis: ${i + 1}/${imageUris.length} images processed`);
+        // Log progress every 5 images for better visibility with parallel processing
+        if (processedCount % 5 === 0 || processedCount === imageUris.length) {
+          const elapsed = Date.now() - startTime;
+          const avgTime = elapsed / processedCount;
+          logInfo(`🔄 ML Kit analysis: ${processedCount}/${imageUris.length} images processed (${avgTime.toFixed(0)}ms avg)`);
         }
       } catch (error) {
         console.error(`❌ ML Kit analysis failed for ${uri}:`, error);
-        // Continue processing even if ML Kit fails for individual images
+        processedCount++;
+        
+        // Still call progress callback for failed images to maintain count accuracy
+        if (onProgress) {
+          onProgress(processedCount, imageUris.length);
+        }
+      }
+    };
+
+    // Process images in chunks with controlled concurrency
+    const chunks: string[][] = [];
+    for (let i = 0; i < imageUris.length; i += maxConcurrency) {
+      chunks.push(imageUris.slice(i, i + maxConcurrency));
+    }
+
+    // Process each chunk in parallel with small delays between chunks
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      const chunk = chunks[chunkIndex];
+      const chunkPromises = chunk.map((uri, chunkItemIndex) => {
+        const globalIndex = chunkIndex * maxConcurrency + chunkItemIndex;
+        return processImageWithSemaphore(uri, globalIndex);
+      });
+      
+      // Wait for all images in this chunk to complete before starting the next chunk
+      await Promise.allSettled(chunkPromises);
+      
+      // Add small delay between chunks to reduce cache pressure
+      if (chunkIndex < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100)); // 100ms between chunks
       }
     }
 
-    console.log(`📊 ML Kit analysis completed: ${Object.keys(results).length}/${imageUris.length} successful`);
+    const totalTime = Date.now() - startTime;
+    const avgTime = totalTime / imageUris.length;
+    console.log(`📊 ML Kit analysis completed: ${Object.keys(results).length}/${imageUris.length} successful in ${totalTime}ms (${avgTime.toFixed(0)}ms avg, ${maxConcurrency} parallel workers)`);
     return results;
   }
 
   /**
    * Upload batches with progress tracking
+   */
+  /**
+   * Upload batches with sequential processing to avoid job ID conflicts
+   * (Keep ML Kit parallel, but serialize uploads for session consistency)
    */
   private async uploadBatches(
     batches: UploadBatch[],
@@ -642,13 +699,15 @@ export class BulkProcessingOrchestrator {
     failedCount: number;
     errors: string[];
   }> {
+    const startTime = Date.now();
     let uploadedCount = 0;
     let failedCount = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      
+    console.log(`📤 Starting batch uploads: ${batches.length} batches (sequential for session consistency)`);
+
+    // Pre-process all batches to add ML Kit data
+    for (const batch of batches) {
       // Add ML Kit results to batch with proper mapping for virtual-image-bridge
       batch.mlkitResults = {};
       
@@ -715,10 +774,16 @@ export class BulkProcessingOrchestrator {
           scene: sampleData.scene_type
         });
       }
+    }
 
-      console.log(`📤 Uploading batch ${i + 1}/${batches.length}: ${batch.batchId}...`);
-
+    // ✅ CRITICAL FIX: Upload batches SEQUENTIALLY to avoid job ID conflicts
+    // Server expects single session with one job ID
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      
       try {
+        console.log(`📤 Uploading batch ${i + 1}/${batches.length}: ${batch.batchId}...`);
+
         const result = await this.batchUpload.uploadBatchWithRetry(batch, userId);
         
         if (result.success) {
@@ -776,6 +841,9 @@ export class BulkProcessingOrchestrator {
         console.error(`❌ ${errorMsg}`);
       }
     }
+
+    const totalTime = Date.now() - startTime;
+    console.log(`📊 Batch uploads completed in ${totalTime}ms: ${uploadedCount} uploaded, ${failedCount} failed (sequential uploads for session consistency)`);
 
     return { uploadedCount, failedCount, errors };
   }

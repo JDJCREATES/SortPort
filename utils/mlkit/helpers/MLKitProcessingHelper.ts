@@ -4,7 +4,7 @@
  */
 
 import { ImagePathHelper } from '../helpers/imagePathHelper';
-import { FileValidator } from '../validation/FileValidator';
+import * as FileSystem from 'expo-file-system';
 
 export interface RetryConfig {
   maxAttempts: number;
@@ -45,11 +45,11 @@ export class MLKitProcessingHelper {
       try {
         console.log(`🔄 ${operationName} attempt ${attempt}/${retryConfig.maxAttempts} for: ${imagePath}`);
         
-        // Pre-flight validation on first attempt
+        // Simple existence check on first attempt only
         if (attempt === 1) {
-          const validation = await FileValidator.validateFile(imagePath);
-          if (!validation.accessible) {
-            throw new Error(`File validation failed: ${validation.error}`);
+          const stats = await FileSystem.getInfoAsync(imagePath);
+          if (!stats.exists) {
+            throw new Error(`File not found: ${imagePath}`);
           }
         }
         
@@ -65,15 +65,8 @@ export class MLKitProcessingHelper {
         
       } catch (error) {
         lastError = error;
-        const isFileNotFound = error && error.toString().includes('FileNotFoundException');
-        const isCorruption = this.detectCorruptionFromError(error, imagePath);
         
         console.warn(`⚠️ ${operationName} attempt ${attempt} failed: ${error}`);
-        
-        if (isFileNotFound || isCorruption) {
-          console.error(`💥 File system or corruption issue detected, not retrying`);
-          break; // Don't retry file system issues
-        }
         
         // Calculate delay for next attempt
         if (attempt < retryConfig.maxAttempts) {
@@ -108,31 +101,12 @@ export class MLKitProcessingHelper {
     error?: string;
   }> {
     try {
-      // First validate the original path
-      const validation = await FileValidator.validateFile(imagePath);
-      
-      if (!validation.accessible) {
-        // Check for corruption and attempt to fix
-        const corruptionCheck = FileValidator.detectPathCorruption(imagePath);
-        
-        if (corruptionCheck.isCorrupted) {
-          console.warn(`🔧 Attempting to fix corrupted path: ${imagePath}`);
-          const fixedPath = FileValidator.attemptPathFix(imagePath);
-          
-          if (fixedPath) {
-            console.log(`🔧 Attempting to use fixed path: ${fixedPath}`);
-            const fixedValidation = await FileValidator.validateFile(fixedPath);
-            
-            if (fixedValidation.accessible) {
-              const convertedPath = ImagePathHelper.convertToMLKitPath(fixedPath);
-              return { success: true, convertedPath };
-            }
-          }
-        }
-        
-        return { success: false, error: validation.error };
+      // Simple existence check only
+      const stats = await FileSystem.getInfoAsync(imagePath);
+      if (!stats.exists) {
+        return { success: false, error: 'File not found' };
       }
-      
+
       // Convert to ML Kit format
       const convertedPath = ImagePathHelper.convertToMLKitPath(imagePath);
       return { success: true, convertedPath };
@@ -140,27 +114,6 @@ export class MLKitProcessingHelper {
     } catch (error) {
       return { success: false, error: error?.toString() || 'Path preparation failed' };
     }
-  }
-
-  /**
-   * Check if error indicates corruption
-   */
-  private static detectCorruptionFromError(error: any, imagePath: string): boolean {
-    if (!error) return false;
-    
-    const errorStr = error.toString();
-    
-    // Check for file not found with corruption patterns
-    if (errorStr.includes('FileNotFoundException')) {
-      const pathMatch = errorStr.match(/\/[^:]+/);
-      if (pathMatch) {
-        const errorPath = pathMatch[0];
-        const corruptionAnalysis = ImagePathHelper.detectPathCorruption(imagePath, errorStr);
-        return corruptionAnalysis.isCorrupted;
-      }
-    }
-    
-    return false;
   }
 
   /**

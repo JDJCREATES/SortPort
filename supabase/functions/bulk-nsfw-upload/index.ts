@@ -8,10 +8,12 @@ import {
   PutBucketPolicyCommand,
   GetBucketPolicyCommand,
   ListObjectsV2Command,
+  type CreateBucketCommandInput,
+  type BucketLocationConstraint,
 } from "npm:@aws-sdk/client-s3@^3.840.0"
 
-// @ts-ignore
-declare const Deno: any;
+// Deno globals provided by the Edge runtime
+declare const Deno: { env: { get(name: string): string | undefined } };
 
 /**
  * Bulk upload images to a temp S3 before AWS Rekognition can scan them
@@ -33,6 +35,34 @@ interface ErrorResponse {
   type: string
   request_id: string
 }
+
+// Typed shapes for incoming mapped data
+type MLKitData = {
+  virtual_tags?: unknown[]
+  tags?: unknown[]
+  detected_objects?: unknown[]
+  objects?: unknown[]
+  emotion_detected?: unknown[]
+  emotions?: unknown[]
+  activity_detected?: unknown[]
+  activities?: unknown[]
+  detected_faces_count?: number
+  quality_score?: number | null
+  brightness_score?: number | null
+  blur_score?: number | null
+  aesthetic_score?: number | null
+  scene_type?: string | null
+  image_orientation?: string | null
+  has_text?: boolean
+  text_blocks?: unknown[] | null
+  caption?: string | null
+  vision_summary?: string | null
+  [key: string]: unknown
+}
+type MLKitDataMap = Record<string, MLKitData>
+
+type EXIFData = Record<string, unknown>
+type EXIFDataMap = Record<string, EXIFData>
 
 // Constants
 const CORS_HEADERS = {
@@ -170,9 +200,13 @@ async function finalizeUploadSession(
     
     const response = await s3Client.send(listCommand);
     const objects = response.Contents || [];
-    const objectKeys = objects
-      .map((obj: { Key?: string }) => obj.Key ?? '')
-      .filter((key: string) => key.endsWith('.jpg') || key.endsWith('.jpeg') || key.endsWith('.png'));
+    const objectKeys: string[] = [];
+    for (const obj of objects as unknown[]) {
+      const key = (obj as { Key?: string }).Key ?? '';
+      if (key && (key.endsWith('.jpg') || key.endsWith('.jpeg') || key.endsWith('.png') || key.endsWith('.webp'))) {
+        objectKeys.push(key);
+      }
+    }
     
     if (objectKeys.length === 0) {
       throw new Error('No image objects found to create manifest');
@@ -263,15 +297,13 @@ async function getOrCreateTempBucket(
   
   try {
     // Create bucket
-    const createBucketParams = {
+    const createBucketParams: CreateBucketCommandInput = {
       Bucket: bucketName,
-      ...(region !== 'us-east-1' && {
-        CreateBucketConfiguration: {
-          LocationConstraint: region
-        }
-      })
+      ...(region !== 'us-east-1'
+        ? { CreateBucketConfiguration: { LocationConstraint: region as BucketLocationConstraint } }
+        : {})
     };
-    
+
     await s3Client.send(new CreateBucketCommand(createBucketParams));
     console.log(`✅ [${requestId}] Created bucket: ${bucketName}`);
     
@@ -380,14 +412,14 @@ async function createErrorResponse(
 
 // Add at the top after imports
 const PROCESSING_TIMEOUT = 240000; // 4 minutes instead of default 2 minutes
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second
+const _MAX_RETRIES = 3;
+const _RETRY_DELAY = 1000; // 1 second
 
 // Parse multipart/form-data and upload binary files to S3
 async function uploadBinaryFilesToS3(
   s3Client: S3Client,
   bucketName: string,
-  formData: any,
+  formData: FormData,
   batchIndex: number
 ): Promise<{ successCount: number; failedCount: number }> {
   console.log(`📤 Processing binary files from FormData for batch ${batchIndex}`);
@@ -440,7 +472,7 @@ async function uploadBinaryFilesToS3(
     const chunkGroup = chunks.slice(chunkGroupStart, chunkGroupStart + MAX_PARALLEL_CHUNKS);
     
     // Process all chunks in this group in parallel
-    const chunkPromises = chunkGroup.map(async (chunk, groupIndex) => {
+  const chunkPromises = chunkGroup.map((chunk, groupIndex) => {
       const chunkIndex = chunkGroupStart + groupIndex;
       
       const uploadPromises = chunk.map(async ({ key, file }, index) => {
@@ -456,7 +488,10 @@ async function uploadBinaryFilesToS3(
           const arrayBuffer = await file.arrayBuffer();
           const uint8Array = new Uint8Array(arrayBuffer);
           
-          const s3Key = `input/batch-${batchIndex}-image-${(chunkIndex * CHUNK_SIZE + index).toString().padStart(4, '0')}.jpg`;
+          // Pick extension based on incoming file type
+          const fileType = (file.type || '').toLowerCase();
+          const ext = fileType.includes('png') ? 'png' : (fileType.includes('webp') ? 'webp' : 'jpg');
+          const s3Key = `input/batch-${batchIndex}-image-${(chunkIndex * CHUNK_SIZE + index).toString().padStart(4, '0')}.${ext}`;
           
           console.log(`☁️ Uploading ${key} to S3: ${s3Key}`);
           
@@ -477,7 +512,7 @@ async function uploadBinaryFilesToS3(
         }
       });
       
-      return Promise.all(uploadPromises);
+  return Promise.all(uploadPromises);
     });
     
     // Wait for all chunks in this group to complete
@@ -571,7 +606,7 @@ async function handleRequest(req: Request): Promise<Response> {
     console.log(`📥 [${requestId}] Received multipart/form-data request`);
 
     // Parse multipart/form-data with timeout
-    let formData: any;
+  let formData: FormData;
     try {
       console.log(`🔄 [${requestId}] Parsing FormData...`);
       const parseStartTime = Date.now();
@@ -611,13 +646,15 @@ async function handleRequest(req: Request): Promise<Response> {
     let userId: string | null = null;
     let batchIndex = 0;
     let totalImages = 0;
-    let mappedMLKitData: any = null;
+  let mappedMLKitData: Record<string, unknown> | null = null;
+  let mappedEXIFData: Record<string, unknown> | null = null;
     
     try {
       const userIdValue = formData.get('userId');
       const batchIndexValue = formData.get('batchIndex');
       const totalImagesValue = formData.get('totalImages');
       const mappedMLKitDataValue = formData.get('mappedMLKitData');
+      const mappedEXIFDataValue = formData.get('mappedEXIFData');
       
       userId = userIdValue ? String(userIdValue) : null;
       batchIndex = batchIndexValue ? parseInt(String(batchIndexValue)) : 0;
@@ -626,18 +663,54 @@ async function handleRequest(req: Request): Promise<Response> {
       // Parse mapped ML Kit data if available
       if (mappedMLKitDataValue) {
         try {
-          mappedMLKitData = JSON.parse(String(mappedMLKitDataValue));
-          console.log(`🧠 [${requestId}] Received mapped ML Kit data for ${Object.keys(mappedMLKitData).length} images`);
-          console.log(`🔍 [${requestId}] ML Kit data sample keys:`, Object.keys(mappedMLKitData).slice(0, 5));
-          console.log(`🔍 [${requestId}] ML Kit data sample structure:`, Object.keys(Object.values(mappedMLKitData)[0] || {}).slice(0, 10));
+          const parsed = JSON.parse(String(mappedMLKitDataValue));
+          mappedMLKitData = parsed as Record<string, unknown>;
+          const mlKeys = mappedMLKitData ? Object.keys(mappedMLKitData) : [];
+          console.log(`🧠 [${requestId}] Received mapped ML Kit data for ${mlKeys.length} images`);
+          console.log(`🔍 [${requestId}] ML Kit data sample keys:`, mlKeys.slice(0, 5));
+          let firstML: Record<string, unknown> | undefined = undefined;
+          if (mlKeys.length > 0) {
+            const mapRef = mappedMLKitData as Record<string, unknown>;
+            const key0 = mlKeys[0] as string;
+            firstML = mapRef[key0] as Record<string, unknown> | undefined;
+          }
+          console.log(`🔍 [${requestId}] ML Kit data sample structure:`, firstML ? Object.keys(firstML).slice(0, 10) : []);
         } catch (parseError) {
           console.warn(`⚠️ [${requestId}] Failed to parse mapped ML Kit data:`, parseError);
         }
       } else {
         console.log(`📭 [${requestId}] No ML Kit data received in this batch`);
       }
+
+      // Parse mapped EXIF data if available
+      if (mappedEXIFDataValue) {
+        try {
+          const parsedExif = JSON.parse(String(mappedEXIFDataValue));
+          mappedEXIFData = parsedExif as Record<string, unknown>;
+          const exifKeys = mappedEXIFData ? Object.keys(mappedEXIFData) : [];
+          console.log(`📸 [${requestId}] Received mapped EXIF data for ${exifKeys.length} metadata entries`);
+          console.log(`🔍 [${requestId}] EXIF data sample keys:`, exifKeys.slice(0, 5));
+          
+          // Log summary of EXIF data
+          const uniqueImages = exifKeys.length / 3; // Divide by 3 since we store 3 keys per image
+          let withDateTaken = 0;
+          let withGPS = 0;
+          
+          for (const value of Object.values(mappedEXIFData)) {
+            const exifData = value as { date_taken?: unknown; location_lat?: unknown; location_lng?: unknown };
+            if (exifData?.date_taken) withDateTaken++;
+            if (exifData?.location_lat && exifData?.location_lng) withGPS++;
+          }
+          
+          console.log(`📸 [${requestId}] EXIF Summary: ${uniqueImages} images, ${withDateTaken / 3} with date_taken, ${withGPS / 3} with GPS`);
+        } catch (parseError) {
+          console.warn(`⚠️ [${requestId}] Failed to parse mapped EXIF data:`, parseError);
+        }
+      } else {
+        console.log(`📸 [${requestId}] No EXIF data received in this batch`);
+      }
       
-      console.log(`📋 [${requestId}] Extracted metadata: userId=${userId}, batchIndex=${batchIndex}, totalImages=${totalImages}, hasMLKitData=${!!mappedMLKitData}`);
+      console.log(`�📋 [${requestId}] Extracted metadata: userId=${userId}, batchIndex=${batchIndex}, totalImages=${totalImages}, hasMLKitData=${!!mappedMLKitData}, hasEXIFData=${!!mappedEXIFData}`);
       
     } catch (error) {
       console.error(`❌ [${requestId}] Error extracting metadata:`, error);
@@ -680,7 +753,7 @@ async function handleRequest(req: Request): Promise<Response> {
         } else if (i > 10 && imageCount === 0) {
           break;
         }
-      } catch (error) {
+  } catch (_error) {
         continue;
       }
     }
@@ -789,7 +862,9 @@ async function handleRequest(req: Request): Promise<Response> {
       const file = formData.get(key);
       if (file && typeof file === 'object' && 'arrayBuffer' in file) {
         const fileObj = file as File;
-        const s3Key = `input/batch-${batchIndex}-image-${i.toString().padStart(4, '0')}.jpg`;
+        const fileType = (fileObj.type || '').toLowerCase();
+        const ext = fileType.includes('png') ? 'png' : (fileType.includes('webp') ? 'webp' : 'jpg');
+        const s3Key = `input/batch-${batchIndex}-image-${i.toString().padStart(4, '0')}.${ext}`;
         
         // CRITICAL FIX: Get the original device path from metadata
         const originalPathKey = `original_path_${i}`;
@@ -892,9 +967,10 @@ async function handleRequest(req: Request): Promise<Response> {
       // ----------------- DIRECT VIRTUAL IMAGE CREATION -----------------
       if (imageFiles.length > 0) {
         try {
-          // Prepare images array with ML Kit data for direct virtual_image creation
+          // Prepare images array with ML Kit data and EXIF data for direct virtual_image creation
           const imagesForCreation = imageFiles.map(img => {
             let mlkit_data = null;
+            let exif_data = null;
             
             if (mappedMLKitData && typeof mappedMLKitData === 'object') {
               // Key resolution priority: original device path, image_{uploadOrder}, order_{uploadOrder}, basename match
@@ -907,8 +983,8 @@ async function handleRequest(req: Request): Promise<Response> {
               ];
               
               for (const candidate of candidates) {
-                if (candidate && mappedMLKitData[candidate]) {
-                  const ml = mappedMLKitData[candidate];
+                if (candidate && (mappedMLKitData as Record<string, unknown>)[candidate]) {
+                  const ml = (mappedMLKitData as MLKitDataMap)[candidate] as MLKitData;
                   mlkit_data = {
                     virtual_tags: ml.virtual_tags || ml.tags || [],
                     detected_objects: ml.detected_objects || ml.objects || [],
@@ -924,7 +1000,48 @@ async function handleRequest(req: Request): Promise<Response> {
                     has_text: ml.has_text ?? (ml.text_blocks ? true : false),
                     caption: ml.caption ?? null,
                     vision_summary: ml.vision_summary ?? null,
-                    metadata: ml // Store raw ML Kit data for reference
+                    metadata: ml as unknown // Store raw ML Kit data for reference
+                  };
+                  break;
+                }
+              }
+            }
+
+            // Extract EXIF data if available
+            if (mappedEXIFData && typeof mappedEXIFData === 'object') {
+              // Key resolution priority: same as ML Kit data
+              const baseName = img.imagePath.split('/').pop() || img.imagePath;
+              const candidates = [
+                img.imagePath,
+                `image_${img.uploadOrder}`,
+                `order_${img.uploadOrder}`,
+                baseName
+              ];
+              
+              for (const candidate of candidates) {
+                if (candidate && (mappedEXIFData as Record<string, unknown>)[candidate]) {
+                  const exif = (mappedEXIFData as Record<string, unknown>)[candidate] as Record<string, unknown>;
+                  exif_data = {
+                    date_taken: exif.date_taken || null,
+                    date_modified: exif.date_modified || null,
+                    location_lat: exif.location_lat || null,
+                    location_lng: exif.location_lng || null,
+                    camera_make: exif.camera_make || null,
+                    camera_model: exif.camera_model || null,
+                    camera_lens: exif.camera_lens || null,
+                    camera_settings: exif.camera_settings || null,
+                    image_width: exif.image_width || null,
+                    image_height: exif.image_height || null,
+                    orientation: exif.orientation || null,
+                    file_format: exif.file_format || null,
+                    color_space: exif.color_space || null,
+                    iso_speed: exif.iso_speed || null,
+                    exposure_time: exif.exposure_time || null,
+                    f_number: exif.f_number || null,
+                    focal_length: exif.focal_length || null,
+                    white_balance: exif.white_balance || null,
+                    flash_used: exif.flash_used || null,
+                    metadata: exif // Store raw EXIF data for reference
                   };
                   break;
                 }
@@ -938,7 +1055,8 @@ async function handleRequest(req: Request): Promise<Response> {
               contentType: img.contentType,
               s3Key: img.s3Key,
               uploadOrder: img.uploadOrder,
-              mlkit_data
+              mlkit_data,
+              exif_data // Add EXIF data to the image object
             };
           });
           

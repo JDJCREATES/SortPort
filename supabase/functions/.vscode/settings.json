@@ -1,0 +1,16 @@
+{
+  "deno.enable": true,
+  "deno.unstable": ["kv", "cron"],
+  "deno.suggest.imports.hosts": {
+    "https://deno.land": true,
+    "https://esm.sh": true
+  },
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "typescript.suggest.autoImports": false,
+  "[typescript]": {
+    "editor.defaultFormatter": "denoland.vscode-deno"
+  },
+  "files.associations": {
+    "*.ts": "typescript"
+  }
+}

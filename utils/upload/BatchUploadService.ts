@@ -174,18 +174,9 @@ export class BatchUploadService {
               }
             }
             
-            // If still 0 bytes after retries, fall back to original file
+            // If still 0 bytes after retries, this is a critical error
             if (fileSize === 0) {
-              console.warn(`⚠️ Compressed file permanently corrupted, using original: ${uri}`);
-              const originalFileSize = await FileSystemService.getFileSize(uri);
-              if (originalFileSize > 0) {
-                // Use original file instead
-                fileSize = originalFileSize;
-                actualUri = uri;
-                isCompressed = false;
-              } else {
-                throw new Error(`Both compressed and original files are 0 bytes: ${uri}`);
-              }
+              throw new Error(`Compressed file permanently corrupted and cannot be used: ${actualUri}. Original: ${uri}`);
             }
           } else if (fileSize === 0) {
             throw new Error(`File has 0 bytes: ${actualUri}`);
@@ -284,7 +275,7 @@ export class BatchUploadService {
       actualUri: string;
     }> = [];
 
-    // Add files to form data with comprehensive logging
+  // Add files to form data with comprehensive logging
     for (let i = 0; i < batch.images.length; i++) {
       const uri = batch.images[i];
       const compressedUri = this.cache.get(uri);
@@ -310,17 +301,9 @@ export class BatchUploadService {
             }
           }
           
-          // If still 0 bytes after retries, fall back to original file
+          // If still 0 bytes after retries, this is a critical error
           if (fileSize === 0) {
-            console.warn(`⚠️ Compressed file corrupted during upload, using original: ${uri}`);
-            const originalFileSize = await FileSystemService.getFileSize(uri);
-            if (originalFileSize > 0) {
-              fileSize = originalFileSize;
-              actualUri = uri;
-              isCompressed = false;
-            } else {
-              throw new Error(`Both compressed and original files are 0 bytes during upload: ${uri}`);
-            }
+            throw new Error(`Compressed file is permanently corrupted and cannot be uploaded: ${actualUri}. Original: ${uri}`);
           }
         } else if (fileSize === 0) {
           throw new Error(`File disappeared or became 0 bytes: ${actualUri}`);
@@ -335,11 +318,15 @@ export class BatchUploadService {
         //   attempt
         // });
 
-        // Create file object for upload with modernized filename handling
-        const safeFilename = PathSanitizer.generateUploadFilename(uri, `image_${i}`);
+  // Create file object for upload with modernized filename handling
+  // Always sanitize upload filenames for production reliability
+  const safeFilename = PathSanitizer.generateUploadFilename(actualUri, `image_${i}`);
+  const lowerName = (actualUri || '').toLowerCase();
+  const mimeType = lowerName.endsWith('.png') ? 'image/png'
+           : (lowerName.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
         const fileObj = {
           uri: actualUri,
-          type: 'image/jpeg',
+    type: mimeType,
           name: safeFilename
         } as any;
 

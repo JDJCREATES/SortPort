@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { VirtualImageIdService } from '../shared/VirtualImageIdService'; // For upload operations only
 
 export interface NsfwImageRecord {
   id: string;
@@ -13,7 +14,8 @@ export interface NsfwImageRecord {
 
 export class NsfwImageManager {
   /**
-   * Store NSFW image IDs in the virtual_image table with proper error handling
+   * Store NSFW image IDs during upload operations
+   * Note: Uses VirtualImageIdService for upload-time operations only
    */
   static async storeNsfwImageIds(nsfwImageIds: string[]): Promise<void> {
     if (!nsfwImageIds || nsfwImageIds.length === 0) {
@@ -30,23 +32,15 @@ export class NsfwImageManager {
 
       console.log(`🔒 Updating ${nsfwImageIds.length} NSFW image flags for user ${user.id}`);
 
-      // Update existing virtual_image records to mark as NSFW
-      const { error } = await supabase
-        .from('virtual_image')
-        .update({
-          isflagged: true,
-          nsfw_score: 0.9, // Default high confidence for manual flagging
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id)
-        .in('id', nsfwImageIds);
+      // Use clean ID-based batch updates
+      const updates = nsfwImageIds.map(imageId => ({
+        virtualImageId: imageId,
+        isNsfw: true
+      }));
 
-      if (error) {
-        console.error('❌ Error updating NSFW image flags:', error);
-        throw new Error(`Failed to update NSFW image flags: ${error.message}`);
-      }
+      await VirtualImageIdService.batchUpdateVirtualImages(updates);
 
-      console.log(`✅ Successfully updated ${nsfwImageIds.length} NSFW image flags`);
+      console.log(`✅ Successfully updated ${nsfwImageIds.length} NSFW image flags using ID-based service`);
 
     } catch (error) {
       console.error('❌ Error in storeNsfwImageIds:', error);
@@ -55,7 +49,69 @@ export class NsfwImageManager {
   }
 
   /**
-   * Get NSFW image IDs from virtual_image table
+   * Get NSFW image paths from virtual_image table (for device photo filtering)
+   */
+  static async getNsfwImagePaths(): Promise<string[]> {
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.log('🔒 User not authenticated, returning empty NSFW list');
+        return [];
+      }
+
+      console.log('🔒 Fetching NSFW image paths from virtual_image table...');
+
+      // Add a small retry mechanism to handle race conditions with virtual-image-bridge
+      let attempts = 0;
+      const maxAttempts = 3;
+      let data = null;
+      
+      while (attempts < maxAttempts) {
+        const { data: queryData, error } = await supabase
+          .from('virtual_image')
+          .select('original_path, id')
+          .eq('user_id', user.id)
+          .eq('isflagged', true);
+
+        if (error) {
+          console.error('❌ Error fetching NSFW image paths:', error);
+          return [];
+        }
+
+        data = queryData;
+        
+        // If we got some results or this is the last attempt, proceed
+        if (data && data.length > 0 || attempts === maxAttempts - 1) {
+          break;
+        }
+        
+        // Wait briefly before retrying (for race condition with virtual-image-bridge)
+        if (attempts < maxAttempts - 1) {
+          console.log(`🔒 No NSFW records found, retrying in 1s... (attempt ${attempts + 1}/${maxAttempts})`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        attempts++;
+      }
+
+      const imagePaths = data?.map((row: any) => row.original_path).filter(path => path) || [];
+      console.log(`🔒 Fetched ${imagePaths.length} NSFW image paths from virtual_image table (${data?.length || 0} total records)`);
+      
+      // Debug: Log sample paths if filtering might fail
+      if (data && data.length > 0 && imagePaths.length < data.length) {
+        console.warn(`⚠️ Some virtual_image records missing original_path: ${data.length - imagePaths.length} out of ${data.length}`);
+      }
+      
+      return imagePaths;
+
+    } catch (error) {
+      console.error('❌ Error in getNsfwImagePaths:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get NSFW image IDs from virtual_image table (for client-side album filtering)
    */
   static async getNsfwImageIds(): Promise<string[]> {
     try {
@@ -66,7 +122,7 @@ export class NsfwImageManager {
       }
 
       console.log('🔒 Fetching NSFW image IDs from virtual_image table...');
-
+      
       const { data, error } = await supabase
         .from('virtual_image')
         .select('id')
@@ -78,13 +134,159 @@ export class NsfwImageManager {
         return [];
       }
 
-      const imageIds = data?.map((row: any) => row.id) || [];
+      const imageIds = data?.map(row => row.id) || [];
       console.log(`🔒 Fetched ${imageIds.length} NSFW image IDs from virtual_image table`);
       return imageIds;
 
     } catch (error) {
       console.error('❌ Error in getNsfwImageIds:', error);
       return [];
+    }
+  }
+
+  /**
+   * Filter NSFW photos from PhotoLoader results by comparing URIs
+   */
+  static async filterNsfwPhotos<T extends { id: string; uri: string }>(
+    photos: T[], 
+    showModerated: boolean = false
+  ): Promise<T[]> {
+    if (showModerated || !photos || photos.length === 0) {
+      return photos;
+    }
+
+    try {
+      const nsfwImagePaths = await this.getNsfwImagePaths();
+      if (nsfwImagePaths.length === 0) {
+        console.log('🔒 No NSFW paths found in database, returning all photos');
+        return photos;
+      }
+
+      // ...removed verbose debug logs...
+
+      // Create normalized versions for comparison (handle potential URI encoding differences)
+      const nsfwSet = new Set(nsfwImagePaths);
+      
+      // Also create a set of normalized paths (decoded URIs) for better matching
+      const nsfwNormalizedSet = new Set(
+        nsfwImagePaths.map(path => {
+          try {
+            return decodeURIComponent(path);
+          } catch {
+            return path;
+          }
+        })
+      );
+
+      const filteredPhotos = photos.filter((photo: T) => {
+        // Compare using URI, not ID
+        const directMatch = nsfwSet.has(photo.uri);
+        if (directMatch) return false;
+        
+        // Try normalized match
+        try {
+          const normalizedPhotoUri = decodeURIComponent(photo.uri);
+          if (nsfwNormalizedSet.has(normalizedPhotoUri)) return false;
+        } catch {
+          // Ignore decoding errors
+        }
+        
+        return true;
+      });
+      
+      const filteredCount = photos.length - filteredPhotos.length;
+      console.log(`🔒 NSFW filter: ${filteredCount} of ${photos.length} photos removed.`);
+      
+      return filteredPhotos;
+    } catch (error) {
+      console.error('❌ Error filtering NSFW photos by URI comparison:', error);
+      return photos; // Return all photos if filtering fails
+    }
+  }
+
+  /**
+   * Filter NSFW images from device photo collection by original_path
+   */
+  static async filterNsfwPhotosByPath<T extends { id: string }>(
+    photos: T[], 
+    showModerated: boolean = false
+  ): Promise<T[]> {
+    if (showModerated || !photos || photos.length === 0) {
+      return photos;
+    }
+
+    try {
+      const nsfwImagePaths = await this.getNsfwImagePaths();
+      if (nsfwImagePaths.length === 0) {
+        console.log('🔒 No NSFW paths found in database, returning all photos');
+        return photos;
+      }
+
+      // Debug: Log sample paths for comparison
+      if (photos.length > 0 && nsfwImagePaths.length > 0) {
+        console.log('🔒 Sample photo ID format:', photos[0].id.substring(0, 80) + '...');
+        console.log('🔒 Sample NSFW path format:', nsfwImagePaths[0].substring(0, 80) + '...');
+        
+        // Check if paths are using different URI schemes
+        const photoScheme = photos[0].id.split(':')[0];
+        const nsfwScheme = nsfwImagePaths[0].split(':')[0];
+        if (photoScheme !== nsfwScheme) {
+          console.warn(`⚠️ Path scheme mismatch detected: photos use "${photoScheme}://" but NSFW paths use "${nsfwScheme}://"`);
+        }
+      }
+
+      // Create normalized versions for comparison (handle potential URI encoding differences)
+      const nsfwSet = new Set(nsfwImagePaths);
+      
+      // Also create a set of normalized paths (decoded URIs) for better matching
+      const nsfwNormalizedSet = new Set(
+        nsfwImagePaths.map(path => {
+          try {
+            return decodeURIComponent(path);
+          } catch {
+            return path;
+          }
+        })
+      );
+
+      const filteredPhotos = photos.filter((photo: T) => {
+        const directMatch = nsfwSet.has(photo.id);
+        if (directMatch) return false;
+        
+        // Try normalized match
+        try {
+          const normalizedPhotoId = decodeURIComponent(photo.id);
+          if (nsfwNormalizedSet.has(normalizedPhotoId)) return false;
+        } catch {
+          // Ignore decoding errors
+        }
+        
+        return true;
+      });
+      
+      const filteredCount = photos.length - filteredPhotos.length;
+      if (filteredCount > 0) {
+        console.log(`🔒 Filtered ${filteredCount} NSFW photos from ${photos.length} total by original_path`);
+      } else {
+        console.warn(`⚠️ No photos filtered - possible path mismatch. ${nsfwImagePaths.length} NSFW paths vs ${photos.length} photos`);
+        
+        // Additional debugging for path mismatches
+        if (nsfwImagePaths.length > 0 && photos.length > 0) {
+          console.log('🔍 First few photo IDs for comparison:');
+          photos.slice(0, 3).forEach((photo, i) => {
+            console.log(`  Photo ${i}: ${photo.id}`);
+          });
+          console.log('🔍 First few NSFW paths for comparison:');
+          nsfwImagePaths.slice(0, 3).forEach((path, i) => {
+            console.log(`  NSFW ${i}: ${path}`);
+          });
+        }
+      }
+      
+      return filteredPhotos;
+    } catch (error) {
+      console.error('❌ Error filtering NSFW photos by path:', error);
+      return photos; // Return all photos if filtering fails
     }
   }
 

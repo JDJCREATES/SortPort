@@ -15,6 +15,21 @@ export class PhotoLoader {
     this.nsfwFilterFunction = filterFn;
   }
 
+  // Initialize NSFW filter function with NsfwImageManager
+  static initializeNsfwFilter(): void {
+    if (!this.nsfwFilterFunction) {
+      this.nsfwFilterFunction = async () => {
+        try {
+          const { NsfwImageManager } = await import('./nsfw/nsfwImageManager');
+          return await NsfwImageManager.getNsfwImageIds();
+        } catch (error) {
+          console.warn('Failed to load NSFW filter:', error);
+          return [];
+        }
+      };
+    }
+  }
+
   static async requestPermissions(): Promise<PermissionStatus> {
     try {
       if (Platform.OS === 'web') {
@@ -309,6 +324,9 @@ export class PhotoLoader {
       if (Platform.OS === 'web') {
         return { photos: [], nextAfterId: null, hasMore: false };
       }
+
+      // ✅ Initialize NSFW filter if not already set up
+      this.initializeNsfwFilter();
 
       console.log('📸 PhotoLoader.loadPhotosByIds called:', {
         imageIdsCount: imageIds.length,

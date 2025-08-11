@@ -1,4 +1,14 @@
+// Deno Edge Function for Supabase
+// @ts-ignore: Deno environment
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+};
+
+// @ts-ignore: Remote imports for Deno
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-ignore: Remote imports for Deno  
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // ================================================================================
@@ -46,6 +56,28 @@ interface CreateVirtualImagesRequest {
       has_text: boolean
       caption?: string
       vision_summary?: string
+      metadata?: any
+    }
+    exif_data?: {
+      date_taken?: string | null
+      date_modified?: string | null
+      location_lat?: number | null
+      location_lng?: number | null
+      camera_make?: string | null
+      camera_model?: string | null
+      camera_lens?: string | null
+      camera_settings?: any | null
+      image_width?: number | null
+      image_height?: number | null
+      orientation?: number | null
+      file_format?: string | null
+      color_space?: string | null
+      iso_speed?: number | null
+      exposure_time?: string | null
+      f_number?: number | null
+      focal_length?: number | null
+      white_balance?: string | null
+      flash_used?: boolean | null
       metadata?: any
     }
   }[]
@@ -154,7 +186,7 @@ async function createVirtualImagesDirectly(
     
     // Prepare virtual image records for database insertion
     const virtualImageRecords = images.map((img, index) => {
-      const baseRecord = {
+      const baseRecord: any = {
         user_id: userId,
         original_path: img.imagePath,
         original_name: img.originalFileName || 'unknown.jpg',
@@ -164,15 +196,19 @@ async function createVirtualImagesDirectly(
           jobId,
           s3Key: img.s3Key,
           uploadOrder: img.uploadOrder || index,
-          mlkit_analysis: img.mlkit_data?.metadata || null
+          mlkit_analysis: img.mlkit_data?.metadata || null,
+          exif_analysis: img.exif_data?.metadata || null
         }
       };
+
+      // Enhanced record with ML Kit and EXIF data
+      let enhancedRecord: any = { ...baseRecord };
 
       // 🧠 INTEGRATE ML KIT DATA if available
       if (img.mlkit_data) {
         console.log(`🧠 [${requestId}] Adding ML Kit data for image ${index + 1}: ${img.originalFileName}`);
-        return {
-          ...baseRecord,
+        enhancedRecord = {
+          ...enhancedRecord,
           // ML Kit mapped fields
           virtual_tags: img.mlkit_data.virtual_tags || [],
           detected_objects: img.mlkit_data.detected_objects || [],
@@ -191,8 +227,41 @@ async function createVirtualImagesDirectly(
         };
       }
 
-      console.log(`📋 [${requestId}] Creating basic record for image ${index + 1}: ${img.originalFileName}`);
-      return baseRecord;
+      // 📸 INTEGRATE EXIF DATA if available
+      if (img.exif_data) {
+        console.log(`� [${requestId}] Adding EXIF data for image ${index + 1}: ${img.originalFileName}`);
+        enhancedRecord = {
+          ...enhancedRecord,
+          // EXIF mapped fields
+          date_taken: img.exif_data.date_taken,
+          date_modified: img.exif_data.date_modified,
+          location_lat: img.exif_data.location_lat,
+          location_lng: img.exif_data.location_lng,
+          camera_make: img.exif_data.camera_make,
+          camera_model: img.exif_data.camera_model,
+          camera_lens: img.exif_data.camera_lens,
+          camera_settings: img.exif_data.camera_settings,
+          image_width: img.exif_data.image_width,
+          image_height: img.exif_data.image_height,
+          orientation: img.exif_data.orientation,
+          file_format: img.exif_data.file_format,
+          color_space: img.exif_data.color_space,
+          iso_speed: img.exif_data.iso_speed,
+          exposure_time: img.exif_data.exposure_time,
+          f_number: img.exif_data.f_number,
+          focal_length: img.exif_data.focal_length,
+          white_balance: img.exif_data.white_balance,
+          flash_used: img.exif_data.flash_used
+        };
+        
+        console.log(`📸 [${requestId}] EXIF summary for ${img.originalFileName}: date_taken=${img.exif_data.date_taken}, GPS=${!!(img.exif_data.location_lat && img.exif_data.location_lng)}, camera=${img.exif_data.camera_make} ${img.exif_data.camera_model}`);
+      }
+
+      const hasMLKit = !!img.mlkit_data;
+      const hasEXIF = !!img.exif_data;
+      console.log(`📋 [${requestId}] Creating record for image ${index + 1}: ${img.originalFileName} (ML Kit: ${hasMLKit}, EXIF: ${hasEXIF})`);
+      
+      return enhancedRecord;
     });
     
     console.log(`� [${requestId}] Inserting ${virtualImageRecords.length} virtual images into database`);

@@ -1,9 +1,12 @@
 /**
  * File Validator for ML Kit Processing
  * Validates file existence and integrity before ML Kit processing
+ * Enhanced with mobile-specific path validation
  */
 
 import { Platform } from 'react-native';
+import { MobilePathValidator, MobilePathValidationResult } from '../../shared/MobilePathValidator';
+import { logError, logWarn, logDebug } from '../../shared/LoggingConfig';
 
 export interface FileValidationResult {
   exists: boolean;
@@ -15,12 +18,13 @@ export interface FileValidationResult {
     type: string;
     suggestion: string;
   };
+  pathValidation?: MobilePathValidationResult;
 }
 
 export class FileValidator {
   /**
    * Validate if a file exists and is accessible for ML Kit processing
-   * Uses fetch HEAD request as a basic check
+   * Uses fetch HEAD request as a basic check and includes mobile path validation
    */
   static async validateFile(filePath: string): Promise<FileValidationResult> {
     const result: FileValidationResult = {
@@ -28,6 +32,21 @@ export class FileValidator {
       accessible: false,
       size: 0
     };
+
+    // First, validate the path structure for mobile compatibility
+    const pathValidation = MobilePathValidator.validateMobilePath(filePath);
+    result.pathValidation = pathValidation;
+
+    if (!pathValidation.isValid) {
+      result.error = `Invalid path structure: ${pathValidation.issues.join(', ')}`;
+      logWarn('File path validation failed', {
+        component: 'FileValidator',
+        filePath: filePath.substring(filePath.lastIndexOf('/') + 1),
+        issues: pathValidation.issues,
+        suggestions: pathValidation.suggestions
+      });
+      return result;
+    }
 
     try {
       // Use fetch to test file accessibility
@@ -45,10 +64,20 @@ export class FileValidator {
           if (result.size === 0) {
             result.accessible = false;
             result.error = 'File is empty';
+            logWarn('Empty file detected', {
+              component: 'FileValidator',
+              filePath: filePath.substring(filePath.lastIndexOf('/') + 1)
+            });
           }
         }
       } else {
         result.error = `HTTP ${response.status}: ${response.statusText}`;
+        logError('File access failed', {
+          component: 'FileValidator',
+          filePath: filePath.substring(filePath.lastIndexOf('/') + 1),
+          status: response.status,
+          statusText: response.statusText
+        });
       }
 
     } catch (error) {
@@ -58,6 +87,12 @@ export class FileValidator {
       if (error && error.toString().includes('Network request failed')) {
         result.error = 'File does not exist or is not accessible';
       }
+      
+      logError('File validation exception', {
+        component: 'FileValidator',
+        filePath: filePath.substring(filePath.lastIndexOf('/') + 1),
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
 
     return result;
@@ -80,15 +115,20 @@ export class FileValidator {
 
   /**
    * Check if the file path looks corrupted based on common patterns
+   * Enhanced with mobile-specific checks
    */
   static detectPathCorruption(filePath: string): {
     isCorrupted: boolean;
     issues: string[];
     suggestions: string[];
   } {
-    const issues: string[] = [];
-    const suggestions: string[] = [];
+    // Use mobile path validator for comprehensive checking
+    const mobileValidation = MobilePathValidator.validateMobilePath(filePath);
+    const issues: string[] = [...mobileValidation.issues];
+    const suggestions: string[] = [...mobileValidation.suggestions];
 
+    // Add legacy corruption checks for backwards compatibility
+    
     // Check for UUID corruption
     const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
     const uuidMatches = filePath.match(uuidPattern);
@@ -113,13 +153,6 @@ export class FileValidator {
       suggestions.push('Remove duplicate file extensions');
     }
 
-    // Check for invalid characters in filename
-    const filename = filePath.split('/').pop() || '';
-    if (/[<>:"|?*]/.test(filename)) {
-      issues.push('Invalid filename characters detected');
-      suggestions.push('Remove invalid characters: < > : " | ? *');
-    }
-
     return {
       isCorrupted: issues.length > 0,
       issues,
@@ -129,8 +162,16 @@ export class FileValidator {
 
   /**
    * Attempt to fix common path corruption issues
+   * Enhanced with mobile-specific path fixing
    */
   static attemptPathFix(corruptedPath: string): string | null {
+    // First try the mobile path validator's auto-fix
+    const mobileFixed = MobilePathValidator.attemptPathFix(corruptedPath);
+    if (mobileFixed && mobileFixed !== corruptedPath) {
+      return mobileFixed;
+    }
+
+    // Fall back to legacy fix methods
     let fixedPath = corruptedPath;
 
     // Try to fix UUID corruption by removing extra characters
@@ -149,6 +190,15 @@ export class FileValidator {
     fixedPath = fixedPath.replace(/\.(jpg|jpeg|png|gif|bmp|webp)\.(jpg|jpeg|png|gif|bmp|webp)/gi, '.$1');
 
     // Return fixed path only if it's different
-    return fixedPath !== corruptedPath ? fixedPath : null;
+    if (fixedPath !== corruptedPath) {
+      logDebug('Legacy path fix applied', {
+        component: 'FileValidator',
+        originalPath: corruptedPath.substring(corruptedPath.lastIndexOf('/') + 1),
+        fixedPath: fixedPath.substring(fixedPath.lastIndexOf('/') + 1)
+      });
+      return fixedPath;
+    }
+    
+    return null;
   }
 }

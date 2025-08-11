@@ -137,12 +137,19 @@ export class AllPhotosAlbumManager {
       const allPhotoIds = await PhotoLoader.loadAllPhotoIds(selectedFolders);
       console.log('📁 ensureAllPhotosAlbumExists: Loaded', allPhotoIds.length, 'photo IDs');
       
+      // Debug: Log sample photo IDs to understand the format
+      // ...removed verbose debug logs...
+      
       // Filter NSFW images if moderation is enabled
       const filteredPhotoIds = showModerated 
         ? allPhotoIds 
-        : await NsfwImageManager.filterNsfwImages(allPhotoIds, showModerated);
+        : await NsfwImageManager.filterNsfwPhotos(allPhotoIds, showModerated);
       
       const imageIds = filteredPhotoIds.map((photo: any) => photo.id);
+      
+      // Debug: Log filtering results
+      const filteredCount = allPhotoIds.length - filteredPhotoIds.length;
+      console.log(`📁 Album created: ${filteredPhotoIds.length} photos (${filteredCount} NSFW filtered)`);
       
       // Generate thumbnail for the first image if available
       let thumbnail: string | undefined;
