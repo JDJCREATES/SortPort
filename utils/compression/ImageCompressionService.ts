@@ -488,7 +488,6 @@ export class ImageCompressionService {
           const fileInfo = await FileSystem.getInfoAsync(uri);
           if (fileInfo.exists) {
             await FileSystem.deleteAsync(uri, { idempotent: true });
-            console.log(`🧹 Cleaned up compressed file: ${uri.substring(uri.lastIndexOf('/') + 1)}`);
           }
         }
       } catch (error) {

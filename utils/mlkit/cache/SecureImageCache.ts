@@ -218,7 +218,6 @@ export class SecureImageCache {
       this.cacheIndex.delete(imageId);
       await this.saveCacheIndex();
 
-      console.log(`🗑️ Removed cached image ${imageId}`);
     } catch (error) {
       console.error(`❌ Error removing cache entry ${imageId}:`, error);
     }

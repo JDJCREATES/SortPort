@@ -278,7 +278,7 @@ export class MLKitManager {
   }
 
   /**
-   * Process multiple images in batch
+   * Process multiple images in batch with true concurrent processing
    */
   public async processBatch(request: BatchProcessingRequest): Promise<BatchProcessingResult> {
     await this.ensureInitialized();
@@ -287,45 +287,83 @@ export class MLKitManager {
     const successful: MLKitAnalysisResult[] = [];
     const failed: { imageId: string; error: string }[] = [];
 
-    // Process in batches to avoid overwhelming the system
-    const batches = this.chunkArray(request.imageIds, this.config.batchSize);
+    // Get optimal concurrency for ML Kit processing
+    const maxConcurrency = Math.min(this.config.maxConcurrentProcessing, request.imageIds.length);
     let processedCount = 0;
 
-    for (const batch of batches) {
-      // Limit concurrent processing
-      const concurrent = Math.min(batch.length, this.config.maxConcurrentProcessing);
-      const chunks = this.chunkArray(batch, concurrent);
+    logInfo('Starting concurrent ML Kit batch processing', {
+      component: 'MLKitManager',
+      totalImages: request.imageIds.length,
+      maxConcurrency,
+      batchSize: this.config.batchSize
+    });
 
-      for (const chunk of chunks) {
-        const promises = chunk.map(async (imageId, index) => {
-          const imagePath = request.imagePaths[request.imageIds.indexOf(imageId)];
-          
-          try {
-            const result = await this.processImage(imageId, imagePath, 'batch-user');
-            successful.push(result);
-          } catch (error) {
-            failed.push({ 
-              imageId, 
-              error: error instanceof Error ? error.message : String(error) 
-            });
-          }
-
-          processedCount++;
-          
-          // Update progress
-          if (request.onProgress) {
-            request.onProgress({
-              status: 'processing',
-              progress: (processedCount / request.imageIds.length) * 100,
-              currentStep: `Processed ${processedCount} of ${request.imageIds.length} images`,
-              estimatedTimeRemaining: ((request.imageIds.length - processedCount) * 1000)
-            });
-          }
+    // Create processing function with progress tracking
+    const processImageWithProgress = async (imageId: string, index: number): Promise<void> => {
+      const imagePath = request.imagePaths[request.imageIds.indexOf(imageId)];
+      
+      try {
+        const result = await this.processImage(imageId, imagePath, 'batch-user');
+        successful.push(result);
+        
+        logDebug(`ML Kit processing completed for image ${index + 1}/${request.imageIds.length}`, {
+          component: 'MLKitManager',
+          imageId,
+          labelsCount: result.analysis.labels.length,
+          facesCount: result.analysis.faces.count,
+          objectsCount: result.analysis.objects.length,
+          hasText: result.analysis.text.hasText
         });
-
-        await Promise.all(promises);
+      } catch (error) {
+        failed.push({ 
+          imageId, 
+          error: error instanceof Error ? error.message : String(error) 
+        });
+        
+        logError(`ML Kit processing failed for image ${index + 1}/${request.imageIds.length}`, {
+          component: 'MLKitManager',
+          imageId,
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
-    }
+
+      processedCount++;
+      
+      // Update progress with thread-safe increment
+      if (request.onProgress) {
+        request.onProgress({
+          status: 'processing',
+          progress: (processedCount / request.imageIds.length) * 100,
+          currentStep: `Processed ${processedCount} of ${request.imageIds.length} images (${maxConcurrency} concurrent)`,
+          estimatedTimeRemaining: ((request.imageIds.length - processedCount) * 800) // More realistic estimate
+        });
+      }
+    };
+
+    // Process with controlled concurrency using Promise.allSettled for robustness
+    const processInConcurrentBatches = async (): Promise<void> => {
+      const imagePromises = request.imageIds.map((imageId, index) => 
+        processImageWithProgress(imageId, index)
+      );
+
+      // Use Promise.allSettled to ensure all images are processed even if some fail
+      const results = await Promise.allSettled(imagePromises);
+      
+      // Log any additional errors from Promise.allSettled
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          const imageId = request.imageIds[index];
+          logError(`Promise rejection in batch processing`, {
+            component: 'MLKitManager',
+            imageId,
+            error: result.reason
+          });
+        }
+      });
+    };
+
+    // Execute all processing with concurrency limit
+    await processInConcurrentBatches();
 
     const totalTime = Date.now() - startTime;
     

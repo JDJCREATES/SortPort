@@ -97,11 +97,6 @@ export class CompressionCacheService {
     const normalizedKey = this.normalizePath(originalUri);
     const compressedUri = this.compressionCache.get(normalizedKey);
     
-    // Debug logging to understand cache behavior
-    if (this.debugCacheAccess || compressedUri) {
-      console.log(`🔍 Cache GET: ${originalUri.substring(originalUri.lastIndexOf('/') + 1)} → normalized: ${normalizedKey.substring(0, 40)}... → result: ${compressedUri ? compressedUri.substring(compressedUri.lastIndexOf('/') + 1) : 'MISS'}`);
-    }
-    
     return compressedUri;
   }
 

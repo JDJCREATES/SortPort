@@ -773,8 +773,8 @@ serve(async (req: Request): Promise<Response> => {
                   requestId
                 })
                 
-                // Process the results
-                const batchResults = processAWSModerationResults(resultsToProcess, 80, requestId)
+                // Process the results with lower confidence threshold for better detection
+                const batchResults = processAWSModerationResults(resultsToProcess, 65, requestId) // Lowered from 80 to 65
                 processedResults = processedResults.concat(batchResults)
                 
                 logWithContext('INFO', 'BATCH PROCESSED', {
@@ -847,6 +847,29 @@ serve(async (req: Request): Promise<Response> => {
               throw new Error(`Failed to fetch virtual image relationships: ${relationError.message}`);
             }
             
+            // ✅ CRITICAL DATA LOSS CHECK: Compare input vs output counts
+            const totalInputImages = existingRelations?.length || 0;
+            const totalOutputResults = processedResults.length;
+            
+            console.log(`📊 [${requestId}] Data integrity verification:`, {
+              inputImages: totalInputImages,
+              outputResults: totalOutputResults,
+              dataLossDetected: totalInputImages !== totalOutputResults,
+              lossPercentage: totalInputImages > 0 ? ((totalInputImages - totalOutputResults) / totalInputImages * 100).toFixed(1) + '%' : '0%',
+              nsfwDetectedCount: nsfwCount,
+              nsfwPercentage: totalOutputResults > 0 ? (nsfwCount / totalOutputResults * 100).toFixed(1) + '%' : '0%'
+            });
+            
+            if (totalInputImages !== totalOutputResults && totalInputImages > 0) {
+              console.warn(`⚠️ [${requestId}] POTENTIAL DATA LOSS DETECTED: Input ${totalInputImages} images but got ${totalOutputResults} results`);
+              console.log(`🔍 [${requestId}] Sample AWS result structure:`, {
+                firstResult: processedResults[0],
+                resultKeys: processedResults[0] ? Object.keys(processedResults[0]) : [],
+                sampleModerationLabels: processedResults[0]?.moderation_labels?.length || 0,
+                sampleConfidenceScore: processedResults[0]?.confidence_score || 0
+              });
+            }
+            
             if (!existingRelations || existingRelations.length === 0) {
               console.warn(`⚠️ [${requestId}] No existing virtual images found for job ${jobId} - they should have been created during upload`);
               // Continue anyway - this might be a legacy job
@@ -865,29 +888,106 @@ serve(async (req: Request): Promise<Response> => {
               }
               
               const moderationLabels = result.moderation_labels || [];
-              const nsfwDetected = moderationLabels.some((label: any) => 
-                NSFW_CATEGORIES.includes(label.Name) && label.Confidence > 80
-              );
-              const confidenceScore = moderationLabels.length > 0 
-                ? Math.max(...moderationLabels.map((l: any) => l.Confidence || 0))
-                : 0;
+              
+              // ✅ CRITICAL FIX: Use more comprehensive NSFW detection
+              // 1. Check against full NSFW_CATEGORIES array
+              // 2. Use lower confidence threshold (65 instead of 80)
+              // 3. Include borderline categories with 50% threshold
+              let nsfwDetected = false;
+              let maxConfidence = 0;
+              
+              const borderlineCategories = [
+                'Female Swimwear Or Underwear',
+                'Male Swimwear Or Underwear', 
+                'Revealing Clothes',
+                'Partial Nudity',
+                'Partially Exposed Buttocks',
+                'Partially Exposed Female Breast',
+                'Implied Nudity',
+                'Obstructed Female Nipple',
+                'Obstructed Male Genitalia',
+                'Kissing on the Lips',
+                'Non-Explicit Nudity',
+                'Bare Back',
+                'Exposed Male Nipple',
+              ];
+              
+              for (const label of moderationLabels) {
+                const confidence = label.Confidence || 0;
+                maxConfidence = Math.max(maxConfidence, confidence);
+                
+                const labelName = label.Name || '';
+                const parentName = label.ParentName || '';
+                
+                // Check if this is a borderline category (lower threshold)
+                const isBorderlineCategory = borderlineCategories.some(category =>
+                  labelName.toLowerCase().includes(category.toLowerCase()) || 
+                  parentName.toLowerCase().includes(category.toLowerCase()) || 
+                  category.toLowerCase().includes(labelName.toLowerCase())
+                );
+                
+                // Use different thresholds for borderline vs explicit content
+                const effectiveThreshold = isBorderlineCategory ? 50 : 65; // Lowered from 80
+                
+                if (confidence >= effectiveThreshold) {
+                  // Check against full NSFW_CATEGORIES array
+                  if (NSFW_CATEGORIES.some(category => 
+                    labelName.toLowerCase().includes(category.toLowerCase()) || 
+                    parentName.toLowerCase().includes(category.toLowerCase()) || 
+                    category.toLowerCase().includes(labelName.toLowerCase())
+                  )) {
+                    nsfwDetected = true;
+                    break;
+                  }
+                }
+              }
+              
+              // Log NSFW detection details for debugging
+              if (moderationLabels.length > 0) {
+                console.log(`🔍 [${requestId}] NSFW analysis for virtual_image ${relation.virtual_image_id}:`, {
+                  totalLabels: moderationLabels.length,
+                  maxConfidence,
+                  nsfwDetected,
+                  labels: moderationLabels.map((l: any) => `${l.Name} (${l.Confidence}%)`),
+                  parentLabels: moderationLabels.map((l: any) => l.ParentName).filter(Boolean)
+                });
+              }
               
               return {
                 virtualImageId: relation.virtual_image_id,
                 isNsfw: nsfwDetected,
-                confidenceScore,
+                confidenceScore: maxConfidence, // Use max confidence from all labels
                 moderationLabels: moderationLabels.map((l: any) => l.Name),
                 fullRekognitionData: result,
                 // Only update Rekognition fields - ML Kit data should already be there
                 comprehensiveFields: {
                   rekognition_data: result,
-                  nsfw_score: confidenceScore,
+                  nsfw_score: maxConfidence, // Store max confidence as NSFW score
                   isflagged: nsfwDetected
                 }
               };
             }).filter(Boolean); // Remove null entries
             
             console.log(`📊 [${requestId}] Prepared ${virtualImageUpdates.length} virtual image updates (Rekognition only)`);
+            
+            // ✅ CRITICAL DIAGNOSTIC: Log detailed NSFW detection summary
+            const nsfwSummary = {
+              totalProcessed: virtualImageUpdates.length,
+              nsfwDetected: virtualImageUpdates.filter((u: any) => u.isNsfw).length,
+              withLabels: virtualImageUpdates.filter((u: any) => u.moderationLabels.length > 0).length,
+              averageConfidence: virtualImageUpdates.length > 0 
+                ? (virtualImageUpdates.reduce((sum: number, u: any) => sum + u.confidenceScore, 0) / virtualImageUpdates.length).toFixed(1)
+                : 0,
+              maxConfidence: virtualImageUpdates.length > 0 
+                ? Math.max(...virtualImageUpdates.map((u: any) => u.confidenceScore))
+                : 0,
+              sampleNSFWLabels: virtualImageUpdates
+                .filter((u: any) => u.isNsfw)
+                .slice(0, 3)
+                .map((u: any) => u.moderationLabels.join(', '))
+            };
+            
+            console.log(`🔍 [${requestId}] NSFW Detection Summary:`, nsfwSummary);
             
             if (virtualImageUpdates.length === 0) {
               console.warn(`⚠️ [${requestId}] No virtual image updates prepared`);
