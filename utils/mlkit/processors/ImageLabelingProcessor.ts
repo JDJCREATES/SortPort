@@ -18,8 +18,8 @@ export interface ImageLabelingConfig {
  * Function to run image labeling on multiple URIs
  * Returns a promise that resolves to a map from URI to labels array
  */
-export async function runImageLabeling(uris: string[]): Promise<Record<string, { text: string; confidence: number }[]>> {
-  const results: Record<string, { text: string; confidence: number }[]> = {};
+export async function runImageLabeling(uris: string[]): Promise<Record<string, { text: string; confidence: number; index: number }[]>> {
+  const results: Record<string, { text: string; confidence: number; index: number }[]> = {};
 
   try {
     // Process each image with the official ML Kit package
@@ -46,10 +46,11 @@ export async function runImageLabeling(uris: string[]): Promise<Record<string, {
         // Use the official ML Kit image labeling API
         const labels = await ImageLabeling.label(imagePath);
 
-        // Convert to our format
-        const processedLabels: { text: string; confidence: number }[] = (labels || []).map(label => ({
+        // Convert to our format with index
+        const processedLabels: { text: string; confidence: number; index: number }[] = (labels || []).map((label, index) => ({
           text: label.text || 'Unknown',
-          confidence: Math.max(0, Math.min(1, label.confidence || 0))
+          confidence: Math.max(0, Math.min(1, label.confidence || 0)),
+          index: index
         }));
 
         results[uri] = processedLabels;

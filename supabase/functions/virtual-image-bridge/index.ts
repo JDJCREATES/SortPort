@@ -30,6 +30,91 @@ const CORS_HEADERS = {
 } as const
 
 // TypeScript interfaces for strict typing
+interface VirtualImageRecord {
+  // Base required fields
+  user_id: string
+  original_path: string
+  original_name: string
+  hash: string
+  metadata: any
+  
+  // ML Kit fields
+  virtual_tags?: string[]
+  detected_objects?: string[]
+  emotion_detected?: string[]
+  activity_detected?: string[]
+  detected_faces_count?: number
+  quality_score?: number | null
+  brightness_score?: number | null
+  blur_score?: number | null
+  aesthetic_score?: number | null
+  scene_type?: string | null
+  image_orientation?: string | null
+  has_text?: boolean
+  caption?: string | null
+  vision_summary?: string | null
+  
+  // Spatial and enhanced fields from migration 006
+  object_coordinates?: any | null
+  face_coordinates?: any | null
+  text_regions?: any | null
+  composition_analysis?: any | null
+  
+  // Quality enhancement fields
+  contrast_score?: number | null
+  exposure_score?: number | null
+  saturation_score?: number | null
+  sharpness_score?: number | null
+  
+  // Processing metadata fields
+  mlkit_processing_time?: number | null
+  mlkit_confidence_overall?: number | null
+  mlkit_confidence_face?: number | null
+  mlkit_confidence_object?: number | null
+  mlkit_confidence_text?: number | null
+  mlkit_analysis_date?: string | null
+  mlkit_mapping_version?: string | null
+  mlkit_device_platform?: string | null
+  
+  // Enhanced face analysis fields
+  face_landmarks?: any | null
+  face_head_poses?: any | null
+  face_eye_states?: any | null
+  face_expressions?: any | null
+  
+  // Enhanced scene analysis fields
+  scene_setting?: any | null
+  scene_weather?: string | null
+  scene_time_of_day?: string | null
+  scene_environment?: string | null
+  
+  // Enhanced text analysis fields
+  text_full_content?: string | null
+  text_languages?: any | null
+  text_block_count?: number | null
+  
+  // EXIF fields
+  date_taken?: string | null
+  date_modified?: string | null
+  location_lat?: number | null
+  location_lng?: number | null
+  camera_make?: string | null
+  camera_model?: string | null
+  camera_lens?: string | null
+  camera_settings?: any | null
+  image_width?: number | null
+  image_height?: number | null
+  orientation?: number | null
+  file_format?: string | null
+  color_space?: string | null
+  iso_speed?: number | null
+  exposure_time?: string | null
+  f_number?: number | null
+  focal_length?: number | null
+  white_balance?: string | null
+  flash_used?: boolean | null
+}
+
 interface CreateVirtualImagesRequest {
   jobId: string
   bucketName: string
@@ -57,6 +142,45 @@ interface CreateVirtualImagesRequest {
       caption?: string
       vision_summary?: string
       metadata?: any
+      
+      // ✅ ADD ALL NEW SPATIAL AND ENHANCED FIELDS from migration 006
+      object_coordinates?: any | null
+      face_coordinates?: any | null
+      text_regions?: any | null
+      composition_analysis?: any | null
+      
+      // Quality enhancement fields
+      contrast_score?: number | null
+      exposure_score?: number | null
+      saturation_score?: number | null
+      sharpness_score?: number | null
+      
+      // Processing metadata fields
+      mlkit_processing_time?: number | null
+      mlkit_confidence_overall?: number | null
+      mlkit_confidence_face?: number | null
+      mlkit_confidence_object?: number | null
+      mlkit_confidence_text?: number | null
+      mlkit_analysis_date?: string | null
+      mlkit_mapping_version?: string | null
+      mlkit_device_platform?: string | null
+      
+      // Enhanced face analysis fields
+      face_landmarks?: any | null
+      face_head_poses?: any | null
+      face_eye_states?: any | null
+      face_expressions?: any | null
+      
+      // Enhanced scene analysis fields
+      scene_setting?: any | null
+      scene_weather?: string | null
+      scene_time_of_day?: string | null
+      scene_environment?: string | null
+      
+      // Enhanced text analysis fields
+      text_full_content?: string | null
+      text_languages?: any | null
+      text_block_count?: number | null
     }
     exif_data?: {
       date_taken?: string | null
@@ -110,6 +234,45 @@ interface UpdateVirtualImagesRequest {
       nsfw_score?: number | null
       isflagged?: boolean | null
       rekognition_data?: any | null
+      
+      // ✅ NEW SPATIAL AND ENHANCED FIELDS from migration 006
+      object_coordinates?: any | null
+      face_coordinates?: any | null
+      text_regions?: any | null
+      composition_analysis?: any | null
+      
+      // Quality enhancement fields
+      contrast_score?: number | null
+      exposure_score?: number | null
+      saturation_score?: number | null
+      sharpness_score?: number | null
+      
+      // Processing metadata fields
+      mlkit_processing_time?: number | null
+      mlkit_confidence_overall?: number | null
+      mlkit_confidence_face?: number | null
+      mlkit_confidence_object?: number | null
+      mlkit_confidence_text?: number | null
+      mlkit_analysis_date?: string | null
+      mlkit_mapping_version?: string | null
+      mlkit_device_platform?: string | null
+      
+      // Enhanced face analysis fields
+      face_landmarks?: any | null
+      face_head_poses?: any | null
+      face_eye_states?: any | null
+      face_expressions?: any | null
+      
+      // Enhanced scene analysis fields
+      scene_setting?: any | null
+      scene_weather?: string | null
+      scene_time_of_day?: string | null
+      scene_environment?: string | null
+      
+      // Enhanced text analysis fields
+      text_full_content?: string | null
+      text_languages?: any | null
+      text_block_count?: number | null
     }
     imagePath?: string // DEPRECATED: Keep for backwards compatibility only
   }[]
@@ -185,8 +348,10 @@ async function createVirtualImagesDirectly(
     }
     
     // Prepare virtual image records for database insertion
-    const virtualImageRecords = images.map((img, index) => {
-      const baseRecord: any = {
+    const virtualImageRecords: VirtualImageRecord[] = images.map((img, index) => {
+      // Start with base record using proper interface
+      const enhancedRecord: VirtualImageRecord = {
+        // Base required fields
         user_id: userId,
         original_path: img.imagePath,
         original_name: img.originalFileName || 'unknown.jpg',
@@ -201,15 +366,13 @@ async function createVirtualImagesDirectly(
         }
       };
 
-      // Enhanced record with ML Kit and EXIF data
-      let enhancedRecord: any = { ...baseRecord };
-
       // 🧠 INTEGRATE ML KIT DATA if available
       if (img.mlkit_data) {
         console.log(`🧠 [${requestId}] Adding ML Kit data for image ${index + 1}: ${img.originalFileName}`);
-        enhancedRecord = {
-          ...enhancedRecord,
-          // ML Kit mapped fields
+        
+        // Add ML Kit fields using object assignment
+        Object.assign(enhancedRecord, {
+          // Basic ML Kit mapped fields
           virtual_tags: img.mlkit_data.virtual_tags || [],
           detected_objects: img.mlkit_data.detected_objects || [],
           emotion_detected: img.mlkit_data.emotion_detected || [],
@@ -223,15 +386,66 @@ async function createVirtualImagesDirectly(
           image_orientation: img.mlkit_data.image_orientation,
           has_text: img.mlkit_data.has_text || false,
           caption: img.mlkit_data.caption,
-          vision_summary: img.mlkit_data.vision_summary
-        };
+          vision_summary: img.mlkit_data.vision_summary,
+          
+          // ✅ CRITICAL FIX: Add all the new spatial and enhanced fields from migration 006
+          object_coordinates: img.mlkit_data.object_coordinates || null,
+          face_coordinates: img.mlkit_data.face_coordinates || null,
+          text_regions: img.mlkit_data.text_regions || null,
+          composition_analysis: img.mlkit_data.composition_analysis || null,
+          
+          // Quality enhancement fields
+          contrast_score: img.mlkit_data.contrast_score || null,
+          exposure_score: img.mlkit_data.exposure_score || null,
+          saturation_score: img.mlkit_data.saturation_score || null,
+          sharpness_score: img.mlkit_data.sharpness_score || null,
+          
+          // Processing metadata fields
+          mlkit_processing_time: img.mlkit_data.mlkit_processing_time || null,
+          mlkit_confidence_overall: img.mlkit_data.mlkit_confidence_overall || null,
+          mlkit_confidence_face: img.mlkit_data.mlkit_confidence_face || null,
+          mlkit_confidence_object: img.mlkit_data.mlkit_confidence_object || null,
+          mlkit_confidence_text: img.mlkit_data.mlkit_confidence_text || null,
+          mlkit_analysis_date: img.mlkit_data.mlkit_analysis_date || null,
+          mlkit_mapping_version: img.mlkit_data.mlkit_mapping_version || null,
+          mlkit_device_platform: img.mlkit_data.mlkit_device_platform || null,
+          
+          // Enhanced face analysis fields
+          face_landmarks: img.mlkit_data.face_landmarks || null,
+          face_head_poses: img.mlkit_data.face_head_poses || null,
+          face_eye_states: img.mlkit_data.face_eye_states || null,
+          face_expressions: img.mlkit_data.face_expressions || null,
+          
+          // Enhanced scene analysis fields
+          scene_setting: img.mlkit_data.scene_setting || null,
+          scene_weather: img.mlkit_data.scene_weather || null,
+          scene_time_of_day: img.mlkit_data.scene_time_of_day || null,
+          scene_environment: img.mlkit_data.scene_environment || null,
+          
+          // Enhanced text analysis fields
+          text_full_content: img.mlkit_data.text_full_content || null,
+          text_languages: img.mlkit_data.text_languages || null,
+          text_block_count: img.mlkit_data.text_block_count || 0
+        });
+        
+        console.log(`🎯 [${requestId}] Enhanced ML Kit data populated for ${img.originalFileName}:`, {
+          basicFields: 14,
+          spatialFields: 4,
+          qualityFields: 4,
+          processingFields: 7,
+          faceFields: 4,
+          sceneFields: 4,
+          textFields: 3,
+          totalNewFields: 26
+        });
       }
 
       // 📸 INTEGRATE EXIF DATA if available
       if (img.exif_data) {
-        console.log(`� [${requestId}] Adding EXIF data for image ${index + 1}: ${img.originalFileName}`);
-        enhancedRecord = {
-          ...enhancedRecord,
+        console.log(`📸 [${requestId}] Adding EXIF data for image ${index + 1}: ${img.originalFileName}`);
+        
+        // Add EXIF fields using object assignment
+        Object.assign(enhancedRecord, {
           // EXIF mapped fields
           date_taken: img.exif_data.date_taken,
           date_modified: img.exif_data.date_modified,
@@ -252,7 +466,7 @@ async function createVirtualImagesDirectly(
           focal_length: img.exif_data.focal_length,
           white_balance: img.exif_data.white_balance,
           flash_used: img.exif_data.flash_used
-        };
+        });
         
         console.log(`📸 [${requestId}] EXIF summary for ${img.originalFileName}: date_taken=${img.exif_data.date_taken}, GPS=${!!(img.exif_data.location_lat && img.exif_data.location_lng)}, camera=${img.exif_data.camera_make} ${img.exif_data.camera_model}`);
       }
@@ -388,8 +602,46 @@ async function updateVirtualImagesDirectly(
           vision_summary: update.comprehensiveFields.vision_summary,
           nsfw_score: update.comprehensiveFields.nsfw_score,
           isflagged: update.comprehensiveFields.isflagged,
-          // REMOVED: rekognition_data from here to prevent override
-          dominant_colors: update.comprehensiveFields.dominant_colors
+          dominant_colors: update.comprehensiveFields.dominant_colors,
+          
+          // ✅ CRITICAL FIX: Add all the new spatial and enhanced fields from migration 006
+          object_coordinates: update.comprehensiveFields.object_coordinates,
+          face_coordinates: update.comprehensiveFields.face_coordinates,
+          text_regions: update.comprehensiveFields.text_regions,
+          composition_analysis: update.comprehensiveFields.composition_analysis,
+          
+          // Quality enhancement fields  
+          contrast_score: update.comprehensiveFields.contrast_score,
+          exposure_score: update.comprehensiveFields.exposure_score,
+          saturation_score: update.comprehensiveFields.saturation_score,
+          sharpness_score: update.comprehensiveFields.sharpness_score,
+          
+          // Processing metadata fields
+          mlkit_processing_time: update.comprehensiveFields.mlkit_processing_time,
+          mlkit_confidence_overall: update.comprehensiveFields.mlkit_confidence_overall,
+          mlkit_confidence_face: update.comprehensiveFields.mlkit_confidence_face,
+          mlkit_confidence_object: update.comprehensiveFields.mlkit_confidence_object,
+          mlkit_confidence_text: update.comprehensiveFields.mlkit_confidence_text,
+          mlkit_analysis_date: update.comprehensiveFields.mlkit_analysis_date,
+          mlkit_mapping_version: update.comprehensiveFields.mlkit_mapping_version,
+          mlkit_device_platform: update.comprehensiveFields.mlkit_device_platform,
+          
+          // Enhanced face analysis fields
+          face_landmarks: update.comprehensiveFields.face_landmarks,
+          face_head_poses: update.comprehensiveFields.face_head_poses,
+          face_eye_states: update.comprehensiveFields.face_eye_states,
+          face_expressions: update.comprehensiveFields.face_expressions,
+          
+          // Enhanced scene analysis fields
+          scene_setting: update.comprehensiveFields.scene_setting,
+          scene_weather: update.comprehensiveFields.scene_weather,
+          scene_time_of_day: update.comprehensiveFields.scene_time_of_day,
+          scene_environment: update.comprehensiveFields.scene_environment,
+          
+          // Enhanced text analysis fields
+          text_full_content: update.comprehensiveFields.text_full_content,
+          text_languages: update.comprehensiveFields.text_languages,
+          text_block_count: update.comprehensiveFields.text_block_count
         }).reduce((acc, [key, value]) => {
           if (value !== undefined && value !== null && 
               (typeof value !== 'string' || value.trim() !== '') &&
