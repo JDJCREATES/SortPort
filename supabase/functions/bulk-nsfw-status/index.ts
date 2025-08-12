@@ -28,7 +28,7 @@ const CONFIG = {
   MAX_RETRIES: 3,
 } as const
 
-// NSFW Categories
+// NSFW Categories - Enhanced with borderline categories
 const NSFW_CATEGORIES = [
   'Explicit Nudity',
   'Nudity',
@@ -62,6 +62,16 @@ const NSFW_CATEGORIES = [
   'Nazi Party',
   'White Supremacy',
   'Extremist',
+  // Added borderline categories for better detection
+  'Partially Exposed Buttocks',
+  'Partially Exposed Female Breast',
+  'Implied Nudity',
+  'Obstructed Female Nipple',
+  'Obstructed Male Genitalia',
+  'Kissing on the Lips',
+  'Non-Explicit Nudity',
+  'Bare Back',
+  'Exposed Male Nipple',
 ] as const
 
 // Enhanced logging utility
@@ -264,8 +274,8 @@ function extractFullRekognitionData(awsBatchItem: any, requestId: string): any {
   return Object.keys(rekognitionData).length > 0 ? rekognitionData : null;
 }
 
-// Process AWS moderation results
-function processAWSModerationResults(awsResults: any[], confidenceThreshold: number = 80, requestId: string = 'unknown'): any[] {
+// Process AWS moderation results - Lowered threshold for better borderline detection
+function processAWSModerationResults(awsResults: any[], confidenceThreshold: number = 65, requestId: string = 'unknown'): any[] {
   const results: any[] = []
 
   awsResults.forEach((item, index) => {
@@ -295,13 +305,42 @@ function processAWSModerationResults(awsResults: any[], confidenceThreshold: num
     let isNsfw = false
     let maxConfidence = 0
 
-    // Process moderation labels to determine NSFW status
+    // Define borderline categories that need lower thresholds
+    const borderlineCategories = [
+      'Female Swimwear Or Underwear',
+      'Male Swimwear Or Underwear', 
+      'Revealing Clothes',
+      'Partial Nudity',
+      'Partially Exposed Buttocks',
+      'Partially Exposed Female Breast',
+      'Implied Nudity',
+      'Obstructed Female Nipple',
+      'Obstructed Male Genitalia',
+      'Kissing on the Lips',
+      'Non-Explicit Nudity',
+      'Bare Back',
+      'Exposed Male Nipple',
+    ]
+
+    // Process moderation labels with tiered confidence thresholds
     for (const label of moderationLabels) {
       const confidence = label.Confidence || 0
       maxConfidence = Math.max(maxConfidence, confidence)
-      if (confidence >= confidenceThreshold) {
-        const labelName = label.Name || ''
-        const parentName = label.ParentName || ''
+      
+      const labelName = label.Name || ''
+      const parentName = label.ParentName || ''
+      
+      // Check if this is a borderline category (lower threshold)
+      const isBorderlineCategory = borderlineCategories.some(category =>
+        labelName.toLowerCase().includes(category.toLowerCase()) || 
+        parentName.toLowerCase().includes(category.toLowerCase()) || 
+        category.toLowerCase().includes(labelName.toLowerCase())
+      )
+      
+      // Use different thresholds for borderline vs explicit content
+      const effectiveThreshold = isBorderlineCategory ? 50 : confidenceThreshold
+      
+      if (confidence >= effectiveThreshold) {
         if (NSFW_CATEGORIES.some(category => 
           labelName.toLowerCase().includes(category.toLowerCase()) || 
           parentName.toLowerCase().includes(category.toLowerCase()) || 

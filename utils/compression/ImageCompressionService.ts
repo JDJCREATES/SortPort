@@ -162,7 +162,24 @@ export class ImageCompressionService {
           throw new Error(`Compression produced invalid file: ${compressedUri} (size: ${(stats as any).size || 0} bytes)`);
         }
         
-        console.log(`✅ Compressed file created: ${compressedUri} (${(stats as any).size} bytes)`);
+        // ✅ CRITICAL FIX: Move compressed file from cache to document directory
+        // to prevent Android from cleaning it up under memory pressure
+        const timestamp = Date.now();
+        const extension = compressedUri.substring(compressedUri.lastIndexOf('.'));
+        const filename = `compressed_${timestamp}_${Math.random().toString(36).substr(2, 9)}${extension}`;
+        const documentDirectory = FileSystem.documentDirectory!;
+        const persistentUri = documentDirectory + filename;
+        
+        // Copy from cache directory to document directory
+        await FileSystem.copyAsync({
+          from: compressedUri,
+          to: persistentUri
+        });
+        
+        // Update result to use persistent location
+        result.uri = persistentUri;
+        
+        console.log(`✅ Compressed file created and moved to persistent storage: ${persistentUri} (${(stats as any).size} bytes)`);
       } catch (err) {
         compressionError = err;
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -457,6 +474,27 @@ export class ImageCompressionService {
    */
   clearCache(): void {
     this.cache.clear();
+  }
+
+  /**
+   * Clean up compressed files from document directory
+   * Call this after successful batch upload to free up space
+   */
+  async cleanupCompressedFiles(compressedUris: string[]): Promise<void> {
+    for (const uri of compressedUris) {
+      try {
+        // Only delete files that are in our document directory and are compressed files
+        if (uri.includes(FileSystem.documentDirectory!) && uri.includes('compressed_')) {
+          const fileInfo = await FileSystem.getInfoAsync(uri);
+          if (fileInfo.exists) {
+            await FileSystem.deleteAsync(uri, { idempotent: true });
+            console.log(`🧹 Cleaned up compressed file: ${uri.substring(uri.lastIndexOf('/') + 1)}`);
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to cleanup compressed file ${uri}:`, error);
+      }
+    }
   }
 
   /**

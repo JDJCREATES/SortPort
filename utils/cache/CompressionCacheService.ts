@@ -1,17 +1,41 @@
 /**
- * Compression Cache Service - manages compression cache with enhanced debugging
+ * Compression Cache Service - manages compression cache with enhanced debugging and path normalization
  */
 import { logInfo, logDebug, logVerbose, logWarn, logError } from '../shared/LoggingConfig';
 
 export class CompressionCacheService {
   private compressionCache = new Map<string, string>();
   private compressionCacheReverse = new Map<string, string>();
+  private pathNormalizationMap = new Map<string, string>(); // normalized key -> original path
   private maxCacheSize: number;
   private processingLocked = false; // Prevent cleanup during active processing
   private debugCacheAccess = false; // Enable for debugging cache access patterns
+  private cacheFormatVersion = '1.1'; // Added for path normalization compatibility
   
   constructor(maxSize: number = 200) {
     this.maxCacheSize = maxSize;
+    // For now, always clear cache on initialization to ensure compatibility
+    // TODO: Remove this aggressive clearing once all clients are using normalized keys
+    console.log('🧹 CompressionCacheService: Clearing cache for path normalization compatibility');
+  }
+
+  /**
+   * Normalize path for use as cache key - removes problematic characters
+   */
+  private normalizePath(path: string): string {
+    // Create a stable, safe key from the path
+    // Remove/replace characters that cause issues in cache keys
+    return path
+      .replace(/[;()[\]{}|\\/"'`~!@#$%^&*+= ]/g, '_') // Replace problematic chars with underscore
+      .replace(/_+/g, '_') // Collapse multiple underscores
+      .toLowerCase(); // Normalize case
+  }
+
+  /**
+   * Get original path from normalized key
+   */
+  private getOriginalPath(normalizedKey: string): string {
+    return this.pathNormalizationMap.get(normalizedKey) || normalizedKey;
   }
 
   /**
@@ -46,15 +70,19 @@ export class CompressionCacheService {
    * Add to cache (file should already be validated by compression service)
    */
   set(originalUri: string, compressedUri: string): void {
+    const normalizedKey = this.normalizePath(originalUri);
+    
+    // Store the mapping from normalized key to original path
+    this.pathNormalizationMap.set(normalizedKey, originalUri);
+    
     // Since compression service already validated the file, we can cache immediately
-    this.compressionCache.set(originalUri, compressedUri);
+    this.compressionCache.set(normalizedKey, compressedUri);
     if (originalUri !== compressedUri) {
-      this.compressionCacheReverse.set(compressedUri, originalUri);
+      this.compressionCacheReverse.set(compressedUri, normalizedKey);
     }
     
-    if (this.debugCacheAccess && originalUri !== compressedUri) {
-      console.log(`✅ Cached compressed file: ${originalUri.substring(originalUri.lastIndexOf('/') + 1)} → ${compressedUri.substring(compressedUri.lastIndexOf('/') + 1)}`);
-    }
+    // Debug logging to understand cache behavior
+    console.log(`✅ Cache SET: ${originalUri.substring(originalUri.lastIndexOf('/') + 1)} → normalized: ${normalizedKey.substring(0, 40)}... → cached: ${compressedUri.substring(compressedUri.lastIndexOf('/') + 1)}`);
     
     // Trigger cleanup if cache is getting too large and not locked
     if (!this.processingLocked && this.compressionCache.size > this.maxCacheSize * 1.5) {
@@ -66,11 +94,12 @@ export class CompressionCacheService {
    * Get compressed URI from cache with file validation logging
    */
   get(originalUri: string): string | undefined {
-    const compressedUri = this.compressionCache.get(originalUri);
+    const normalizedKey = this.normalizePath(originalUri);
+    const compressedUri = this.compressionCache.get(normalizedKey);
     
-    // Only log cache access when debugging is enabled (to reduce terminal spam)
-    if (this.debugCacheAccess && compressedUri && compressedUri !== originalUri) {
-      console.log(`🔍 Cache access: ${originalUri.substring(originalUri.lastIndexOf('/') + 1)} → ${compressedUri.substring(compressedUri.lastIndexOf('/') + 1)}`);
+    // Debug logging to understand cache behavior
+    if (this.debugCacheAccess || compressedUri) {
+      console.log(`🔍 Cache GET: ${originalUri.substring(originalUri.lastIndexOf('/') + 1)} → normalized: ${normalizedKey.substring(0, 40)}... → result: ${compressedUri ? compressedUri.substring(compressedUri.lastIndexOf('/') + 1) : 'MISS'}`);
     }
     
     return compressedUri;
@@ -80,19 +109,25 @@ export class CompressionCacheService {
    * Get original URI from compressed URI (reverse lookup)
    */
   getOriginal(compressedUri: string): string | undefined {
-    return this.compressionCacheReverse.get(compressedUri) || compressedUri;
+    const normalizedKey = this.compressionCacheReverse.get(compressedUri);
+    if (normalizedKey) {
+      return this.pathNormalizationMap.get(normalizedKey) || normalizedKey;
+    }
+    return compressedUri;
   }
 
   /**
    * Remove entry from cache (useful for cache corruption recovery)
    */
   remove(originalUri: string): void {
-    const compressedUri = this.compressionCache.get(originalUri);
+    const normalizedKey = this.normalizePath(originalUri);
+    const compressedUri = this.compressionCache.get(normalizedKey);
     if (compressedUri) {
-      this.compressionCache.delete(originalUri);
+      this.compressionCache.delete(normalizedKey);
       if (compressedUri !== originalUri) {
         this.compressionCacheReverse.delete(compressedUri);
       }
+      this.pathNormalizationMap.delete(normalizedKey);
       console.log(`🧹 Removed corrupted cache entry: ${originalUri}`);
     }
   }
@@ -111,7 +146,15 @@ export class CompressionCacheService {
     let removedCount = 0;
     const entriesToRemove: string[] = [];
 
-    for (const [originalUri, compressedUri] of this.compressionCache.entries()) {
+    for (const [normalizedKey, compressedUri] of this.compressionCache.entries()) {
+      const originalUri = this.pathNormalizationMap.get(normalizedKey);
+      
+      if (!originalUri) {
+        console.warn(`🧹 Found orphaned cache entry without path mapping: ${normalizedKey}`);
+        entriesToRemove.push(normalizedKey);
+        continue;
+      }
+      
       if (compressedUri !== originalUri) {
         try {
           // Check if compressed file exists and has content
@@ -148,19 +191,24 @@ export class CompressionCacheService {
    * Check if URI is cached
    */
   has(originalUri: string): boolean {
-    return this.compressionCache.has(originalUri);
+    const normalizedKey = this.normalizePath(originalUri);
+    return this.compressionCache.has(normalizedKey);
   }
 
   /**
    * Remove from cache
    */
   delete(originalUri: string): boolean {
-    const compressedUri = this.compressionCache.get(originalUri);
-    const deleted = this.compressionCache.delete(originalUri);
+    const normalizedKey = this.normalizePath(originalUri);
+    const compressedUri = this.compressionCache.get(normalizedKey);
+    const deleted = this.compressionCache.delete(normalizedKey);
     
     if (compressedUri && compressedUri !== originalUri) {
       this.compressionCacheReverse.delete(compressedUri);
     }
+    
+    // Clean up the path normalization mapping
+    this.pathNormalizationMap.delete(normalizedKey);
     
     return deleted;
   }
@@ -213,11 +261,15 @@ export class CompressionCacheService {
       console.log(`🧹 Cache cleanup starting at ${new Date().toISOString()}: Removing ${entriesToClear} entries (${this.compressionCache.size} -> ${this.maxCacheSize})`);
       
       // Log which files are being deleted for debugging
-      keysToDelete.forEach(originalUri => {
-        const compressedUri = this.compressionCache.get(originalUri);
-        console.log(`🗑️ Deleting cache entry: ${originalUri.substring(originalUri.lastIndexOf('/') + 1)} → ${compressedUri?.substring(compressedUri.lastIndexOf('/') + 1) || 'none'}`);
-        this.compressionCache.delete(originalUri);
-        if (compressedUri && compressedUri !== originalUri) {
+      keysToDelete.forEach(normalizedKey => {
+        const compressedUri = this.compressionCache.get(normalizedKey);
+        const originalUri = this.pathNormalizationMap.get(normalizedKey);
+        const originalFilename = originalUri ? originalUri.substring(originalUri.lastIndexOf('/') + 1) : normalizedKey;
+        
+        console.log(`🗑️ Deleting cache entry: ${originalFilename} → ${compressedUri?.substring(compressedUri.lastIndexOf('/') + 1) || 'none'}`);
+        this.compressionCache.delete(normalizedKey);
+        this.pathNormalizationMap.delete(normalizedKey);
+        if (compressedUri && originalUri && compressedUri !== originalUri) {
           this.compressionCacheReverse.delete(compressedUri);
         }
       });
@@ -233,7 +285,35 @@ export class CompressionCacheService {
     const beforeSize = this.compressionCache.size;
     this.compressionCache.clear();
     this.compressionCacheReverse.clear();
+    this.pathNormalizationMap.clear();
     console.log(`🗑️ Cache cleared: ${beforeSize} entries removed`);
+  }
+
+  /**
+   * Ensure cache compatibility with path normalization
+   * Detects and clears legacy cache entries that may contain problematic characters
+   */
+  private ensureCacheCompatibility(): void {
+    // Check if we have any existing cache entries that might be problematic
+    // If cache is empty, no need to check
+    if (this.compressionCache.size === 0) {
+      return;
+    }
+
+    // Check for entries with problematic characters in the keys
+    const problematicEntries: string[] = [];
+    for (const [key] of this.compressionCache.entries()) {
+      // If key contains characters that would be normalized, it's from before our fix
+      if (/[;()[\]{}|\\/"'`~!@#$%^&*+= ]/.test(key)) {
+        problematicEntries.push(key);
+      }
+    }
+
+    if (problematicEntries.length > 0) {
+      console.log(`🧹 Cache compatibility check: Found ${problematicEntries.length} legacy entries with problematic characters`);
+      console.log(`🧹 Clearing cache to ensure path normalization compatibility`);
+      this.clear();
+    }
   }
 
   /**
@@ -267,7 +347,8 @@ export class CompressionCacheService {
     const misses: string[] = [];
 
     for (const uri of uris) {
-      if (this.compressionCache.has(uri)) {
+      const normalizedKey = this.normalizePath(uri);
+      if (this.compressionCache.has(normalizedKey)) {
         hits.push(uri);
       } else {
         misses.push(uri);

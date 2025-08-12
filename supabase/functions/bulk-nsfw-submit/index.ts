@@ -3,7 +3,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { 
   RekognitionClient, 
   StartMediaAnalysisJobCommand,
-  type StartMediaAnalysisJobCommandInput,
 } from "npm:@aws-sdk/client-rekognition@^3.840.0"
 import { 
   S3Client,
@@ -87,6 +86,46 @@ function getS3Client(): S3Client {
   });
 }
 
+// Helper function to get Rekognition service role
+function ensureRekognitionServiceRole(requestId: string): string {
+  try {
+    // Check both possible environment variable names
+    const roleArn = Deno.env.get('AWS_REKOGNITION_SERVICE_ROLE_ARN') || Deno.env.get('AWS_REKOGNITION_ROLE_ARN');
+    if (roleArn) {
+      // CRITICAL: Validate that the role ARN is actually an ARN, not a URL
+      if (roleArn.startsWith('arn:aws:iam::')) {
+        console.log(`🔑 [${requestId}] Using configured Rekognition service role: ${roleArn}`);
+        return roleArn;
+      } else {
+        console.error(`❌ [${requestId}] Invalid service role ARN format: ${roleArn} (expected arn:aws:iam::...)`);
+        console.error(`❌ [${requestId}] This looks like a URL, not an IAM role ARN!`);
+      }
+    }
+    
+    const accountId = Deno.env.get('AWS_ACCOUNT_ID');
+    if (accountId) {
+      const defaultRoleArn = `arn:aws:iam::${accountId}:role/RekognitionServiceRole`;
+      console.log(`🔑 [${requestId}] Using default Rekognition service role: ${defaultRoleArn}`);
+      return defaultRoleArn;
+    }
+    
+    // HARDCODED FIX: Use the account ID from your logs since we know it
+    const knownAccountId = '072928014978';
+    const fixedRoleArn = `arn:aws:iam::${knownAccountId}:role/RekognitionServiceRole`;
+    console.warn(`⚠️ [${requestId}] Using hardcoded account ID for service role: ${fixedRoleArn}`);
+    console.warn(`⚠️ [${requestId}] To fix this properly, set AWS_ACCOUNT_ID environment variable to: ${knownAccountId}`);
+    
+    return fixedRoleArn;
+    
+  } catch (error) {
+    // Fallback with known account ID
+    const knownAccountId = '072928014978';
+    const fallbackRoleArn = `arn:aws:iam::${knownAccountId}:role/RekognitionServiceRole`;
+    console.error(`❌ [${requestId}] Failed to determine service role, using hardcoded fallback: ${fallbackRoleArn}`, error);
+    return fallbackRoleArn;
+  }
+}
+
 // Helper functions
 function generateRequestId(): string {
   return `submit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -107,7 +146,7 @@ async function verifyS3BucketAndObjects(bucketName: string, requestId: string): 
     
     // First, check bucket region and accessibility
     try {
-      const headBucketResponse = await s3Client.send(new HeadBucketCommand({
+      await s3Client.send(new HeadBucketCommand({
         Bucket: bucketName
       }));
       console.log(`🌍 [${requestId}] Bucket ${bucketName} is accessible from region: ${region}`);
@@ -235,7 +274,7 @@ async function cleanupTempBucket(bucketName: string, requestId: string, reason: 
 }
 
 // ENHANCED: Error response helper with better cleanup coordination
-async function createErrorResponse(
+function createErrorResponse(
   error: string,
   details: string,
   type: string,
@@ -243,7 +282,7 @@ async function createErrorResponse(
   status: number,
   bucketName?: string,
   skipCleanup: boolean = false
-): Promise<Response> {
+): Response {
   console.error(`🚨 [${requestId}] Creating error response: ${error} (${type}) - Status: ${status}`);
   console.error(`🚨 [${requestId}] Error details: ${details}`);
   
@@ -455,48 +494,8 @@ serve(async (req: Request): Promise<Response> => {
       const rekognitionJobName = `nsfw-bulk-${jobId}-${Date.now()}`;
       console.log(`🏷️ [${requestId}] Rekognition job name: ${rekognitionJobName}`);
       
-      // Add this function to create/verify Rekognition service role
-      async function ensureRekognitionServiceRole(requestId: string): Promise<string> {
-        try {
-          // Check both possible environment variable names
-          const roleArn = Deno.env.get('AWS_REKOGNITION_SERVICE_ROLE_ARN') || Deno.env.get('AWS_REKOGNITION_ROLE_ARN');
-          if (roleArn) {
-            // CRITICAL: Validate that the role ARN is actually an ARN, not a URL
-            if (roleArn.startsWith('arn:aws:iam::')) {
-              console.log(`🔑 [${requestId}] Using configured Rekognition service role: ${roleArn}`);
-              return roleArn;
-            } else {
-              console.error(`❌ [${requestId}] Invalid service role ARN format: ${roleArn} (expected arn:aws:iam::...)`);
-              console.error(`❌ [${requestId}] This looks like a URL, not an IAM role ARN!`);
-            }
-          }
-          
-          const accountId = Deno.env.get('AWS_ACCOUNT_ID');
-          if (accountId) {
-            const defaultRoleArn = `arn:aws:iam::${accountId}:role/RekognitionServiceRole`;
-            console.log(`🔑 [${requestId}] Using default Rekognition service role: ${defaultRoleArn}`);
-            return defaultRoleArn;
-          }
-          
-          // HARDCODED FIX: Use the account ID from your logs since we know it
-          const knownAccountId = '072928014978';
-          const fixedRoleArn = `arn:aws:iam::${knownAccountId}:role/RekognitionServiceRole`;
-          console.warn(`⚠️ [${requestId}] Using hardcoded account ID for service role: ${fixedRoleArn}`);
-          console.warn(`⚠️ [${requestId}] To fix this properly, set AWS_ACCOUNT_ID environment variable to: ${knownAccountId}`);
-          
-          return fixedRoleArn;
-          
-        } catch (error) {
-          // Fallback with known account ID
-          const knownAccountId = '072928014978';
-          const fallbackRoleArn = `arn:aws:iam::${knownAccountId}:role/RekognitionServiceRole`;
-          console.error(`❌ [${requestId}] Failed to determine service role, using hardcoded fallback: ${fallbackRoleArn}`, error);
-          return fallbackRoleArn;
-        }
-      }
-
-      // Get service role - REQUIRED for comprehensive analysis
-      const serviceRole = await ensureRekognitionServiceRole(requestId);
+      // Get service role - using the function defined at the top level
+      const serviceRole = ensureRekognitionServiceRole(requestId);
       
       console.log(`🔧 [${requestId}] Analysis configuration:`, {
         serviceRole: serviceRole ? 'Configured' : 'Missing',
@@ -545,7 +544,7 @@ serve(async (req: Request): Promise<Response> => {
       // Build operations config - only moderation labels for NSFW detection
       const operationsConfig = {
         DetectModerationLabels: {
-          MinConfidence: settings?.confidence_threshold || 60,
+          MinConfidence: settings?.confidence_threshold || 45, // Lowered from 60 to catch more borderline content
         }
       };
       
@@ -563,8 +562,8 @@ serve(async (req: Request): Promise<Response> => {
         OutputConfig: {
           S3Bucket: bucketName,
           S3KeyPrefix: 'output/'
-        },
-        ServiceRole: serviceRole // Optional for basic moderation, required for comprehensive analysis
+        }
+        // Note: ServiceRole is not supported in StartMediaAnalysisJobCommand
       });
 
       // CRITICAL DEBUG: Log exact operations config being sent to AWS

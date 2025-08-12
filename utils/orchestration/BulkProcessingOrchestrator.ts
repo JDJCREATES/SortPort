@@ -328,6 +328,16 @@ export class BulkProcessingOrchestrator {
       // Unlock cache now that uploads are complete
       if (config.enableCompression) {
         this.compressionCache.unlockProcessing();
+        
+        // Clean up compressed files from document directory to free up space
+        const compressedUris = validImageUris
+          .map(uri => this.compressionCache.get(uri))
+          .filter(uri => uri && uri.includes('compressed_')) as string[];
+        
+        if (compressedUris.length > 0) {
+          console.log(`🧹 Cleaning up ${compressedUris.length} compressed files...`);
+          await this.imageCompression.cleanupCompressedFiles(compressedUris);
+        }
       }
 
       const submitResults = await this.submitJobForAnalysis(
