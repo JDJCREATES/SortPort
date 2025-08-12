@@ -43,12 +43,17 @@ export class CompressionCacheService {
   }
 
   /**
-   * Add to cache
+   * Add to cache (file should already be validated by compression service)
    */
   set(originalUri: string, compressedUri: string): void {
+    // Since compression service already validated the file, we can cache immediately
     this.compressionCache.set(originalUri, compressedUri);
     if (originalUri !== compressedUri) {
       this.compressionCacheReverse.set(compressedUri, originalUri);
+    }
+    
+    if (this.debugCacheAccess && originalUri !== compressedUri) {
+      console.log(`✅ Cached compressed file: ${originalUri.substring(originalUri.lastIndexOf('/') + 1)} → ${compressedUri.substring(compressedUri.lastIndexOf('/') + 1)}`);
     }
     
     // Trigger cleanup if cache is getting too large and not locked
@@ -76,6 +81,67 @@ export class CompressionCacheService {
    */
   getOriginal(compressedUri: string): string | undefined {
     return this.compressionCacheReverse.get(compressedUri) || compressedUri;
+  }
+
+  /**
+   * Remove entry from cache (useful for cache corruption recovery)
+   */
+  remove(originalUri: string): void {
+    const compressedUri = this.compressionCache.get(originalUri);
+    if (compressedUri) {
+      this.compressionCache.delete(originalUri);
+      if (compressedUri !== originalUri) {
+        this.compressionCacheReverse.delete(compressedUri);
+      }
+      console.log(`🧹 Removed corrupted cache entry: ${originalUri}`);
+    }
+  }
+
+  /**
+   * Validate and clean corrupted cache entries
+   */
+  async validateAndCleanCache(): Promise<number> {
+    if (this.processingLocked) {
+      console.log(`🔒 Cache validation skipped - processing locked`);
+      return 0;
+    }
+
+    console.log(`🧹 Starting cache validation for ${this.compressionCache.size} entries`);
+    
+    let removedCount = 0;
+    const entriesToRemove: string[] = [];
+
+    for (const [originalUri, compressedUri] of this.compressionCache.entries()) {
+      if (compressedUri !== originalUri) {
+        try {
+          // Check if compressed file exists and has content
+          const stats = await import('expo-file-system').then(fs => fs.getInfoAsync(compressedUri));
+          const fileSize = stats.exists && !stats.isDirectory ? (stats as any).size || 0 : 0;
+          
+          if (!stats.exists || fileSize === 0) {
+            console.warn(`🧹 Found corrupted cache entry: ${compressedUri} (size: ${fileSize}, exists: ${stats.exists})`);
+            entriesToRemove.push(originalUri);
+          }
+        } catch (error) {
+          console.warn(`🧹 Error validating cache entry ${compressedUri}:`, error);
+          entriesToRemove.push(originalUri);
+        }
+      }
+    }
+
+    // Remove corrupted entries
+    for (const originalUri of entriesToRemove) {
+      this.remove(originalUri);
+      removedCount++;
+    }
+
+    if (removedCount > 0) {
+      console.log(`🧹 Cache validation complete: removed ${removedCount} corrupted entries`);
+    } else {
+      console.log(`✅ Cache validation complete: no corrupted entries found`);
+    }
+
+    return removedCount;
   }
 
   /**

@@ -388,13 +388,6 @@ export class JobMonitoringService {
         }
       }
 
-      console.log(`🔍 Server status sync for ${processingId}:`, {
-        serverProgress: serverData?.progress,
-        localProgress: localStatus?.progress,
-        serverStatus: serverData?.status,
-        localStatus: localStatus?.status
-      });
-
       return {
         serverStatus: serverData,
         localStatus,
@@ -454,12 +447,6 @@ export class JobMonitoringService {
       errorRate: totalJobs > 0 ? (failedJobs / totalJobs) * 100 : 0,
       throughputImagesPerSecond: throughput
     };
-
-    console.log(`📊 Job metrics calculated:`, {
-      ...metrics,
-      basedOnJobs: completedJobs.length,
-      totalJobsInHistory: totalJobs
-    });
 
     return metrics;
   }

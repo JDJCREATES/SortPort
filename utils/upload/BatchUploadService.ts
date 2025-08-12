@@ -1,6 +1,7 @@
 import { MLKitAnalysisResult } from '../mlkit/types/MLKitTypes';
 import { FileSystemService } from '../filesystem/FileSystemService';
 import { CompressionCacheService } from '../cache/CompressionCacheService';
+import { ImageCompressionService } from '../compression/ImageCompressionService';
 import { HardwareProfiler, HardwareProfile } from '../hardwareProfiler';
 import { supabase } from '../supabase';
 import { PathSanitizer } from '../helpers/pathSanitizer';
@@ -149,45 +150,41 @@ export class BatchUploadService {
           
           let fileSize = await FileSystemService.getFileSize(actualUri);
           
-          // FIXED: Handle race condition where compressed file might be temporarily 0 bytes
-          // This can happen if compression is still writing the file when we check
+          // ✅ SIMPLIFIED: With proper file validation in compression, 0-byte files indicate real corruption
           if (fileSize === 0 && isCompressed) {
-            // ✅ Enhanced logging: Track when and why files become 0 bytes
-            const cacheStats = this.cache.getStats();
-            const timeSinceCompressionComplete = Date.now(); // We don't have exact timestamp, but log current time
+            console.error(`🧹 Cache corruption detected - removing bad entry and forcing recompression: ${uri}`);
             
-            console.warn(`⚠️ Compressed file is 0 bytes, retrying in 100ms: ${actualUri}`);
-            console.warn(`🔍 Cache corruption context: Cache size=${cacheStats.size}, Processing locked=${this.cache.isProcessingLocked() ? 'YES' : 'NO'}`);
+            // Remove corrupted cache entry
+            this.cache.remove(uri);
+            console.log(`🧹 Removed corrupted cache entry: ${uri}`);
             
-            // Wait and retry up to 3 times for compressed files
-            let retryCount = 0;
-            while (fileSize === 0 && retryCount < 3) {
-              await this.delay(100); // Wait 100ms
-              fileSize = await FileSystemService.getFileSize(actualUri);
-              retryCount++;
-              
-              if (fileSize === 0) {
-                console.warn(`⚠️ Retry ${retryCount}/3: Compressed file still 0 bytes: ${actualUri}`);
-                // Check if file still exists or was deleted
-                const validation = await FileSystemService.validateFile(actualUri);
-                console.warn(`🔍 File validation: ${actualUri} exists=${validation.exists}, size=${validation.size}, error=${validation.error || 'none'}`);
+            // Try to get original file and recompress if possible
+            const originalValidation = await FileSystemService.validateFile(uri);
+            if (originalValidation.exists && originalValidation.size > 0) {
+              console.log(`🔄 Attempting recompression of original file: ${uri}`);
+              try {
+                // Force recompression by calling compression service directly
+                const recompressed = await this.recompressFile(uri);
+                const recompressedSize = await FileSystemService.getFileSize(recompressed);
+                
+                if (recompressedSize > 0) {
+                  console.log(`✅ Cache corruption recovery successful: ${uri} → ${recompressed} (${recompressedSize} bytes)`);
+                  return { uri, size: recompressedSize, isValid: true };
+                } else {
+                  throw new Error(`Recompression produced 0-byte file: ${recompressed}`);
+                }
+              } catch (recompressError) {
+                console.error(`❌ Recompression failed for ${uri}:`, recompressError);
+                throw new Error(`Cache corruption recovery failed: unable to recompress ${uri}. Error: ${recompressError instanceof Error ? recompressError.message : String(recompressError)}`);
               }
-            }
-            
-            // If still 0 bytes after retries, this is a critical error
-            if (fileSize === 0) {
-              throw new Error(`Compressed file permanently corrupted and cannot be used: ${actualUri}. Original: ${uri}`);
+            } else {
+              throw new Error(`Cache corruption recovery failed: original file unavailable or corrupted: ${uri}`);
             }
           } else if (fileSize === 0) {
             throw new Error(`File has 0 bytes: ${actualUri}`);
           }
 
-          // Per-file validation logging removed to reduce terminal spam
-          // console.log(`✅ File validated: ${FileSystemService.formatFileSize(fileSize)}`, {
-          //   uri: actualUri,
-          //   isCompressed
-          // });
-
+          // File is valid
           return { uri, size: fileSize, isValid: true };
           
         } catch (error) {
@@ -200,9 +197,7 @@ export class BatchUploadService {
           return { uri, error: errorMsg, size: 0, isValid: false };
         }
       })
-    );
-
-    // Collect validation results
+    );    // Collect validation results
     const validFiles = fileValidations.filter(v => v.isValid);
     const invalidFiles = fileValidations.filter(v => !v.isValid);
     const totalSize = validFiles.reduce((sum, file) => sum + (file.size || 0), 0);
@@ -605,5 +600,26 @@ export class BatchUploadService {
       cacheSize: this.cache.getStats().size,
       hardwareProfile: await HardwareProfiler.getHardwareProfile()
     };
+  }
+
+  /**
+   * Recompress a file when cache corruption is detected
+   */
+  private async recompressFile(uri: string): Promise<string> {
+    console.log(`🔄 Cache corruption recovery - recompressing: ${uri}`);
+    
+    // Create a temporary compression service instance with default settings
+    const compressionSettings = {
+      maxImageSize: 1920,
+      compressionQuality: 0.8,
+      workers: 1
+    };
+    const compressionService = new ImageCompressionService(compressionSettings, this.cache);
+    
+    // Force recompression by calling compressImage directly
+    const compressedUri = await compressionService.compressImage(uri);
+    
+    console.log(`✅ Cache corruption recovery successful: ${uri} → ${compressedUri}`);
+    return compressedUri;
   }
 }

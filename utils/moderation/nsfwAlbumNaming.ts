@@ -172,7 +172,7 @@ export class NsfwAlbumNaming {
           bestMatch = category;
           highestPriority = category.priority;
         
-          console.log(`🎯 Matched label "${labelName}" to category "${category.displayName}" (priority: ${category.priority})`);
+      
         }
       }
     }

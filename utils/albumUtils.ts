@@ -85,8 +85,6 @@ export class AlbumUtils {
         return [];
       }
 
-      console.log('🔍 Loading albums from database for user:', user.id);
-
       const { data, error } = await supabase
         .from('albums')
         .select('*')
@@ -97,16 +95,6 @@ export class AlbumUtils {
         console.error('❌ Database error loading albums:', error);
         throw error;
       }
-
-      console.log('📊 Raw database results:', {
-        totalFromDB: data?.length || 0,
-        albums: data?.map(album => ({
-          id: album.id,
-          name: album.name,
-          is_moderated_album: album.is_moderated_album,
-          count: album.count
-        })) || []
-      });
 
       const processedAlbums = (data || []).map(album => ({
         id: album.id,

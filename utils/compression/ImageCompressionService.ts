@@ -72,13 +72,27 @@ export class ImageCompressionService {
       return cached;
     }
 
-    // Validate input file (original)
+    // Validate input file (original) with additional accessibility checks
     const validation = await FileSystemService.validateFile(originalUri);
     if (!validation.exists) {
       throw new Error(`Input file doesn't exist: ${originalUri}`);
     }
     if (validation.size === 0) {
       throw new Error(`Input file is empty: ${originalUri}`);
+    }
+    
+    // Additional check: verify file is actually readable before compression
+    try {
+      const fileInfo = await import('expo-file-system').then(fs => fs.getInfoAsync(originalUri));
+      if (!fileInfo.exists || fileInfo.isDirectory) {
+        throw new Error(`File is not accessible or is a directory: ${originalUri}`);
+      }
+      // Double-check file size consistency
+      if ((fileInfo as any).size !== validation.size) {
+        throw new Error(`File size inconsistency detected: ${originalUri} (${(fileInfo as any).size} vs ${validation.size})`);
+      }
+    } catch (error) {
+      throw new Error(`File accessibility check failed for ${originalUri}: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     // Only log PNG detection at debug level to reduce noise
@@ -90,12 +104,20 @@ export class ImageCompressionService {
       });
     }
 
-    // Compression retry loop with diagnostics
+    // Compression retry loop with diagnostics and memory pressure handling
     let result: { uri: string } | undefined;
     let compressionError = null;
+    let finalAttempt = 0;
     const maxCompressionAttempts = 3;
+    
     for (let attempt = 1; attempt <= maxCompressionAttempts; attempt++) {
+      finalAttempt = attempt;
       try {
+        // Add small delay between attempts to reduce memory pressure
+        if (attempt > 1) {
+          await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+        }
+        
         if (isPng) {
           result = await ImageResizer.createResizedImage(
             originalUri,
@@ -127,32 +149,50 @@ export class ImageCompressionService {
             }
           );
         }
-        // Wait for file write to complete
-        await new Promise(resolve => setTimeout(resolve, 200));
         
-        // Validate compressed file exists and has content
-        const compressedValidation = await FileSystemService.validateFile(result.uri);
-        if (compressedValidation.exists && compressedValidation.size > 0) {
-          // Double-check file stability by waiting and checking again
-          await new Promise(resolve => setTimeout(resolve, 100));
-          const finalValidation = await FileSystemService.validateFile(result.uri);
-          if (finalValidation.exists && finalValidation.size > 0) {
-            break; // Success - file is stable
-          } else {
-            throw new Error(`Compressed file became unstable after validation: ${result.uri}`);
-          }
-        } else {
-          throw new Error(`Compressed file not valid after attempt ${attempt}: ${result.uri}`);
+        // ✅ SIMPLE & EFFECTIVE: Just ensure the file isn't 0 bytes
+        if (!result?.uri) {
+          throw new Error('ImageResizer returned invalid result');
         }
+        
+        const compressedUri = result.uri;
+        const stats = await import('expo-file-system').then(fs => fs.getInfoAsync(compressedUri));
+        
+        if (!stats.exists || stats.isDirectory || (stats as any).size === 0) {
+          throw new Error(`Compression produced invalid file: ${compressedUri} (size: ${(stats as any).size || 0} bytes)`);
+        }
+        
+        console.log(`✅ Compressed file created: ${compressedUri} (${(stats as any).size} bytes)`);
       } catch (err) {
         compressionError = err;
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        
+        // Check if this is a memory-related error
+        const isMemoryError = errorMessage.toLowerCase().includes('memory') || 
+                             errorMessage.toLowerCase().includes('rotate image');
+        
         logWarn('Compression attempt failed', {
           component: 'ImageCompressionService',
           attempt,
           maxAttempts: maxCompressionAttempts,
           originalUri: originalUri,
-          error: err instanceof Error ? err.message : String(err)
+          error: errorMessage,
+          isMemoryError
         });
+        
+        // If memory error and we have more attempts, try with reduced quality
+        if (isMemoryError && attempt < maxCompressionAttempts) {
+          console.log(`🧠 Memory pressure detected, will retry with reduced quality on attempt ${attempt + 1}`);
+          // Temporarily reduce quality for next attempt
+          const originalQuality = this.settings.compressionQuality;
+          this.settings.compressionQuality = Math.max(0.3, originalQuality * 0.7);
+          
+          // Restore original quality after this attempt
+          setTimeout(() => {
+            this.settings.compressionQuality = originalQuality;
+          }, 1000);
+        }
+        
         // Try next attempt
       }
     }
@@ -160,11 +200,22 @@ export class ImageCompressionService {
       throw new Error(`Compression failed for '${originalUri}' after ${maxCompressionAttempts} attempts. Last error: ${compressionError}`);
     }
 
-    // Success - update stats and cache
+    // Success - update stats and cache ONLY after file is confirmed stable
     const processingTime = Date.now() - startTime;
     this.updateStats(processingTime, true, originalUri);
-  this.cache.set(originalUri, result.uri);
-  return result.uri;
+    
+    // ✅ CRITICAL FIX: Only cache after file is confirmed written and stable
+    this.cache.set(originalUri, result.uri);
+    
+    logVerbose('Compression completed successfully', {
+      component: 'ImageCompressionService',
+      originalUri: originalUri.substring(originalUri.lastIndexOf('/') + 1),
+      compressedUri: result.uri.substring(result.uri.lastIndexOf('/') + 1),
+      processingTimeMs: processingTime,
+      attempts: finalAttempt
+    });
+    
+    return result.uri;
   }
 
   /**

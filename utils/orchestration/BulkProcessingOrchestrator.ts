@@ -100,13 +100,10 @@ export class BulkProcessingOrchestrator {
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
-      console.log('🔄 Bulk processing orchestrator already initialized');
       return;
     }
 
     try {
-      console.log('🚀 Initializing bulk processing orchestrator...');
-
       // Initialize ML Kit manager
       await this.mlkitManager.initialize();
 
@@ -220,12 +217,6 @@ export class BulkProcessingOrchestrator {
     // Sanitize all image URIs before processing
     imageUris = imageUris.map(uri => PathSanitizer.sanitizeForMLKit(uri));
 
-    console.log(`🎯 Starting bulk processing: ${processingId}`, {
-      totalImages: imageUris.length,
-      config,
-      timestamp: new Date().toISOString()
-    });
-
     // Start job monitoring
     const jobStatus = this.jobMonitoring.startJob(
       processingId,
@@ -235,7 +226,7 @@ export class BulkProcessingOrchestrator {
 
     try {
       // Phase 1: Pre-processing validation
-      logInfo('📋 Phase 1: Validating input images...');
+    
       const validationResult = await this.validateInputImages(imageUris);
       
       if (validationResult.invalidImages.length > 0) {
@@ -266,7 +257,6 @@ export class BulkProcessingOrchestrator {
             }
           }
         );
-        logInfo(`✅ ML Kit analysis completed for ${Object.keys(mlkitResults).length} images`);
       }
 
       // Phase 3: Image compression (after ML Kit to avoid file conflicts)
@@ -277,7 +267,14 @@ export class BulkProcessingOrchestrator {
       };
 
       if (config.enableCompression) {
-        logInfo('🗜️ Phase 3: Compressing images...');
+      
+        
+        // Validate and clean cache before starting to prevent corruption issues
+        console.log('🧹 Validating cache integrity before compression...');
+        const removedEntries = await this.compressionCache.validateAndCleanCache();
+        if (removedEntries > 0) {
+          console.log(`🧹 Removed ${removedEntries} corrupted cache entries before starting`);
+        }
         
         // Lock cache to prevent cleanup during compression and upload
         this.compressionCache.lockProcessing();
@@ -299,9 +296,8 @@ export class BulkProcessingOrchestrator {
         
         logInfo(`✅ Compression completed: ${(compressionStats.compressionRatio * 100).toFixed(1)}% size reduction`);
         
-        // Wait for cache to stabilize after parallel compression
-        console.log(`⏳ Allowing cache to stabilize after parallel compression...`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Give 1 second for all writes to complete
+        // ✅ REMOVED: No more arbitrary stabilization delays
+        // Compression service now ensures files are stable before caching
       }
       
       this.batchUpload.resetSession();
@@ -317,11 +313,8 @@ export class BulkProcessingOrchestrator {
       jobStatus.totalBatches = batches.length;
       this.jobMonitoring.updateTotalBatches(processingId, batches.length);
 
-      // ✅ CRITICAL FIX: Add small delay to ensure cache stability after parallel ML Kit processing
-      if (config.enableMLKit && Object.keys(mlkitResults).length > 0) {
-        console.log('⏳ Allowing cache to stabilize after parallel ML Kit processing...');
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second stabilization delay
-      }
+      // ✅ REMOVED: No more arbitrary ML Kit stabilization delays
+      // Files are now properly validated before caching
 
       const uploadResults = await this.uploadBatches(
         batches,
@@ -532,7 +525,6 @@ export class BulkProcessingOrchestrator {
     compressedUris: string[];
     stats: { originalSize: number; compressedSize: number; compressionRatio: number };
   }> {
-    console.log(`🗜️ Starting compression for ${imageUris.length} images...`);
 
     // Calculate original size
     const originalSizes = await Promise.all(
@@ -616,8 +608,7 @@ export class BulkProcessingOrchestrator {
         // ✅ Original files are always stable and accessible
         const tempImageId = `original_${Date.now()}_${index}`;
         
-        logVerbose(`✅ Cached image ${tempImageId}`);
-        logVerbose(`🔄 Image Labeling attempt 1/3 for: ${uri}`);
+
         
         const result = await this.mlkitManager.processImage(
           tempImageId, // imageId
