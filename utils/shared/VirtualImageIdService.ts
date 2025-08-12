@@ -5,6 +5,8 @@
 
 import { supabase } from '../supabase';
 import { logInfo, logError, logDebug } from './LoggingConfig';
+import { MLKitVirtualImageMapper } from '../mlkit/mappers/MLKitVirtualImageMapper';
+import { MLKitAnalysisResult } from '../mlkit/types/MLKitTypes';
 
 export interface VirtualImageRecord {
   id: string;
@@ -33,6 +35,7 @@ export interface UpdateVirtualImageRequest {
   isNsfw?: boolean;
   rekognitionData?: any;
   mlkitData?: any;
+  mlkitAnalysis?: MLKitAnalysisResult; // NEW: Use mapped analysis result
   tags?: string[];
   albums?: string[];
 }
@@ -88,9 +91,35 @@ export class VirtualImageIdService {
 
       if (request.isNsfw !== undefined) updateData.isflagged = request.isNsfw;
       if (request.rekognitionData !== undefined) updateData.rekognition_data = request.rekognitionData;
-      if (request.mlkitData !== undefined) updateData.mlkit_data = request.mlkitData;
       if (request.tags !== undefined) updateData.virtual_tags = request.tags;
       if (request.albums !== undefined) updateData.virtual_albums = request.albums;
+
+      // Handle ML Kit data - NEW: Use mapper for comprehensive field population
+      if (request.mlkitAnalysis) {
+        const mappedData = MLKitVirtualImageMapper.mapMLKitToVirtualImage(request.mlkitAnalysis);
+        
+        // Extract all fields from mapped data and add to update
+        Object.entries(mappedData).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            updateData[key] = value;
+          }
+        });
+
+        logDebug('Applied ML Kit mapped data', {
+          component: 'VirtualImageIdService',
+          virtualImageId: request.virtualImageId,
+          mappedFields: Object.keys(mappedData).filter(k => (mappedData as any)[k] !== undefined && (mappedData as any)[k] !== null),
+          spatialData: {
+            objectCoordinates: !!mappedData.object_coordinates,
+            faceCoordinates: !!mappedData.face_coordinates,
+            textRegions: !!mappedData.text_regions,
+            compositionAnalysis: !!mappedData.composition_analysis
+          }
+        });
+      } else if (request.mlkitData !== undefined) {
+        // Fallback to storing raw data if no analysis provided
+        updateData.mlkit_data = request.mlkitData;
+      }
 
       const { error } = await supabase
         .from('virtual_image')
@@ -102,7 +131,8 @@ export class VirtualImageIdService {
       logDebug('Updated virtual image by ID', {
         component: 'VirtualImageIdService',
         virtualImageId: request.virtualImageId,
-        fields: Object.keys(updateData)
+        fields: Object.keys(updateData),
+        usedMapper: !!request.mlkitAnalysis
       });
     } catch (error) {
       logError('Failed to update virtual image', {

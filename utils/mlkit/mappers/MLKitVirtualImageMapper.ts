@@ -15,7 +15,7 @@ export class MLKitVirtualImageMapper {
   static mapMLKitToVirtualImage(mlkitResult: MLKitAnalysisResult): VirtualImageMLUpdate {
     const { analysis } = mlkitResult;
     
-    return {
+    const result: VirtualImageMLUpdate = {
       // 🏷️ Tags and Objects
       virtual_tags: this.extractVirtualTags(analysis),
       detected_objects: this.extractDetectedObjects(analysis),
@@ -35,21 +35,75 @@ export class MLKitVirtualImageMapper {
       blur_score: analysis.quality?.blur || null,
       aesthetic_score: analysis.quality?.aesthetic || null,
       
-      // 📝 Text Detection
+      // � Enhanced Quality Analysis - NEW
+      contrast_score: analysis.quality?.contrast || null,
+      exposure_score: analysis.quality?.exposure || null,
+      saturation_score: analysis.quality?.saturation || null,
+      sharpness_score: analysis.quality?.sharpness || null,
+      
+      // �📝 Text Detection
       has_text: analysis.text?.hasText || false,
+      
+      // 📝 Enhanced Text Analysis - NEW
+      text_full_content: analysis.text?.fullText || null,
+      text_languages: analysis.text?.languages || null,
+      text_block_count: analysis.text?.blocks?.length || 0,
+      
+      // 🎬 Enhanced Scene Analysis - NEW
+      scene_setting: analysis.scene?.setting || null,
+      scene_weather: analysis.scene?.weather !== 'unknown' ? analysis.scene?.weather : null,
+      scene_time_of_day: analysis.scene?.timeOfDay !== 'unknown' ? analysis.scene?.timeOfDay : null,
+      scene_environment: analysis.scene?.environment !== 'unknown' ? analysis.scene?.environment : null,
+      
+      // 👥 Enhanced Face Analysis - NEW
+      face_landmarks: this.extractFaceLandmarks(analysis),
+      face_head_poses: this.extractFaceHeadPoses(analysis),
+      face_eye_states: this.extractFaceEyeStates(analysis),
+      face_expressions: this.extractFaceExpressions(analysis),
+      
+      // 🔧 ML Kit Processing Metadata - NEW
+      mlkit_processing_time: analysis.metadata?.processingTime || null,
+      mlkit_confidence_overall: analysis.metadata?.confidence?.overall || null,
+      mlkit_confidence_face: analysis.metadata?.confidence?.faceDetection || null,
+      mlkit_confidence_object: analysis.metadata?.confidence?.objectDetection || null,
+      mlkit_confidence_text: analysis.metadata?.confidence?.textRecognition || null,
+      mlkit_analysis_date: analysis.metadata?.analysisDate ? new Date(analysis.metadata.analysisDate) : null,
+      mlkit_mapping_version: '2.0.0',
+      mlkit_device_platform: analysis.metadata?.deviceInfo?.platform || null,
       
       // 📝 Generated Content
       caption: this.generateCaption(analysis),
       vision_summary: this.generateVisionSummary(analysis),
       
+      // 🎯 Enhanced Spatial Data - FIXED
+      object_coordinates: this.extractObjectCoordinates(analysis),
+      face_coordinates: this.extractFaceCoordinates(analysis),
+      text_regions: this.extractTextRegions(analysis),
+      composition_analysis: this.analyzeComposition(analysis),
+      
       // 💾 Complete ML Kit data storage
       metadata: {
         mlkit_analysis: analysis,
         processing_info: analysis.metadata,
-        mapping_version: '1.0.0',
+        mapping_version: '2.0.0', // Bumped version for enhanced spatial features
         mapped_at: new Date().toISOString()
       }
     };
+    
+    // Debug logging to verify spatial data extraction
+    const spatialDebug = {
+      objects_found: this.extractObjectCoordinates(analysis)?.length || 0,
+      faces_found: this.extractFaceCoordinates(analysis)?.length || 0,
+      text_regions_found: this.extractTextRegions(analysis)?.length || 0,
+      composition_available: !!this.analyzeComposition(analysis),
+      has_objects_in_analysis: !!analysis.objects,
+      has_faces_in_analysis: !!analysis.faces?.faces,
+      has_text_in_analysis: !!analysis.text?.blocks
+    };
+    
+    console.log('🎯 Spatial data extraction debug:', spatialDebug);
+    
+    return result;
   }
 
   /**
@@ -226,6 +280,270 @@ export class MLKitVirtualImageMapper {
     }
     
     return summary.join('. ');
+  }
+
+  /**
+   * 🎯 Extract object coordinates with spatial data - NEW
+   */
+  private static extractObjectCoordinates(analysis: any): Array<{
+    label: string;
+    confidence: number;
+    boundingBox: any;
+    category?: string;
+    trackingId?: number;
+  }> | null {
+    if (!analysis.objects || analysis.objects.length === 0) {
+      return null;
+    }
+
+    return analysis.objects
+      .filter((obj: any) => obj.labels?.[0]?.confidence > 0.5)
+      .map((obj: any) => ({
+        label: obj.labels[0].text,
+        confidence: obj.labels[0].confidence,
+        boundingBox: obj.boundingBox,
+        category: this.inferObjectCategory(obj.labels[0].text),
+        trackingId: obj.trackingId
+      }))
+      .slice(0, 20); // Limit to 20 objects
+  }
+
+  /**
+   * 👥 Extract face coordinates with detailed analysis - NEW
+   */
+  private static extractFaceCoordinates(analysis: any): Array<{
+    boundingBox: any;
+    landmarks?: any[];
+    emotions: any[];
+    headPose?: { yaw: number; roll: number };
+    eyeState?: { leftOpen: number; rightOpen: number };
+    expressions?: { smiling: number };
+  }> | null {
+    if (!analysis.faces?.faces || analysis.faces.faces.length === 0) {
+      return null;
+    }
+
+    return analysis.faces.faces.map((face: any) => ({
+      boundingBox: face.boundingBox,
+      landmarks: face.landmarks,
+      emotions: face.emotions || [],
+      headPose: (face.headEulerAngleY !== undefined || face.headEulerAngleZ !== undefined) ? {
+        yaw: face.headEulerAngleY || 0,
+        roll: face.headEulerAngleZ || 0
+      } : undefined,
+      eyeState: (face.leftEyeOpenProbability !== undefined || face.rightEyeOpenProbability !== undefined) ? {
+        leftOpen: face.leftEyeOpenProbability || 0.5,
+        rightOpen: face.rightEyeOpenProbability || 0.5
+      } : undefined,
+      expressions: face.smilingProbability !== undefined ? {
+        smiling: face.smilingProbability
+      } : undefined
+    }));
+  }
+
+  /**
+   * 📝 Extract text regions with spatial data - NEW
+   */
+  private static extractTextRegions(analysis: any): Array<{
+    text: string;
+    boundingBox: any;
+    confidence: number;
+    language?: string;
+  }> | null {
+    if (!analysis.text?.blocks || analysis.text.blocks.length === 0) {
+      return null;
+    }
+
+    const textRegions: any[] = [];
+    
+    analysis.text.blocks.forEach((block: any) => {
+      if (block.text && block.confidence > 0.5) {
+        textRegions.push({
+          text: block.text,
+          boundingBox: block.boundingBox,
+          confidence: block.confidence,
+          language: analysis.text.languages?.[0]
+        });
+      }
+    });
+
+    return textRegions.length > 0 ? textRegions : null;
+  }
+
+  /**
+   * 🎨 Analyze image composition - NEW
+   */
+  private static analyzeComposition(analysis: any): {
+    dominantColors: Array<{ color: string; percentage: number }>;
+    spatialLayout: {
+      topObjects: string[];
+      centerObjects: string[];
+      bottomObjects: string[];
+      leftObjects: string[];
+      rightObjects: string[];
+    };
+    visualBalance: number;
+    ruleOfThirds: boolean;
+    symmetry: number;
+  } | null {
+    if (!analysis.objects && !analysis.faces?.faces) {
+      return null;
+    }
+
+    // Analyze spatial layout based on object positions
+    const spatialLayout = {
+      topObjects: [] as string[],
+      centerObjects: [] as string[],
+      bottomObjects: [] as string[],
+      leftObjects: [] as string[],
+      rightObjects: [] as string[]
+    };
+
+    // Process objects
+    if (analysis.objects) {
+      analysis.objects.forEach((obj: any) => {
+        const bbox = obj.boundingBox;
+        const objName = obj.labels?.[0]?.text;
+        if (!objName || !bbox) return;
+
+        const centerY = bbox.top + (bbox.height / 2);
+        const centerX = bbox.left + (bbox.width / 2);
+
+        // Vertical distribution
+        if (centerY < 0.33) spatialLayout.topObjects.push(objName);
+        else if (centerY > 0.67) spatialLayout.bottomObjects.push(objName);
+        else spatialLayout.centerObjects.push(objName);
+
+        // Horizontal distribution
+        if (centerX < 0.33) spatialLayout.leftObjects.push(objName);
+        else if (centerX > 0.67) spatialLayout.rightObjects.push(objName);
+      });
+    }
+
+    // Calculate visual balance (simplified)
+    const totalElements = (analysis.objects?.length || 0) + (analysis.faces?.count || 0);
+    const visualBalance = totalElements > 0 ? Math.min(1.0, 1.0 / Math.sqrt(totalElements)) : 0.5;
+
+    // Check rule of thirds (simplified)
+    const hasElementsInThirds = spatialLayout.topObjects.length > 0 && 
+                               spatialLayout.centerObjects.length > 0 && 
+                               spatialLayout.bottomObjects.length > 0;
+
+    return {
+      dominantColors: [], // TODO: Extract from image properties when available
+      spatialLayout,
+      visualBalance,
+      ruleOfThirds: hasElementsInThirds,
+      symmetry: 0.5 // TODO: Calculate based on object distribution
+    };
+  }
+
+  /**
+   * 🏷️ Infer object category from label - Helper method
+   */
+  private static inferObjectCategory(label: string): string {
+    const labelLower = label.toLowerCase();
+    
+    const categories = {
+      'vehicles': ['car', 'vehicle', 'truck', 'bus', 'motorcycle', 'bicycle', 'boat', 'plane'],
+      'people': ['person', 'people', 'human', 'man', 'woman', 'child', 'baby'],
+      'animals': ['dog', 'cat', 'animal', 'bird', 'horse', 'cow', 'pet'],
+      'buildings': ['building', 'house', 'skyscraper', 'tower', 'bridge'],
+      'nature': ['tree', 'plant', 'flower', 'mountain', 'water', 'sky'],
+      'food': ['food', 'fruit', 'vegetable', 'drink', 'coffee'],
+      'technology': ['computer', 'phone', 'camera', 'television'],
+      'furniture': ['chair', 'table', 'bed', 'sofa']
+    };
+
+    for (const [category, keywords] of Object.entries(categories)) {
+      if (keywords.some(keyword => labelLower.includes(keyword))) {
+        return category;
+      }
+    }
+
+    return 'miscellaneous';
+  }
+
+  /**
+   * 👁️ Extract face landmarks - NEW
+   */
+  private static extractFaceLandmarks(analysis: any): Array<{
+    type: string;
+    position: { x: number; y: number };
+  }> | null {
+    if (!analysis.faces?.faces || analysis.faces.faces.length === 0) {
+      return null;
+    }
+
+    const allLandmarks: any[] = [];
+    analysis.faces.faces.forEach((face: any) => {
+      if (face.landmarks) {
+        allLandmarks.push(...face.landmarks);
+      }
+    });
+
+    return allLandmarks.length > 0 ? allLandmarks : null;
+  }
+
+  /**
+   * 🎭 Extract face head poses - NEW
+   */
+  private static extractFaceHeadPoses(analysis: any): Array<{
+    yaw: number;
+    roll: number;
+  }> | null {
+    if (!analysis.faces?.faces || analysis.faces.faces.length === 0) {
+      return null;
+    }
+
+    const headPoses = analysis.faces.faces
+      .filter((face: any) => face.headEulerAngleY !== undefined || face.headEulerAngleZ !== undefined)
+      .map((face: any) => ({
+        yaw: face.headEulerAngleY || 0,
+        roll: face.headEulerAngleZ || 0
+      }));
+
+    return headPoses.length > 0 ? headPoses : null;
+  }
+
+  /**
+   * 👀 Extract face eye states - NEW
+   */
+  private static extractFaceEyeStates(analysis: any): Array<{
+    leftOpen: number;
+    rightOpen: number;
+  }> | null {
+    if (!analysis.faces?.faces || analysis.faces.faces.length === 0) {
+      return null;
+    }
+
+    const eyeStates = analysis.faces.faces
+      .filter((face: any) => face.leftEyeOpenProbability !== undefined || face.rightEyeOpenProbability !== undefined)
+      .map((face: any) => ({
+        leftOpen: face.leftEyeOpenProbability || 0.5,
+        rightOpen: face.rightEyeOpenProbability || 0.5
+      }));
+
+    return eyeStates.length > 0 ? eyeStates : null;
+  }
+
+  /**
+   * 😊 Extract face expressions - NEW
+   */
+  private static extractFaceExpressions(analysis: any): Array<{
+    smiling: number;
+  }> | null {
+    if (!analysis.faces?.faces || analysis.faces.faces.length === 0) {
+      return null;
+    }
+
+    const expressions = analysis.faces.faces
+      .filter((face: any) => face.smilingProbability !== undefined)
+      .map((face: any) => ({
+        smiling: face.smilingProbability
+      }));
+
+    return expressions.length > 0 ? expressions : null;
   }
 
   /**

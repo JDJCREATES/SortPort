@@ -177,16 +177,113 @@ export interface VirtualImageMLUpdate {
   blur_score: number | null;             
   aesthetic_score: number | null;        
   
+  // Enhanced Quality Analysis - NEW
+  contrast_score?: number | null;
+  exposure_score?: number | null;
+  saturation_score?: number | null;
+  sharpness_score?: number | null;
+  
   // Scene info - nullable for database compatibility
   scene_type: string | null;              // Primary scene
   image_orientation: string | null;       // Orientation
   
+  // Enhanced Scene Analysis - NEW
+  scene_setting?: string[] | null;
+  scene_weather?: string | null;
+  scene_time_of_day?: string | null;
+  scene_environment?: string | null;
+  
   // Text detection
   has_text: boolean;                      // Whether text was detected
+  
+  // Enhanced Text Analysis - NEW
+  text_full_content?: string | null;
+  text_languages?: string[] | null;
+  text_block_count?: number;
+  
+  // Enhanced Face Analysis - NEW
+  face_landmarks?: Array<{
+    type: string;
+    position: { x: number; y: number };
+  }> | null;
+  face_head_poses?: Array<{
+    yaw: number;
+    roll: number;
+  }> | null;
+  face_eye_states?: Array<{
+    leftOpen: number;
+    rightOpen: number;
+  }> | null;
+  face_expressions?: Array<{
+    smiling: number;
+  }> | null;
+  
+  // ML Kit Processing Metadata - NEW
+  mlkit_processing_time?: number | null;
+  mlkit_confidence_overall?: number | null;
+  mlkit_confidence_face?: number | null;
+  mlkit_confidence_object?: number | null;
+  mlkit_confidence_text?: number | null;
+  mlkit_analysis_date?: Date | null;
+  mlkit_mapping_version?: string | null;
+  mlkit_device_platform?: string | null;
   
   // Optional text content
   caption?: string;                // Generated from analysis
   vision_summary?: string;         // Comprehensive summary
+  
+  // Enhanced spatial data storage - NEW
+  object_coordinates?: Array<{
+    label: string;
+    confidence: number;
+    boundingBox: BoundingBox;
+    category?: string;
+    trackingId?: number;
+  }> | null;
+  
+  // Face coordinates and details - NEW
+  face_coordinates?: Array<{
+    boundingBox: BoundingBox;
+    landmarks?: FaceLandmark[];
+    emotions: EmotionClassification[];
+    headPose?: {
+      yaw: number;
+      roll: number;
+    };
+    eyeState?: {
+      leftOpen: number;
+      rightOpen: number;
+    };
+    expressions?: {
+      smiling: number;
+    };
+  }> | null;
+  
+  // Text regions with spatial data - NEW
+  text_regions?: Array<{
+    text: string;
+    boundingBox: BoundingBox;
+    confidence: number;
+    language?: string;
+  }> | null;
+  
+  // Enhanced scene composition analysis - NEW
+  composition_analysis?: {
+    dominantColors: Array<{
+      color: string;
+      percentage: number;
+    }>;
+    spatialLayout: {
+      topObjects: string[];
+      centerObjects: string[];
+      bottomObjects: string[];
+      leftObjects: string[];
+      rightObjects: string[];
+    };
+    visualBalance: number;
+    ruleOfThirds: boolean;
+    symmetry: number;
+  } | null;
   
   // Metadata storage
   metadata: {

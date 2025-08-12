@@ -11,6 +11,7 @@ import { FaceDetectionProcessor } from './processors/FaceDetectionProcessor';
 import { TextRecognitionProcessor } from './processors/TextRecognitionProcessor';
 import { QualityAssessmentProcessor } from './processors/QualityAssessmentProcessor';
 import { SceneAnalysisProcessor } from './processors/SceneAnalysisProcessor';
+import { ObjectDetectionProcessor } from './processors/ObjectDetectionProcessor';
 import { MLKitDiagnostics } from './diagnostics/MLKitDiagnostics';
 import { VirtualImageIdService } from '../shared/VirtualImageIdService';
 
@@ -41,6 +42,7 @@ export class MLKitManager {
   
   // Processors
   private imageLabelingProcessor: ImageLabelingProcessor;
+  private objectDetectionProcessor: ObjectDetectionProcessor;
   private faceDetectionProcessor: FaceDetectionProcessor;
   private textRecognitionProcessor: TextRecognitionProcessor;
   private qualityAssessmentProcessor: QualityAssessmentProcessor;
@@ -57,6 +59,13 @@ export class MLKitManager {
     this.imageLabelingProcessor = new ImageLabelingProcessor({
       confidenceThreshold: config.labelConfidenceThreshold,
       maxLabels: 20
+    });
+    
+    this.objectDetectionProcessor = new ObjectDetectionProcessor({
+      confidenceThreshold: config.objectConfidenceThreshold,
+      maxObjects: 20,
+      enableTracking: false,
+      enableClassification: true
     });
     
     this.faceDetectionProcessor = new FaceDetectionProcessor();
@@ -155,8 +164,9 @@ export class MLKitManager {
       }
 
       // Run all processors in parallel for efficiency
-      const [labelResults, faceResults, textResults, qualityResults, sceneResults] = await Promise.all([
+      const [labelResults, objectResults, faceResults, textResults, qualityResults, sceneResults] = await Promise.all([
         this.config.enableImageLabeling ? this.imageLabelingProcessor.processImage(processImagePath) : [],
+        this.config.enableObjectDetection ? this.objectDetectionProcessor.processImage(processImagePath) : [],
         this.config.enableFaceDetection ? this.faceDetectionProcessor.processImage(processImagePath) : { faces: [], count: 0, emotions: [] },
         this.config.enableTextRecognition ? this.textRecognitionProcessor.processImage(processImagePath) : { fullText: '', blocks: [], hasText: false, languages: [] },
         this.config.enableQualityAssessment ? this.qualityAssessmentProcessor.processImage(processImagePath) : null,
@@ -194,7 +204,7 @@ export class MLKitManager {
         imagePath,
         analysis: {
           labels: labelResults,
-          objects: [], // Will be populated when object detection is implemented
+          objects: objectResults, // Now populated with actual object detection
           faces: faceResults,
           text: textResults,
           quality: qualityResults || {
@@ -352,24 +362,10 @@ export class MLKitManager {
     userId: string
   ): Promise<void> {
     try {
-      // Prepare ML Kit data for storage
-      const mlkitData = {
-        labels: analysisResult.analysis.labels,
-        objects: analysisResult.analysis.objects,
-        faces: analysisResult.analysis.faces,
-        text: analysisResult.analysis.text,
-        quality: analysisResult.analysis.quality,
-        scene: analysisResult.analysis.scene,
-        metadata: analysisResult.analysis.metadata,
-        caption: this.generateCaption(analysisResult),
-        summary: this.generateSummary(analysisResult),
-        processedAt: new Date().toISOString()
-      };
-
-      // Use ID-based service for clean updates
+      // Use ID-based service with enhanced mapping
       await VirtualImageIdService.updateVirtualImage({
         virtualImageId: imageId,
-        mlkitData,
+        mlkitAnalysis: analysisResult, // Pass full analysis for mapping
         tags: analysisResult.analysis.labels.map(label => label.text)
       });
 
@@ -379,7 +375,9 @@ export class MLKitManager {
         userId,
         labelsCount: analysisResult.analysis.labels.length,
         facesCount: analysisResult.analysis.faces.count,
-        hasText: analysisResult.analysis.text.hasText
+        hasText: analysisResult.analysis.text.hasText,
+        hasObjects: analysisResult.analysis.objects.length > 0,
+        spatialDataPopulated: true
       });
 
     } catch (error) {
