@@ -234,7 +234,7 @@ interface UpdateVirtualImagesRequest {
       dominant_colors?: any | null
       image_orientation?: string | null
       nsfw_score?: number | null
-      isflagged?: boolean | null
+      isflagged?: boolean | undefined
       rekognition_data?: any | null
       
       // ✅ NEW SPATIAL AND ENHANCED FIELDS from migration 006
@@ -596,18 +596,6 @@ async function updateVirtualImagesDirectly(
           updated_at: new Date().toISOString()
         };
         
-        // 🐛 DEBUG: Log isflagged field details
-        console.log(`🔍 [${requestId}] Debug isflagged for image ${update.imageId}:`, {
-          isflagged: update.isflagged,
-          type: typeof update.isflagged,
-          isUndefined: update.isflagged === undefined,
-          isNull: update.isflagged === null,
-          stringValue: String(update.isflagged),
-          allUpdateKeys: Object.keys(update),
-          rekognitionIsflagged: update.fullRekognitionData?.isflagged,
-          comprehensiveIsflagged: update.comprehensiveFields?.isflagged,
-          fullUpdate: JSON.stringify(update, null, 2)
-        });
         
         // 🔧 FIX: Extract isflagged from multiple possible sources
         let isflaggedValue = update.isflagged;
