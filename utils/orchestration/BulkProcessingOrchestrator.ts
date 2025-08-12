@@ -758,10 +758,7 @@ export class BulkProcessingOrchestrator {
             console.warn(`⚠️ ML Kit data validation failed for ${uri}:`, validation.errors);
           }
           
-          // Store raw ML Kit results for edge function compatibility
-          batch.mlkitResults![uri] = mlkitResults[uri];
-          
-          // Store mapped data separately for virtual-image-bridge integration
+          // Store mapped data as primary mlkit_data for virtual-image-bridge
           batchMappedData[uri] = validation.sanitized;
           
           logVerbose(`🧠 Mapped ML Kit data for ${uri}:`, {

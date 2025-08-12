@@ -119,6 +119,7 @@ interface CreateVirtualImagesRequest {
   jobId: string
   bucketName: string
   userId: string
+  mappedMLKitData?: { [imagePath: string]: any } // NEW: Pre-mapped ML Kit data from client
   images: {
     imagePath: string
     originalFileName?: string
@@ -182,6 +183,7 @@ interface CreateVirtualImagesRequest {
       text_languages?: any | null
       text_block_count?: number | null
     }
+    mlkit_raw?: any // Raw ML Kit analysis results for fallback
     exif_data?: {
       date_taken?: string | null
       date_modified?: string | null
@@ -212,7 +214,7 @@ interface UpdateVirtualImagesRequest {
   userId?: string // NEW: Add optional userId for authentication
   updates: {
     virtualImageId: string // FIXED: Use database ID instead of path
-    isNsfw: boolean
+    isflagged: boolean
     confidenceScore: number
     moderationLabels: string[]
     fullRekognitionData?: any // Optional full AWS Rekognition response
@@ -326,7 +328,8 @@ async function createVirtualImagesDirectly(
   images: CreateVirtualImagesRequest['images'],
   userId: string,
   jobId: string,
-  requestId: string
+  requestId: string,
+  mappedMLKitData?: { [imagePath: string]: any }
 ): Promise<{ success: boolean; data?: any[]; error?: string }> {
   
   try {
@@ -349,6 +352,25 @@ async function createVirtualImagesDirectly(
     
     // Prepare virtual image records for database insertion
     const virtualImageRecords: VirtualImageRecord[] = images.map((img, index) => {
+      // 🧠 DETERMINE ML KIT DATA SOURCE (Priority: 1) Mapped data, 2) Individual data, 3) Raw data)
+      let mlkitDataToUse = null;
+      
+      // Check for pre-mapped data first (highest priority)
+      if (mappedMLKitData && mappedMLKitData[img.imagePath]) {
+        mlkitDataToUse = mappedMLKitData[img.imagePath];
+        console.log(`🧠 [${requestId}] Using pre-mapped ML Kit data for image ${index + 1}: ${img.originalFileName}`);
+      }
+      // Fall back to individual image ML Kit data
+      else if (img.mlkit_data) {
+        mlkitDataToUse = img.mlkit_data;
+        console.log(`🧠 [${requestId}] Using individual ML Kit data for image ${index + 1}: ${img.originalFileName}`);
+      }
+      // Fall back to raw ML Kit results (need to map them)
+      else if (img.mlkit_raw) {
+        // TODO: Add mapping logic here if needed
+        console.log(`🧠 [${requestId}] Raw ML Kit data available but no mapper implemented for image ${index + 1}: ${img.originalFileName}`);
+      }
+      
       // Start with base record using proper interface
       const enhancedRecord: VirtualImageRecord = {
         // Base required fields
@@ -361,71 +383,70 @@ async function createVirtualImagesDirectly(
           jobId,
           s3Key: img.s3Key,
           uploadOrder: img.uploadOrder || index,
-          mlkit_analysis: img.mlkit_data?.metadata || null,
+          mlkit_analysis: mlkitDataToUse?.metadata || null,
           exif_analysis: img.exif_data?.metadata || null
         }
       };
-
-      // 🧠 INTEGRATE ML KIT DATA if available
-      if (img.mlkit_data) {
+      
+      if (mlkitDataToUse) {
         console.log(`🧠 [${requestId}] Adding ML Kit data for image ${index + 1}: ${img.originalFileName}`);
         
         // Add ML Kit fields using object assignment
         Object.assign(enhancedRecord, {
           // Basic ML Kit mapped fields
-          virtual_tags: img.mlkit_data.virtual_tags || [],
-          detected_objects: img.mlkit_data.detected_objects || [],
-          emotion_detected: img.mlkit_data.emotion_detected || [],
-          activity_detected: img.mlkit_data.activity_detected || [],
-          detected_faces_count: img.mlkit_data.detected_faces_count || 0,
-          quality_score: img.mlkit_data.quality_score,
-          brightness_score: img.mlkit_data.brightness_score,
-          blur_score: img.mlkit_data.blur_score,
-          aesthetic_score: img.mlkit_data.aesthetic_score,
-          scene_type: img.mlkit_data.scene_type,
-          image_orientation: img.mlkit_data.image_orientation,
-          has_text: img.mlkit_data.has_text || false,
-          caption: img.mlkit_data.caption,
-          vision_summary: img.mlkit_data.vision_summary,
+          virtual_tags: mlkitDataToUse.virtual_tags || [],
+          detected_objects: mlkitDataToUse.detected_objects || [],
+          emotion_detected: mlkitDataToUse.emotion_detected || [],
+          activity_detected: mlkitDataToUse.activity_detected || [],
+          detected_faces_count: mlkitDataToUse.detected_faces_count || 0,
+          quality_score: mlkitDataToUse.quality_score,
+          brightness_score: mlkitDataToUse.brightness_score,
+          blur_score: mlkitDataToUse.blur_score,
+          aesthetic_score: mlkitDataToUse.aesthetic_score,
+          scene_type: mlkitDataToUse.scene_type,
+          image_orientation: mlkitDataToUse.image_orientation,
+          has_text: mlkitDataToUse.has_text || false,
+          caption: mlkitDataToUse.caption,
+          vision_summary: mlkitDataToUse.vision_summary,
           
           // ✅ CRITICAL FIX: Add all the new spatial and enhanced fields from migration 006
-          object_coordinates: img.mlkit_data.object_coordinates || null,
-          face_coordinates: img.mlkit_data.face_coordinates || null,
-          text_regions: img.mlkit_data.text_regions || null,
-          composition_analysis: img.mlkit_data.composition_analysis || null,
+          object_coordinates: mlkitDataToUse.object_coordinates || null,
+          face_coordinates: mlkitDataToUse.face_coordinates || null,
+          text_regions: mlkitDataToUse.text_regions || null,
+          composition_analysis: mlkitDataToUse.composition_analysis || null,
           
           // Quality enhancement fields
-          contrast_score: img.mlkit_data.contrast_score || null,
-          exposure_score: img.mlkit_data.exposure_score || null,
-          saturation_score: img.mlkit_data.saturation_score || null,
-          sharpness_score: img.mlkit_data.sharpness_score || null,
+          contrast_score: mlkitDataToUse.contrast_score || null,
+          exposure_score: mlkitDataToUse.exposure_score || null,
+          saturation_score: mlkitDataToUse.saturation_score || null,
+          sharpness_score: mlkitDataToUse.sharpness_score || null,
           
           // Processing metadata fields
-          mlkit_processing_time: img.mlkit_data.mlkit_processing_time || null,
-          mlkit_confidence_overall: img.mlkit_data.mlkit_confidence_overall || null,
-          mlkit_confidence_face: img.mlkit_data.mlkit_confidence_face || null,
-          mlkit_confidence_object: img.mlkit_data.mlkit_confidence_object || null,
-          mlkit_confidence_text: img.mlkit_data.mlkit_confidence_text || null,
-          mlkit_analysis_date: img.mlkit_data.mlkit_analysis_date || null,
-          mlkit_mapping_version: img.mlkit_data.mlkit_mapping_version || null,
-          mlkit_device_platform: img.mlkit_data.mlkit_device_platform || null,
+          mlkit_processing_time: mlkitDataToUse.mlkit_processing_time || null,
+          mlkit_confidence_overall: mlkitDataToUse.mlkit_confidence_overall || null,
+          mlkit_confidence_face: mlkitDataToUse.mlkit_confidence_face || null,
+          mlkit_confidence_object: mlkitDataToUse.mlkit_confidence_object || null,
+          mlkit_confidence_text: mlkitDataToUse.mlkit_confidence_text || null,
+          mlkit_analysis_date: mlkitDataToUse.mlkit_analysis_date || null,
+          mlkit_mapping_version: mlkitDataToUse.mlkit_mapping_version || null,
+          mlkit_device_platform: mlkitDataToUse.mlkit_device_platform || null,
           
           // Enhanced face analysis fields
-          face_landmarks: img.mlkit_data.face_landmarks || null,
-          face_head_poses: img.mlkit_data.face_head_poses || null,
-          face_eye_states: img.mlkit_data.face_eye_states || null,
-          face_expressions: img.mlkit_data.face_expressions || null,
+          face_landmarks: mlkitDataToUse.face_landmarks || null,
+          face_head_poses: mlkitDataToUse.face_head_poses || null,
+          face_eye_states: mlkitDataToUse.face_eye_states || null,
+          face_expressions: mlkitDataToUse.face_expressions || null,
           
           // Enhanced scene analysis fields
-          scene_setting: img.mlkit_data.scene_setting || null,
-          scene_weather: img.mlkit_data.scene_weather || null,
-          scene_time_of_day: img.mlkit_data.scene_time_of_day || null,
-          scene_environment: img.mlkit_data.scene_environment || null,
+          scene_setting: mlkitDataToUse.scene_setting || null,
+          scene_weather: mlkitDataToUse.scene_weather || null,
+          scene_time_of_day: mlkitDataToUse.scene_time_of_day || null,
+          scene_environment: mlkitDataToUse.scene_environment || null,
           
           // Enhanced text analysis fields
-          text_full_content: img.mlkit_data.text_full_content || null,
-          text_languages: img.mlkit_data.text_languages || null,
-          text_block_count: img.mlkit_data.text_block_count || 0
+          text_full_content: mlkitDataToUse.text_full_content || null,
+          text_languages: mlkitDataToUse.text_languages || null,
+          text_block_count: mlkitDataToUse.text_block_count || 0
         });
         
         console.log(`🎯 [${requestId}] Enhanced ML Kit data populated for ${img.originalFileName}:`, {
@@ -471,7 +492,7 @@ async function createVirtualImagesDirectly(
         console.log(`📸 [${requestId}] EXIF summary for ${img.originalFileName}: date_taken=${img.exif_data.date_taken}, GPS=${!!(img.exif_data.location_lat && img.exif_data.location_lng)}, camera=${img.exif_data.camera_make} ${img.exif_data.camera_model}`);
       }
 
-      const hasMLKit = !!img.mlkit_data;
+      const hasMLKit = !!mlkitDataToUse;
       const hasEXIF = !!img.exif_data;
       console.log(`📋 [${requestId}] Creating record for image ${index + 1}: ${img.originalFileName} (ML Kit: ${hasMLKit}, EXIF: ${hasEXIF})`);
       
@@ -575,8 +596,19 @@ async function updateVirtualImagesDirectly(
           updated_at: new Date().toISOString()
         };
         
+        // 🐛 DEBUG: Log isflagged field details
+        console.log(`🔍 [${requestId}] Debug isflagged for image ${update.imageId}:`, {
+          isflagged: update.isflagged,
+          type: typeof update.isflagged,
+          isUndefined: update.isflagged === undefined,
+          isNull: update.isflagged === null,
+          stringValue: String(update.isflagged),
+          allUpdateKeys: Object.keys(update),
+          fullUpdate: JSON.stringify(update, null, 2)
+        });
+        
         const nsfwUpdate = {
-          ...(update.isNsfw !== undefined && update.isNsfw !== null && { isflagged: update.isNsfw }),
+          ...(update.isflagged !== undefined && update.isflagged !== null && { isflagged: update.isflagged }),
           ...(update.confidenceScore !== undefined && update.confidenceScore !== null && { nsfw_score: update.confidenceScore })
     
         };
@@ -601,7 +633,6 @@ async function updateVirtualImagesDirectly(
           caption: update.comprehensiveFields.caption,
           vision_summary: update.comprehensiveFields.vision_summary,
           nsfw_score: update.comprehensiveFields.nsfw_score,
-          isflagged: update.comprehensiveFields.isflagged,
           dominant_colors: update.comprehensiveFields.dominant_colors,
           
           // ✅ CRITICAL FIX: Add all the new spatial and enhanced fields from migration 006
@@ -659,12 +690,6 @@ async function updateVirtualImagesDirectly(
           ...mlkitUpdate
         };
 
-        // SAFETY: Remove any is_nsfw field that might have accidentally been included
-        // Virtual_image table should only use isflagged, not is_nsfw
-        if ('is_nsfw' in finalUpdate) {
-          console.warn(`⚠️ [${requestId}] Removing is_nsfw field from update for ${update.virtualImageId} - using isflagged instead`);
-          delete finalUpdate.is_nsfw;
-        }
 
         // Debug rekognition data preservation
         console.log(`🔍 [${requestId}] Rekognition data check for ${update.virtualImageId}:`, {
@@ -845,7 +870,8 @@ async function handleCreateVirtualImages(
     body.images,
     body.userId,
     body.jobId,
-    requestId
+    requestId,
+    body.mappedMLKitData
   )
 
   console.log(`🔍 [${requestId}] Direct creation result:`, {

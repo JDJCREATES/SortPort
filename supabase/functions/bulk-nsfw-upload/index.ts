@@ -1072,7 +1072,8 @@ async function handleRequest(req: Request): Promise<Response> {
               jobId: sessionJobId,
               bucketName,
               userId,
-              images: imagesForCreation
+              images: imagesForCreation,
+              mappedMLKitData: mappedMLKitData || undefined  // Pass the mapped ML Kit data
             };
             
             const createRes = await fetch(createUrl, {

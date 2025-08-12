@@ -247,19 +247,26 @@ export class BatchUploadService {
     formData.append('totalImages', batch.images.length.toString());
     formData.append('isLastBatch', (batch.batchIndex === batch.totalBatches - 1).toString());
 
-    // Add ML Kit results if available
-    if (batch.mlkitResults) {
-      formData.append('mlkitResults', JSON.stringify(batch.mlkitResults));
-    }
-    
-    // Add mapped ML Kit data for virtual-image-bridge integration
+    // ✅ CRITICAL FIX: Send mapped ML Kit data as primary mlkitResults
+    // This ensures the backend uses the properly mapped spatial fields
     if ((batch as any).mappedMLKitData) {
       const mappedData = (batch as any).mappedMLKitData;
       const mappedCount = Object.keys(mappedData).length;
-      console.log(`🧠 Sending ML Kit data to server: ${mappedCount} images mapped for batch ${batch.batchId}`);
+      console.log(`🧠 Sending mapped ML Kit data as primary results: ${mappedCount} images for batch ${batch.batchId}`);
+      
+      // Use mapped data as primary mlkitResults (this is what the backend will use)
+      formData.append('mlkitResults', JSON.stringify(mappedData));
+      
+      // Also send mapped data separately for backward compatibility
       formData.append('mappedMLKitData', JSON.stringify(mappedData));
     } else {
       console.warn(`⚠️ No ML Kit data attached to batch ${batch.batchId}`);
+      
+      // Fallback to raw results if mapped data not available
+      if (batch.mlkitResults) {
+        console.log(`📝 Falling back to raw ML Kit results for batch ${batch.batchId}`);
+        formData.append('mlkitResults', JSON.stringify(batch.mlkitResults));
+      }
     }
 
     let uploadSize = 0;
