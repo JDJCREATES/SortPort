@@ -604,11 +604,24 @@ async function updateVirtualImagesDirectly(
           isNull: update.isflagged === null,
           stringValue: String(update.isflagged),
           allUpdateKeys: Object.keys(update),
+          rekognitionIsflagged: update.fullRekognitionData?.isflagged,
+          comprehensiveIsflagged: update.comprehensiveFields?.isflagged,
           fullUpdate: JSON.stringify(update, null, 2)
         });
         
+        // 🔧 FIX: Extract isflagged from multiple possible sources
+        let isflaggedValue = update.isflagged;
+        if (isflaggedValue === undefined && update.fullRekognitionData?.isflagged !== undefined) {
+          isflaggedValue = update.fullRekognitionData.isflagged;
+          console.log(`🔧 [${requestId}] Extracted isflagged from fullRekognitionData: ${isflaggedValue}`);
+        }
+        if (isflaggedValue === undefined && update.comprehensiveFields?.isflagged !== undefined) {
+          isflaggedValue = update.comprehensiveFields.isflagged;
+          console.log(`🔧 [${requestId}] Extracted isflagged from comprehensiveFields: ${isflaggedValue}`);
+        }
+        
         const nsfwUpdate = {
-          ...(update.isflagged !== undefined && update.isflagged !== null && { isflagged: update.isflagged }),
+          ...(isflaggedValue !== undefined && isflaggedValue !== null && { isflagged: isflaggedValue }),
           ...(update.confidenceScore !== undefined && update.confidenceScore !== null && { nsfw_score: update.confidenceScore })
     
         };
