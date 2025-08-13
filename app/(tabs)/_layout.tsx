@@ -163,7 +163,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="nsfw-albums"
           options={{
-            title: 'NSFW',
+            title: 'Private',
             tabBarIcon: NSFWIcon,
             // Hide the tab completely when showModeratedContent is false
             href: settings.showModeratedContent ? '/nsfw-albums' : null,
