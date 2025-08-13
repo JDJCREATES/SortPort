@@ -108,18 +108,6 @@ export default function TabLayout() {
   ]);
 
   // Memoize icon components to prevent unnecessary re-renders
-  const HomeIcon = useCallback(({ size, color, focused }: { size: number; color: string; focused: boolean }) => (
-    <Ionicons 
-      name={focused ? "home" : "home-outline"} 
-      size={size} 
-      color={color}
-      style={{
-        transform: [{ scale: focused ? 1.05 : 1 }],
-        opacity: focused ? 1 : 0.8,
-      }}
-    />
-  ), []);
-
   const AlbumsIcon = useCallback(({ size, color, focused }: { size: number; color: string; focused: boolean }) => (
     <Ionicons 
       name={focused ? "folder-open" : "folder-open-outline"} 
@@ -162,8 +150,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'Home',
-            tabBarIcon: HomeIcon,
+            href: null, // Hide this tab from the tab bar
           }}
         />
         <Tabs.Screen
